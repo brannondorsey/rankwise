@@ -533,12 +533,14 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
             }
         }
         Kern::Median { omit } => {
+            // np.nanmedian on 2-D+ input goes through np.ma.median, which averages the
+            // middle value with itself for odd counts: (x + x) / 2 (inf near FLT_MAX).
             if !blk.any_missing || !omit {
                 let mut lo = [S::E::ZERO; MAXL];
                 let mut hi = [S::E::ZERO; MAXL];
                 (*blk.buf.add((n - 1) / 2)).store(lo.as_mut_ptr());
                 (*blk.buf.add(n / 2)).store(hi.as_mut_ptr());
-                if n % 2 == 1 {
+                if n % 2 == 1 && !omit {
                     for i in 0..S::L {
                         vals[i] = hi[i].to_f64();
                     }
@@ -557,13 +559,8 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
             } else {
                 for i in 0..lanes {
                     let m = ms[i];
-                    vals[i] = if m == 0 {
-                        f64::NAN
-                    } else if m % 2 == 1 {
-                        at(blk.buf, m / 2, i).to_f64()
-                    } else {
-                        np_mid(at(blk.buf, (m - 1) / 2, i), at(blk.buf, m / 2, i))
-                    };
+                    // (m - 1) / 2 == m / 2 for odd m: np.ma.median's (x + x) / 2
+                    vals[i] = if m == 0 { f64::NAN } else { np_mid(at(blk.buf, (m - 1) / 2, i), at(blk.buf, m / 2, i)) };
                 }
             }
             put(&blk.outs[0], blk.p, &vals, lanes);

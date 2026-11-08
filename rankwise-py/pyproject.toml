@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "rankwise"
+description = "Lane-parallel SIMD order statistics: medians, quantiles, ranks and sigma clipping along one axis, identical to NumPy, SciPy and astropy."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT OR Apache-2.0"
+authors = [{ name = "Brannon Dorsey", email = "brannon@brannondorsey.com" }]
+keywords = ["simd", "median", "quantile", "sigma-clipping", "astronomy", "stacking"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = ["numpy>=1.24"]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/brannondorsey/rankwise"
+
+[tool.maturin]
+python-source = "python"
+module-name = "rankwise._rankwise"
+features = ["pyo3/extension-module"]
