@@ -2,6 +2,7 @@
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +13,8 @@ import rankwise as rw
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.skipif(shutil.which("cc") is None or shutil.which("make") is None, reason="needs a C toolchain")
+@pytest.mark.skipif(sys.platform == "win32" or shutil.which("cc") is None or shutil.which("make") is None,
+                    reason="needs a Unix C toolchain (the Rust lib is MSVC-built on Windows)")
 def test_c_example_matches_python(tmp_path):
     subprocess.run(["make", "-s", "-C", str(ROOT / "examples" / "c")], check=True)
     rng = np.random.default_rng(5)

@@ -103,14 +103,25 @@ Precision: center, spread and bounds run in float64 by default, as astropy's C c
 differ from astropy where a value sits within rounding of a bound (1 pixel in 4.2 M in the
 benchmark).
 
-## Memory layout and the power-of-two stride
+## Memory layout, deep stacks and the power-of-two stride
 
-Frames that sit exactly 2^k bytes apart (a contiguous 2048×2048 float32 stack is 16 MiB per
-frame) map every stream to the same cache sets. On the benchmark machine (2 MiB L2) the
-measured penalty is 1.1–1.25× (see [benchmarks](benchmarks.md#power-of-two-strides)), and
-both a staging copy and software prefetch made it worse, so rankwise reads such frames
-directly. CPUs with smaller L2s may see more; `Staging::Always` / `staging="always"` is
-available to measure.
+The direct path streams `n` frames at once, one cache line per frame per block. Two things
+break that:
+
+* **Deep stacks.** More concurrent streams than the hardware prefetchers track leave the
+  loads latency-bound. From 96 frames rankwise copies each frame's next run of pixels
+  (768 KiB of tile for all frames together) into an L2-resident tile, one frame at a time,
+  and runs the kernel on the tile: 1.7–1.9× faster at 127 frames.
+* **Power-of-two frame strides.** A contiguous stack of 2048×2048 float32 frames puts frame
+  starts 16 MiB apart, so every stream maps to the same cache sets. L2 is physically indexed,
+  so how bad this is depends on the page size: NumPy madvises large arrays onto 2 MiB pages,
+  which keeps the conflict, while 4 KiB pages scatter it. Measured from Python, 63 frames of
+  1024×1024 took 91 ns per pixel direct and 45 staged. rankwise stages when 48 or more
+  frames start in the same L2 set; below that, the tile copy costs about what it saves.
+
+Both thresholds were measured on a 2 MiB-L2 Sapphire Rapids-class core
+([benchmarks](benchmarks.md#power-of-two-strides)); `staging="always"`/`"never"` (Python
+`describe()` shows the choice) and `RANKWISE_TILE_BYTES` exist for measuring other CPUs.
 
 ## Errors
 

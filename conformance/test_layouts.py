@@ -100,3 +100,16 @@ def test_xarray_dask_apply_ufunc():
     ref = xr.apply_ufunc(np.quantile, tas, 0.9, input_core_dims=[["member"], []], kwargs={"axis": -1},
                          dask="parallelized", output_dtypes=[np.float32])
     identical(p90.compute().values, ref.compute().values)
+
+
+def test_conflicting_strides_take_the_staged_path(isa):
+    """63 frames exactly 128 KiB apart start in the same L2 set: rankwise stages them."""
+    x = data((63, 128, 256))
+    assert "path=staged" in rw.describe(x, axis=0)
+    identical(rw.median(x, axis=0), np.median(x, axis=0))
+    identical(rw.nanquantile(x, [0.1, 0.9], axis=0), np.nanquantile(x, [0.1, 0.9], axis=0))
+    out, lo, hi = rw.sigma_clip_mean(x, axis=0, return_counts=True)
+    xs = x.reshape(63, -1)[:, ::7].copy().reshape(63, -1)  # a non-conflicting copy of some pixels
+    o2, l2, h2 = rw.sigma_clip_mean(xs, axis=0, return_counts=True)
+    identical(out.reshape(-1)[::7], o2)
+    identical(lo.reshape(-1)[::7], l2)

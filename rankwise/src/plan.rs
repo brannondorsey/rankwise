@@ -16,12 +16,26 @@ use crate::{Error, Result, MAX_FRAMES};
 /// at 127 frames, slower at 63).
 const DEEP_STAGE: usize = 96;
 
+/// Stacks at least this deep whose frames collide in the L2 set bits read through the tile.
+/// With 2 MiB pages (NumPy madvises large arrays) a contiguous stack of 2^k-byte frames
+/// lands every stream in one L2 set: staging halved the time at 63 frames of 1024×1024.
+const CONFLICT_STAGE: usize = 48;
+
+/// Whether many frames start at the same L2 set (address bits 6..17).
+fn set_conflict(frames: &[*const u8]) -> bool {
+    let mut buckets = std::collections::HashMap::new();
+    for &f in frames {
+        *buckets.entry(((f as usize) >> 6) & 0x7FF).or_insert(0usize) += 1;
+    }
+    buckets.values().any(|&c| c >= 16)
+}
+
 /// When to read frames through an in-cache tile instead of straight from memory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Staging {
-    /// Stage when the layout needs it (non-unit pixel stride, dtype conversion) or the
-    /// stack is deep (96+ frames). Power-of-two frame strides alone read directly: on a
-    /// 2 MiB-L2 core the tile copy costs more than the cache-set conflicts it avoids.
+    /// Stage when the layout needs it (non-unit pixel stride, dtype conversion), when the
+    /// stack is deep (96+ frames), or when 48+ frames collide in the L2 set bits
+    /// (power-of-two frame strides).
     #[default]
     Auto,
     /// Only when the layout needs it.
@@ -275,7 +289,7 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
     let staged = match opts.staging {
         Staging::Always => true,
         Staging::Never => need_stage,
-        Staging::Auto => need_stage || n >= DEEP_STAGE,
+        Staging::Auto => need_stage || n >= DEEP_STAGE || (n >= CONFLICT_STAGE && set_conflict(stack.frames)),
     };
     Ok(Job {
         n,
