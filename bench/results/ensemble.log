@@ -1,0 +1,11 @@
+rankwise · AVX-512                 quantile       0.017 s     16.2 ns/cell  identical=True
+rankwise · AVX-512                 nanquantile    0.041 s     39.5 ns/cell  identical=True
+rankwise · AVX2                    quantile       0.024 s     23.5 ns/cell  identical=True
+rankwise · AVX2                    nanquantile    0.053 s     51.3 ns/cell  identical=True
+rankwise · scalar                  quantile       0.051 s     49.2 ns/cell  identical=True
+rankwise · scalar                  nanquantile    0.115 s    110.9 ns/cell  identical=True
+NumPy 2.5 quantile                 quantile       1.182 s   1138.7 ns/cell  identical=True
+NumPy 2.5 nanquantile              nanquantile   46.184 s  44482.8 ns/cell  identical=True
+numbagg 0.9 nanquantile            nanquantile    5.099 s   4911.0 ns/cell  identical=False
+fastnanquantile 0.0.2              nanquantile    0.842 s    811.2 ns/cell  identical=False
+wrote /home/user/rankwise/bench/results/ensemble_31x721x1440.json

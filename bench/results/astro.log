@@ -1,0 +1,19 @@
+stack (31, 2048, 2048) float32, 0.48 GiB
+rankwise · AVX-512                 median      0.085 s     20.3 ns/px  {'identical_to_np_median': True}
+rankwise · AVX-512                 sigclip     0.299 s     71.4 ns/px  {'max_rel_diff_vs_astropy_mean': 4.4223805806784513e-07, 'kept_counts_identical_to_astropy': 1.0}
+rankwise · AVX-512 · f32 bounds    sigclip     0.253 s     60.3 ns/px  {'max_rel_diff_vs_astropy_mean': 0.003638895176204939, 'kept_counts_identical_to_astropy': 0.9999997615814209}
+rankwise · AVX2                    median      0.151 s     35.9 ns/px  {'identical_to_np_median': True}
+rankwise · AVX2                    sigclip     0.412 s     98.3 ns/px  {'max_rel_diff_vs_astropy_mean': 4.4223805806784513e-07, 'kept_counts_identical_to_astropy': 1.0}
+rankwise · scalar                  median      0.430 s    102.4 ns/px  {'identical_to_np_median': True}
+rankwise · scalar                  sigclip     0.912 s    217.4 ns/px  {'max_rel_diff_vs_astropy_mean': 4.4223805806784513e-07, 'kept_counts_identical_to_astropy': 1.0}
+NumPy 2.5 median                   median      3.328 s    793.5 ns/px  {'identical_to_np_median': True}
+Bottleneck 1.6                     median      2.273 s    541.9 ns/px  {'identical_to_np_median': True}
+numbagg 0.9 (nanmedian)            median     13.581 s   3237.9 ns/px  {'identical_to_np_median': True}
+reducers 0.4                       median      1.668 s    397.7 ns/px  {'identical_to_np_median': True}
+imcombiners 0.1                    median      1.681 s    400.9 ns/px  {'identical_to_np_median': True}
+reducers 0.4                       sigclip     3.670 s    875.0 ns/px  {'max_rel_diff_vs_astropy_mean': 0.01915787714203238}
+imcombiners 0.1                    sigclip     4.961 s   1182.7 ns/px  {'max_rel_diff_vs_astropy_mean': 0.01915787714203238}
+astropy 8.0 sigma_clip             sigclip     5.245 s   1250.5 ns/px  {'max_rel_diff_vs_astropy_mean': 0.0}
+ccdproc 2.5 Combiner               median      8.864 s   2113.4 ns/px  {'identical_to_np_median': True}
+ccdproc 2.5 Combiner (1 pass)      sigclip    10.787 s   2571.8 ns/px  {'max_rel_diff_vs_astropy_mean': 0.49496946579815476}
+wrote /home/user/rankwise/bench/results/astro_31x2048.json

@@ -234,8 +234,11 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
     let mut raw: Vec<S> = if job.kern.needs_raw() { vec![S::splat(S::E::ZERO); n] } else { vec![] };
     // Staging tile: n rows of `ts` elements.
     let tile_px = if job.staged {
-        let target = 96 * 1024 / (n * esz).max(1);
-        ((target / l).max(1) * l).min(4096).max(l)
+        // Large enough that each frame's copy streams a long run from memory (the hardware
+        // prefetcher ramps up once per run), small enough that the tile stays in L2.
+        let budget = tile_budget();
+        let target = budget / (n * esz).max(1);
+        ((target / l).max(1) * l).min(16384).max(l)
     } else {
         u.p1 - u.p0
     };
@@ -329,6 +332,15 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
         }
         t0 = t1;
     }
+}
+
+/// Staging tile size in bytes (all frames together). `RANKWISE_TILE_BYTES` overrides it for
+/// experiments.
+fn tile_budget() -> usize {
+    static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *B.get_or_init(|| {
+        std::env::var("RANKWISE_TILE_BYTES").ok().and_then(|s| s.parse().ok()).unwrap_or(768 * 1024)
+    })
 }
 
 #[inline(always)]
@@ -595,14 +607,35 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
                         }
                     }
                 } else {
+                    // Per-lane ranks and weights: gather lane by lane, interpolate as a block.
+                    let mut a = [0f64; MAXL];
+                    let mut b = [0f64; MAXL];
+                    let mut t = [0f64; MAXL];
+                    let mut special = 0u64; // lanes that take a value as is (or are empty)
                     for i in 0..lanes {
-                        vals[i] = match tab[ms[i]] {
-                            QIdx::Take(i0) => at(blk.buf, i0, i).to_f64(),
-                            QIdx::Lerp { i0, i1, t } => {
-                                lerp.eval(at(blk.buf, i0, i).to_f64(), at(blk.buf, i1, i).to_f64(), t)
+                        match tab[ms[i]] {
+                            QIdx::Take(i0) => {
+                                a[i] = at(blk.buf, i0, i).to_f64();
+                                special |= 1 << i;
                             }
-                            QIdx::Empty => f64::NAN,
-                        };
+                            QIdx::Lerp { i0, i1, t: w } => {
+                                a[i] = at(blk.buf, i0, i).to_f64();
+                                b[i] = at(blk.buf, i1, i).to_f64();
+                                t[i] = w;
+                            }
+                            QIdx::Empty => {
+                                a[i] = f64::NAN;
+                                special |= 1 << i;
+                            }
+                        }
+                    }
+                    lerp_lanes_var(lerp, &a, &b, &t, &mut vals, S::L);
+                    if special != 0 {
+                        for i in 0..lanes {
+                            if (special >> i) & 1 == 1 {
+                                vals[i] = a[i];
+                            }
+                        }
                     }
                 }
                 put(&blk.outs[j], blk.p, &vals, lanes);
@@ -719,6 +752,33 @@ fn lerp_lanes(r: &Lerp, a: &[f64; MAXL], b: &[f64; MAXL], t: f64, out: &mut [f64
             let d = if f32d { ((b[i] as f32) - (a[i] as f32)) as f64 } else { b[i] - a[i] };
             let x = d * omt;
             out[i] = if f32s { ((b[i] as f32) - (x as f32)) as f64 } else { b[i] - x };
+        }
+    }
+}
+
+/// `_lerp` with a weight per lane: both branches computed, then selected, so the loop has
+/// no branches and vectorizes. Bit-identical to [`Lerp::eval`] lane by lane.
+#[inline(always)]
+fn lerp_lanes_var(r: &Lerp, a: &[f64; MAXL], b: &[f64; MAXL], t: &[f64; MAXL], out: &mut [f64; MAXL], l: usize) {
+    let weak = matches!(r.form, crate::spec::QForm::Weak | crate::spec::QForm::WeakInt);
+    let f32d = r.data == DType::F32;
+    let f32s = r.sub_dtype == DType::F32;
+    if r.compute == DType::F32 {
+        for i in 0..l {
+            let d = if f32d { (b[i] as f32) - (a[i] as f32) } else { (b[i] - a[i]) as f32 };
+            let lo = (a[i] as f32) + d * (t[i] as f32);
+            let omt = if weak { (1.0 - t[i]) as f32 } else { 1.0f32 - t[i] as f32 };
+            let x = d * omt;
+            let hi = if f32s { ((b[i] as f32) - x) as f64 } else { b[i] - x as f64 };
+            out[i] = if t[i] >= 0.5 { hi } else { lo as f64 };
+        }
+    } else {
+        for i in 0..l {
+            let d = if f32d { ((b[i] as f32) - (a[i] as f32)) as f64 } else { b[i] - a[i] };
+            let lo = a[i] + d * t[i];
+            let x = d * (1.0 - t[i]);
+            let hi = if f32s { ((b[i] as f32) - (x as f32)) as f64 } else { b[i] - x };
+            out[i] = if t[i] >= 0.5 { hi } else { lo };
         }
     }
 }

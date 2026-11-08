@@ -1,0 +1,173 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-08"
+ },
+ "n": 31,
+ "side": 2048,
+ "dtype": "float32",
+ "threads": 1,
+ "method": "best of 3 (2 for slow tools) after a warm-up, taskset to one core",
+ "versions": {
+  "rankwise": "0.1.0",
+  "numpy": "2.5.3",
+  "bottleneck": "1.6.0",
+  "numbagg": "0.9.6",
+  "reducers": "0.4.0",
+  "imcombiners": "0.1.1",
+  "astropy": "8.0.2",
+  "ccdproc": "2.5.1"
+ },
+ "rows": [
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.08512464200066461,
+   "ns_per_px": 20.295296192327644,
+   "identical_to_np_median": true
+  },
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "sigclip",
+   "family": "rankwise",
+   "seconds": 0.2993379580002511,
+   "ns_per_px": 71.36773061758306,
+   "max_rel_diff_vs_astropy_mean": 4.4223805806784513e-07,
+   "kept_counts_identical_to_astropy": 1.0
+  },
+  {
+   "tool": "rankwise \u00b7 AVX-512 \u00b7 f32 bounds",
+   "op": "sigclip",
+   "family": "rankwise",
+   "seconds": 0.2528551489995152,
+   "ns_per_px": 60.285365342978295,
+   "max_rel_diff_vs_astropy_mean": 0.003638895176204939,
+   "kept_counts_identical_to_astropy": 0.9999997615814209
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.15077422700051102,
+   "ns_per_px": 35.94737696659828,
+   "identical_to_np_median": true
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "sigclip",
+   "family": "rankwise",
+   "seconds": 0.41238409700054035,
+   "ns_per_px": 98.32003045094976,
+   "max_rel_diff_vs_astropy_mean": 4.4223805806784513e-07,
+   "kept_counts_identical_to_astropy": 1.0
+  },
+  {
+   "tool": "rankwise \u00b7 scalar",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.42952825400061556,
+   "ns_per_px": 102.40751600280178,
+   "identical_to_np_median": true
+  },
+  {
+   "tool": "rankwise \u00b7 scalar",
+   "op": "sigclip",
+   "family": "rankwise",
+   "seconds": 0.911926938999386,
+   "ns_per_px": 217.4203250406709,
+   "max_rel_diff_vs_astropy_mean": 4.4223805806784513e-07,
+   "kept_counts_identical_to_astropy": 1.0
+  },
+  {
+   "tool": "NumPy 2.5 median",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 3.328038338000624,
+   "ns_per_px": 793.4661717416344,
+   "identical_to_np_median": true
+  },
+  {
+   "tool": "Bottleneck 1.6",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 2.2728795940001874,
+   "ns_per_px": 541.8967232704609,
+   "identical_to_np_median": true
+  },
+  {
+   "tool": "numbagg 0.9 (nanmedian)",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 13.580760183000166,
+   "ns_per_px": 3237.9055459499755,
+   "identical_to_np_median": true
+  },
+  {
+   "tool": "reducers 0.4",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.6681404529990687,
+   "ns_per_px": 397.71567654587477,
+   "identical_to_np_median": true
+  },
+  {
+   "tool": "imcombiners 0.1",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.681490519998988,
+   "ns_per_px": 400.89858055090616,
+   "identical_to_np_median": true
+  },
+  {
+   "tool": "reducers 0.4",
+   "op": "sigclip",
+   "family": "competitor",
+   "seconds": 3.670156472000599,
+   "ns_per_px": 875.0334911347863,
+   "max_rel_diff_vs_astropy_mean": 0.01915787714203238
+  },
+  {
+   "tool": "imcombiners 0.1",
+   "op": "sigclip",
+   "family": "competitor",
+   "seconds": 4.960588927000572,
+   "ns_per_px": 1182.696563482421,
+   "max_rel_diff_vs_astropy_mean": 0.01915787714203238
+  },
+  {
+   "tool": "astropy 8.0 sigma_clip",
+   "op": "sigclip",
+   "family": "competitor",
+   "seconds": 5.244868321999093,
+   "ns_per_px": 1250.4740529058201,
+   "max_rel_diff_vs_astropy_mean": 0.0
+  },
+  {
+   "tool": "ccdproc 2.5 Combiner",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 8.86419196099996,
+   "ns_per_px": 2113.3880522251034,
+   "identical_to_np_median": true
+  },
+  {
+   "tool": "ccdproc 2.5 Combiner (1 pass)",
+   "op": "sigclip",
+   "family": "competitor",
+   "seconds": 10.786856115000774,
+   "ns_per_px": 2571.7869079114853,
+   "max_rel_diff_vs_astropy_mean": 0.49496946579815476
+  }
+ ]
+}

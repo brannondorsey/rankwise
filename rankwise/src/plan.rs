@@ -11,15 +11,20 @@ use crate::simd::{resolve_isa, Isa};
 use crate::spec::{ArgRank, Combine, DType, NanPolicy, Op, Precision};
 use crate::{Error, Result, MAX_FRAMES};
 
+/// Stacks at least this deep read through the staging tile: more concurrent frame streams
+/// than the hardware prefetchers track make direct loads latency-bound (measured 1.7x faster
+/// at 127 frames, slower at 63).
+const DEEP_STAGE: usize = 96;
+
 /// When to read frames through an in-cache tile instead of straight from memory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Staging {
-    /// Stage only when the layout needs it (non-unit pixel stride, dtype conversion).
-    /// Power-of-two frame strides cost 1.1-1.25x on a 2 MiB-L2 Sapphire Rapids core, less
-    /// than the tile copy, so they read directly.
+    /// Stage when the layout needs it (non-unit pixel stride, dtype conversion) or the
+    /// stack is deep (96+ frames). Power-of-two frame strides alone read directly: on a
+    /// 2 MiB-L2 core the tile copy costs more than the cache-set conflicts it avoids.
     #[default]
     Auto,
-    /// Same as `Auto` (kept for explicitness in benchmarks).
+    /// Only when the layout needs it.
     Never,
     /// Always.
     Always,
@@ -270,7 +275,7 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
     let staged = match opts.staging {
         Staging::Always => true,
         Staging::Never => need_stage,
-        Staging::Auto => need_stage,
+        Staging::Auto => need_stage || n >= DEEP_STAGE,
     };
     Ok(Job {
         n,
