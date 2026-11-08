@@ -1,0 +1,15 @@
+[package]
+name = "rankwise-py"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "_rankwise"
+crate-type = ["cdylib"]
+
+[dependencies]
+rankwise = { path = "../rankwise", features = ["rayon"] }
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py39"] }

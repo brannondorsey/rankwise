@@ -1,0 +1,29 @@
+[package]
+name = "rankwise"
+description = "Lane-parallel order statistics: SIMD medians, quantiles, ranks and sigma clipping along one axis of an array."
+readme = "../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+build = "build.rs"
+
+[features]
+default = []
+# Run multi-threaded calls on rayon's global pool instead of scoped OS threads.
+rayon = ["dep:rayon"]
+# `Reduce` extension trait for ndarray views.
+ndarray = ["dep:ndarray"]
+
+[dependencies]
+rayon = { version = "1.10", optional = true }
+ndarray = { version = "0.17", optional = true }
+
+[dev-dependencies]
+proptest = "1.5"
+ndarray = "0.17"
