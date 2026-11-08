@@ -10,7 +10,7 @@ use pyo3::types::{PyDict, PyList};
 use rankwise::{
     presets, reduce_raw, ArgRank, Center, Clip, Combine, DType, Error, Isa, NanPolicy, Normalize, Op, Options,
     OutRounding, Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Rejection, Spread,
-    Staging, WinsorInit,
+    Staging,
 };
 
 fn err(e: Error) -> PyErr {
@@ -42,20 +42,24 @@ fn parse_clip(d: &Bound<'_, PyDict>) -> PyResult<Clip> {
     let maxiters: Option<u32> = get(d, "maxiters")?;
     let preset: Option<String> = get(d, "preset")?;
     let mut c = match (preset.as_deref(), method.as_str()) {
-        (Some("pixinsight"), "winsorized") => presets::pixinsight_winsorized(low, high),
+        (Some("pixinsight"), "winsorized") => presets::pixinsight_winsorized(low, high).max_iters(maxiters),
+        (Some("pixinsight"), m) => {
+            return Err(PyValueError::new_err(format!("the pixinsight preset covers 'winsorized', not {m:?}")))
+        }
+        (Some("siril"), "sigma") => presets::siril_sigma(low, high),
+        (Some("siril"), "mad") => {
+            return Err(PyValueError::new_err(
+                "Siril's k-MAD clipping is not reproduced yet (see docs/presets.md); use method='mad' for astropy's mad_std",
+            ))
+        }
         (_, "sigma") => Clip::sigma(low, high).max_iters(maxiters),
         (_, "mad") => Clip::mad(low, high).max_iters(maxiters),
-        (_, "median_sigma") => Clip::median_sigma(low, high).max_iters(maxiters),
+        (_, "median_sigma") => Clip::median_sigma(low, high),
         (_, "winsorized") => Clip::winsorized(low, high).max_iters(maxiters),
         (_, "percentile") => Clip::percentile(low, high),
         (_, "none") => Clip::none(),
         (_, m) => return Err(PyValueError::new_err(format!("unknown rejection method {m:?}"))),
     };
-    if let Some(p) = &preset {
-        if p == "pixinsight" {
-            c = c.max_iters(maxiters);
-        }
-    }
     if let Some(s) = get::<String>(d, "cenfunc")? {
         c = c.center(match s.as_str() {
             "median" => Center::Median,
@@ -75,7 +79,6 @@ fn parse_clip(d: &Bound<'_, PyDict>) -> PyResult<Clip> {
             "mean" => Combine::Mean,
             "median" => Combine::Median,
             "sum" => Combine::Sum,
-            "mean_replace_median" => Combine::MeanReplaceMedian,
             _ => return Err(PyValueError::new_err(format!("unknown combine {s:?}"))),
         });
     }
@@ -89,11 +92,8 @@ fn parse_clip(d: &Bound<'_, PyDict>) -> PyResult<Clip> {
     if let Some(b) = get::<bool>(d, "mask_infinite")? {
         c.mask_infinite = b;
     }
-    if let (Some(cut), Rejection::Winsorized { cutoff, init, .. }) = (get::<f64>(d, "cutoff")?, &mut c.rejection) {
+    if let (Some(cut), Rejection::Winsorized { cutoff, .. }) = (get::<f64>(d, "cutoff")?, &mut c.rejection) {
         *cutoff = cut;
-        if let Some(s) = get::<String>(d, "winsor_init")? {
-            *init = if s == "sn" { WinsorInit::Sn } else { WinsorInit::Std };
-        }
     }
     Ok(c)
 }

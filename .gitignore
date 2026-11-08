@@ -37,3 +37,4 @@ wheels/
 bench/data/
 *.npy
 !docs/**/*.npy
+examples/c/stack

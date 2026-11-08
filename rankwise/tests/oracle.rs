@@ -329,3 +329,27 @@ fn isas_agree_bit_for_bit() {
         }
     }
 }
+
+#[cfg(feature = "ndarray")]
+#[test]
+fn ndarray_any_axis_matches_frames() {
+    use ndarray::{Array2, Array3, Axis};
+    let st = stack(17, 30 * 40, 0.05, false, 77);
+    let flat: Vec<f32> = st.iter().flatten().cloned().collect();
+    let a = Array3::from_shape_vec((17, 30, 40), flat).unwrap();
+    let mut out = Array2::<f32>::zeros((30, 40));
+    a.reduce_into(Axis(0), Op::Median, out.view_mut()).unwrap();
+    let views: Vec<&[f32]> = st.iter().map(|v| v.as_slice()).collect();
+    let mut want = vec![0f32; 1200];
+    reduce_frames(&views, &Op::Median, &mut [Out::F32(&mut want)], None, &Options::default()).unwrap();
+    for (g, w) in out.iter().zip(want.iter()) {
+        assert!(same(*g as f64, *w as f64));
+    }
+    // reduce the middle axis of a permuted view
+    let p = a.view().permuted_axes([1, 0, 2]);
+    let mut o2 = Array2::<f32>::zeros((30, 40));
+    p.reduce_into(Axis(1), Op::Median, o2.view_mut()).unwrap();
+    assert!(o2.iter().zip(out.iter()).all(|(x, y)| same(*x as f64, *y as f64)));
+    let mut o3 = Array2::<f32>::zeros((30, 40));
+    a.reduce_into(Axis(0), Clip::sigma(3.0, 3.0).max_iters(5).mean(), o3.view_mut()).unwrap();
+}

@@ -9,7 +9,8 @@ publish = false
 
 [lib]
 name = "rankwise"
-crate-type = ["cdylib", "staticlib", "rlib"]
+crate-type = ["cdylib", "staticlib"]
+doctest = false
 
 [dependencies]
 rankwise = { path = "../rankwise" }

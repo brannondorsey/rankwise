@@ -1,0 +1,118 @@
+{
+ "siril": "siril 1.2.1",
+ "rankwise": "0.1.0",
+ "results": [
+  {
+   "n": 5,
+   "method": "sigma",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 5,
+   "method": "median_sigma",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 5,
+   "method": "winsorized",
+   "pixels": 3072,
+   "identical_counts": 2920,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 5,
+   "method": "percentile",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 8,
+   "method": "sigma",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 8,
+   "method": "median_sigma",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 8,
+   "method": "winsorized",
+   "pixels": 3072,
+   "identical_counts": 3021,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 8,
+   "method": "percentile",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 15,
+   "method": "sigma",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 15,
+   "method": "median_sigma",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 15,
+   "method": "winsorized",
+   "pixels": 3072,
+   "identical_counts": 3069,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 15,
+   "method": "percentile",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 31,
+   "method": "sigma",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 31,
+   "method": "median_sigma",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 31,
+   "method": "winsorized",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  },
+  {
+   "n": 31,
+   "method": "percentile",
+   "pixels": 3072,
+   "identical_counts": 3072,
+   "max_rel_value_diff_where_counts_agree": 0.0
+  }
+ ]
+}

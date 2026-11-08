@@ -579,11 +579,12 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
                  mask_infinite=True, return_counts=False, threads=1, isa=None):
     """Reject outliers along ``axis`` and combine the survivors.
 
-    ``method``: ``"sigma"`` (astropy ``sigma_clip`` semantics), ``"mad"`` (MAD-based sigma),
-    ``"median_sigma"`` (rejected values replaced by the median), ``"winsorized"``
-    (Huber-winsorized sigma) or ``"percentile"`` (one pass around the median; ``sigma`` is
-    then the fractional threshold). ``preset="siril"`` or ``"pixinsight"`` picks those
-    tools' published definitions.
+    ``method``: ``"sigma"`` (astropy ``sigma_clip`` semantics), ``"mad"`` (astropy
+    ``mad_std`` as the spread), ``"median_sigma"`` (Siril: rejected values replaced by the
+    median), ``"winsorized"`` (Siril's Huber-winsorized sigma) or ``"percentile"`` (Siril: one
+    pass around the median; ``sigma`` is then the fractional threshold ``(low, high)``).
+    ``preset="siril"`` follows Siril 1.2 (sample std, iterate to convergence); ``"pixinsight"``
+    follows PCL's documented winsorized clipping. See docs/presets.md for what was verified.
 
     ``scale``/``offset`` normalize frame ``k`` as ``x * scale[k] + offset[k]`` on load;
     ``weights`` give a weighted mean. ``rejected``, ``low`` and ``high`` receive per-pixel
@@ -605,17 +606,10 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
           "combine": combine, "precision": precision, "mask_infinite": bool(mask_infinite)}
     if maxiters is not None:
         op["maxiters"] = int(maxiters)
-    if preset == "siril":
-        op.pop("maxiters", None)
-        if method == "median_sigma":
-            op["combine"] = "mean_replace_median"
-    if preset == "pixinsight":
-        if method != "winsorized":
-            raise ValueError("the pixinsight preset covers method='winsorized'")
-        op["preset"] = "pixinsight"
-        op.pop("maxiters", None)
-    if method == "median_sigma" and combine == "mean":
-        op["combine"] = "mean_replace_median"
+    if preset in ("siril", "pixinsight"):
+        op["preset"] = preset
+        if preset == "siril" or maxiters == 5:
+            op.pop("maxiters", None)  # both tools iterate until nothing changes
     s = _prep(a, axis)
     dt = np.dtype(np.float64) if s.dtype == "float64" else np.dtype(np.float32)
     work, final, copy = _prepare_out(out, s.shape, dt, False, s.axis)

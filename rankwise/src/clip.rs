@@ -8,7 +8,7 @@
 use crate::arch::SortVec;
 use crate::engine::{at, lanes_f64, load_group, miss_mask, put, Blk, Job, MAXL};
 use crate::simd::{Element, FVector, Mask, Vector};
-use crate::spec::{Center, Combine, Rejection, Spread, WinsorInit};
+use crate::spec::{Center, Combine, Convention, Rejection, Spread, WinsorInit};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ClipPlan {
@@ -187,9 +187,9 @@ unsafe fn acc4<C: FVector>(n: usize, f: impl Fn(usize) -> C) -> C {
     a0.add(a1).add(a2.add(a3))
 }
 
-/// Population standard deviation over ranks `[lo, hi)` (two-pass, as astropy).
+/// Standard deviation over ranks `[lo, hi)` (two-pass), dividing by `cnt - ddof`.
 #[inline(always)]
-unsafe fn std_range<C: FVector>(cb: *const C, n: usize, lo: C, hi: C, mean: C, cnt: C) -> C {
+unsafe fn std_range<C: FVector>(cb: *const C, n: usize, lo: C, hi: C, mean: C, cnt: C, ddof: f64) -> C {
     let z = sp::<C>(0.0);
     let ss = if is_full(n, lo, hi) {
         acc4(n, |k| {
@@ -203,7 +203,7 @@ unsafe fn std_range<C: FVector>(cb: *const C, n: usize, lo: C, hi: C, mean: C, c
             C::select(kk.lt(hi).andnot(kk.lt(lo)), d.mul(d), z)
         })
     };
-    ss.div(cnt).sqrt()
+    ss.div(cnt.sub(sp::<C>(ddof))).sqrt()
 }
 
 /// Median of |x - med| over ranks `[lo, hi)`: the deviations of a sorted range form a valley,
@@ -243,8 +243,11 @@ unsafe fn sigma<C: FVector + SortVec>(
     max_iters: Option<u32>,
     center: Center,
     spread: Spread,
+    conv: Convention,
     bitonic: &crate::net::NetPlan,
 ) -> (C, C) {
+    let siril = conv != Convention::Astropy;
+    let ddof = if siril { 1.0 } else { 0.0 };
     let zero = sp::<C>(0.0);
     let nan = sp::<C>(f64::NAN);
     let (vlow, vhigh) = (sp::<C>(low), sp::<C>(high));
@@ -262,16 +265,25 @@ unsafe fn sigma<C: FVector + SortVec>(
         let mean = if need_mean { sum_range(cb, n, lo, hi).div(cnt) } else { zero };
         let cen = if center == Center::Median { med } else { mean };
         let s = match spread {
-            Spread::Std => std_range(cb, n, lo, hi, mean, cnt),
+            Spread::Std => std_range(cb, n, lo, hi, mean, cnt, ddof),
             Spread::MadStd => mad_range(cb, d, n, lo, hi, med, bitonic).mul(sp::<C>(1.482602218505602)),
         };
         let nlb = cen.sub(vlow.mul(s));
         let nub = cen.add(vhigh.mul(s));
-        let mut la = [C::E::ZERO; MAXL];
-        let mut ua = [C::E::ZERO; MAXL];
-        nlb.store(la.as_mut_ptr());
-        nub.store(ua.as_mut_ptr());
-        let (nl, nh) = end_scan(cb, lo, hi, |i, x| x < la[i], |i, x| x > ua[i]);
+        let (nl, nh) = if siril {
+            // Siril: reject c - x > low*s, x - c > high*s
+            let (mut ca, mut ka, mut kb) = ([C::E::ZERO; MAXL], [C::E::ZERO; MAXL], [C::E::ZERO; MAXL]);
+            cen.store(ca.as_mut_ptr());
+            vlow.mul(s).store(ka.as_mut_ptr());
+            vhigh.mul(s).store(kb.as_mut_ptr());
+            end_scan(cb, lo, hi, |i, x| sub_gt(ca[i], x, ka[i]), |i, x| sub_gt(x, ca[i], kb[i]))
+        } else {
+            let mut la = [C::E::ZERO; MAXL];
+            let mut ua = [C::E::ZERO; MAXL];
+            nlb.store(la.as_mut_ptr());
+            nub.store(ua.as_mut_ptr());
+            end_scan(cb, lo, hi, |i, x| x < la[i], |i, x| x > ua[i])
+        };
         lb = C::select(active, nlb, lb);
         ub = C::select(active, nub, ub);
         let nlo = lo.add(nl);
@@ -287,8 +299,21 @@ unsafe fn sigma<C: FVector + SortVec>(
             }
         }
     }
+    if siril {
+        return (lo, hi);
+    }
     // astropy re-applies the last bounds to every finite value.
     final_range(cb, m, lo, hi, lb, ub)
+}
+
+/// `a - b > t`, evaluated in the compute dtype.
+#[inline(always)]
+fn sub_gt<E: Element>(a: E, b: E, t: E) -> bool {
+    if core::any::TypeId::of::<E>() == core::any::TypeId::of::<f32>() {
+        (a.to_f64() as f32) - (b.to_f64() as f32) > t.to_f64() as f32
+    } else {
+        a.to_f64() - b.to_f64() > t.to_f64()
+    }
 }
 
 /// Rousseeuw–Croux Sn (without the consistency constant) of a sorted slice.
@@ -320,7 +345,13 @@ fn sn(x: &[f64]) -> f64 {
     meds[(c + 1) / 2 - 1]
 }
 
-/// Winsorized sigma clipping (Huber), PCL-documented structure.
+/// Winsorized sigma clipping (Huber).
+///
+/// Siril convention (verified black-box): center = median of the range, spread starts as
+/// the sample std; the Huber loop clamps to c ± 1.5 s and sets s = 1.134 × std(clamped)
+/// until |Δs| <= 5e-4 s; reject `c - x > low·s` / `x - c > high·s`; repeat while more than
+/// three values remain. PixInsight convention (PCL documentation): Sn-based start, first-pass
+/// cutoff, center updated to the winsorized mean, ratio tests `(c - x)/s > low`.
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 unsafe fn winsorized<C: FVector>(
@@ -332,13 +363,14 @@ unsafe fn winsorized<C: FVector>(
     max_iters: Option<u32>,
     cutoff: f64,
     init: WinsorInit,
+    conv: Convention,
 ) -> (C, C) {
+    let pi = conv == Convention::PixInsight;
     let zero = sp::<C>(0.0);
     let one = sp::<C>(1.0);
-    let three = sp::<C>(3.0);
     let mut lo = zero;
     let mut hi = m;
-    let mut active = m.gt(three.sub(one)); // need at least 3 values
+    let mut active = m.gt(sp::<C>(3.0 - if pi { 1.0 } else { 0.0 }));
     let mut it = 0u32;
     while active.any() {
         let cnt = hi.sub(lo);
@@ -346,7 +378,7 @@ unsafe fn winsorized<C: FVector>(
         let mut s = match init {
             WinsorInit::Std => {
                 let mean = sum_range(cb, n, lo, hi).div(cnt);
-                std_range(cb, n, lo, hi, mean, cnt)
+                std_range(cb, n, lo, hi, mean, cnt, 1.0)
             }
             WinsorInit::Sn => {
                 let mut los = [C::E::ZERO; MAXL];
@@ -372,52 +404,55 @@ unsafe fn winsorized<C: FVector>(
             let t0 = c.sub(sp::<C>(1.5).mul(s));
             let t1 = c.add(sp::<C>(1.5).mul(s));
             let (c0, c1) = (c.sub(sp::<C>(cutoff).mul(s)), c.add(sp::<C>(cutoff).mul(s)));
-            let use_cut = it == 0 && cutoff > 0.0;
+            let use_cut = pi && it == 0 && cutoff > 0.0;
             let mut ys = zero;
-            // two passes: winsorized mean, then spread around it
             for k in 0..n {
-                let x = *cb.add(k);
-                let y = wins(x, t0, t1, c, c0, c1, use_cut);
+                let y = wins(*cb.add(k), t0, t1, c, c0, c1, use_cut);
                 ys = ys.add(C::select(in_range(k, lo, hi), y, zero));
             }
             let wm = ys.div(cnt);
             let mut ss = zero;
             for k in 0..n {
-                let x = *cb.add(k);
-                let y = wins(x, t0, t1, c, c0, c1, use_cut).sub(wm);
+                let y = wins(*cb.add(k), t0, t1, c, c0, c1, use_cut).sub(wm);
                 ss = ss.add(C::select(in_range(k, lo, hi), y.mul(y), zero));
             }
-            let snew = sp::<C>(1.134).mul(ss.div(cnt).sqrt());
-            let conv = if hit >= 1 {
-                s.sub(snew).abs().div(s).lt(sp::<C>(5e-4))
+            let snew = sp::<C>(1.134).mul(ss.div(cnt.sub(one)).sqrt());
+            let delta = s.sub(snew).abs();
+            let done = if pi {
+                if hit >= 1 { delta.div(s).lt(sp::<C>(5e-4)) } else { C::mask_none() }
             } else {
-                C::mask_none()
+                // |s_new - s| <= 5e-4 * s
+                delta.gt(sp::<C>(5e-4).mul(s)).not()
             };
-            c = C::select(hact, wm, c);
+            if pi {
+                c = C::select(hact, wm, c);
+            }
             s = C::select(hact, snew, s);
-            hact = hact.andnot(conv).andnot(one.add(s).eq(one));
+            hact = hact.andnot(done).andnot(one.add(s).eq(one));
             hit += 1;
         }
         let ok = active.andnot(one.add(s).eq(one));
-        // reject (c - x)/s > low and (x - c)/s > high
         let mut ca = [C::E::ZERO; MAXL];
         let mut sa = [C::E::ZERO; MAXL];
         c.store(ca.as_mut_ptr());
         s.store(sa.as_mut_ptr());
         let (lowe, highe) = (C::E::from_f64(low), C::E::from_f64(high));
-        let (nl, nh) = end_scan(
-            cb,
-            lo,
-            hi,
-            |i, x| crate::clip::div_gt(ca[i], x, sa[i], lowe),
-            |i, x| crate::clip::div_gt(x, ca[i], sa[i], highe),
-        );
+        let (nl, nh) = if pi {
+            end_scan(cb, lo, hi, |i, x| div_gt(ca[i], x, sa[i], lowe), |i, x| div_gt(x, ca[i], sa[i], highe))
+        } else {
+            let mut ka = [C::E::ZERO; MAXL];
+            let mut kb = [C::E::ZERO; MAXL];
+            sp::<C>(low).mul(s).store(ka.as_mut_ptr());
+            sp::<C>(high).mul(s).store(kb.as_mut_ptr());
+            end_scan(cb, lo, hi, |i, x| sub_gt(ca[i], x, ka[i]), |i, x| sub_gt(x, ca[i], kb[i]))
+        };
         let nlo = lo.add(nl);
         let nhi = hi.sub(nh);
         let changed = nl.gt(zero).or(nh.gt(zero));
         lo = C::select(ok, nlo, lo);
         hi = C::select(ok, nhi, hi);
-        active = ok.and(changed).and(hi.sub(lo).gt(sp::<C>(2.0)));
+        let floor = if pi { 2.0 } else { 3.0 };
+        active = ok.and(changed).and(hi.sub(lo).gt(sp::<C>(floor)));
         it += 1;
         if let Some(mx) = max_iters {
             if it >= mx {
@@ -426,6 +461,48 @@ unsafe fn winsorized<C: FVector>(
         }
     }
     (lo, hi)
+}
+
+/// Siril's median sigma clipping on one lane's sorted valid values: every pass computes the
+/// median and sample std of the whole stack, and replaces each value beyond the bounds by
+/// that median (the stack keeps its size), until a pass rejects nothing. Returns the kept rank
+/// range of the original sorted stack and the mean of the final stack.
+fn median_sigma_lane(v: &[f64], low: f64, high: f64) -> (usize, usize, f64) {
+    let m = v.len();
+    if m == 0 {
+        return (0, 0, f64::NAN);
+    }
+    let mut w: Vec<f64> = v.to_vec();
+    let mut flag = vec![false; m];
+    let mut s = Vec::with_capacity(m);
+    for _ in 0..4 * m + 8 {
+        s.clear();
+        s.extend_from_slice(&w);
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+        let c = if m % 2 == 1 { s[m / 2] } else { (s[m / 2 - 1] + s[m / 2]) * 0.5 };
+        let mean = s.iter().sum::<f64>() / m as f64;
+        let sd = if m > 1 {
+            (s.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (m - 1) as f64).sqrt()
+        } else {
+            f64::NAN
+        };
+        let (kl, kh) = (low * sd, high * sd);
+        let mut any = false;
+        for k in 0..m {
+            if c - w[k] > kl || w[k] - c > kh {
+                w[k] = c;
+                flag[k] = true;
+                any = true;
+            }
+        }
+        if !any {
+            break;
+        }
+    }
+    let lo = flag.iter().take_while(|&&f| f).count();
+    let hi = m - flag.iter().rev().take_while(|&&f| f).count();
+    let mean = w.iter().sum::<f64>() / m as f64;
+    (lo, hi.max(lo), mean)
 }
 
 #[inline(always)]
@@ -496,14 +573,32 @@ pub(crate) unsafe fn clip_block<S: SortVec, C: FVector + SortVec>(job: &Job, pla
         for i in 0..C::L {
             mm[i] = C::E::from_usize(ms[g * C::L + i]);
         }
+        let mut ms_vals: Option<[f64; MAXL]> = None;
         let m = C::load(mm.as_ptr());
         let (lo, hi) = match plan.rej {
             Rejection::None => (sp::<C>(0.0), m),
-            Rejection::Sigma { low, high, max_iters, center, spread } => {
-                sigma(cb, d, n, m, low, high, max_iters, center, spread, &job.net_bitonic)
+            Rejection::Sigma { low, high, max_iters, center, spread, convention } => {
+                sigma(cb, d, n, m, low, high, max_iters, center, spread, convention, &job.net_bitonic)
             }
-            Rejection::Winsorized { low, high, max_iters, cutoff, init } => {
-                winsorized(cb, n, m, low, high, max_iters, cutoff, init)
+            Rejection::Winsorized { low, high, max_iters, cutoff, init, convention } => {
+                winsorized(cb, n, m, low, high, max_iters, cutoff, init, convention)
+            }
+            Rejection::MedianSigma { low, high } => {
+                let (mut la, mut ha, mut va) = ([C::E::ZERO; MAXL], [C::E::ZERO; MAXL], [0f64; MAXL]);
+                let mut col = Vec::with_capacity(n);
+                for i in 0..C::L {
+                    let mi = ms[g * C::L + i];
+                    col.clear();
+                    for k in 0..mi {
+                        col.push(at(cb, k, i).to_f64());
+                    }
+                    let (l, h, v) = median_sigma_lane(&col, low, high);
+                    la[i] = C::E::from_usize(l);
+                    ha[i] = C::E::from_usize(h);
+                    va[i] = v;
+                }
+                ms_vals = Some(va);
+                (C::load(la.as_ptr()), C::load(ha.as_ptr()))
             }
             Rejection::Percentile { low, high } => percentile(cb, n, m, low, high),
         };
@@ -522,13 +617,11 @@ pub(crate) unsafe fn clip_block<S: SortVec, C: FVector + SortVec>(job: &Job, pla
                 lanes_f64(r, &mut res);
                 // np.median would use (a + b) * 0.5 too; empty ranges are NaN below.
             }
-            Combine::MeanReplaceMedian => {
-                let all = median_range(cb, n, zero, m);
-                let s = sum_range(cb, n, lo, hi);
-                let r = s.add(m.sub(cnt).mul(all)).div(m);
-                lanes_f64(r, &mut res);
-            }
             _ => {}
+        }
+        if let Some(v) = ms_vals {
+            // median sigma clipping averages the stack with rejected values replaced
+            res[..C::L].copy_from_slice(&v[..C::L]);
         }
         // kept value thresholds, for weights and the rejection map
         let mut lo_a = [C::E::ZERO; MAXL];
@@ -544,7 +637,9 @@ pub(crate) unsafe fn clip_block<S: SortVec, C: FVector + SortVec>(job: &Job, pla
             } else {
                 vlo[lane] = f64::INFINITY;
                 vhi[lane] = f64::NEG_INFINITY;
-                res[i] = f64::NAN;
+                if ms_vals.is_none() {
+                    res[i] = f64::NAN;
+                }
             }
             nlow[lane] = l as f64;
             nhigh[lane] = (ms[lane] - h.min(ms[lane])) as f64;

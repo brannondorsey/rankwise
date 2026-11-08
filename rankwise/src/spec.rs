@@ -198,36 +198,55 @@ pub enum Spread {
     MadStd,
 }
 
+/// Whose definition of an algorithm to follow, where tools disagree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Convention {
+    /// `astropy.stats.sigma_clip`: population std, keep `c - low·s <= x <= c + high·s`,
+    /// cumulative passes, then the last bounds re-applied to every value.
+    #[default]
+    Astropy,
+    /// Siril 1.2: sample std (n - 1), reject `c - x > low·s` / `x - c > high·s`, cumulative
+    /// passes until nothing changes. Verified black-box against Siril 1.2.1.
+    Siril,
+    /// PixInsight PCL as documented (winsorized only; not yet validated against PixInsight).
+    PixInsight,
+}
+
 /// The rejection algorithm.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Rejection {
     /// Keep everything.
     None,
-    /// Iterative k-sigma clipping with astropy's semantics: reject values outside
-    /// `[c - low·s, c + high·s]`, recompute on the survivors, stop when nothing changes or
-    /// after `max_iters` (`None` = until convergence). The final mask applies the last bounds
-    /// to every finite value, exactly as `astropy.stats.sigma_clip(..., axis=...)` does.
+    /// Iterative k-sigma clipping: reject values more than `low`/`high` spreads from the
+    /// center, recompute on the survivors, stop when nothing changes or after `max_iters`
+    /// (`None` = until convergence). `convention` picks astropy's or Siril's details.
     Sigma {
         low: f64,
         high: f64,
         max_iters: Option<u32>,
         center: Center,
         spread: Spread,
+        convention: Convention,
     },
+    /// Siril's median sigma clipping: rejected values are replaced by the median (the stack
+    /// keeps its size), median and sample std are recomputed, until nothing new is rejected.
+    MedianSigma { low: f64, high: f64 },
     /// Winsorized sigma clipping (Huber): the spread comes from the stack with values beyond
-    /// ±1.5 s clamped, iterated to convergence; then values beyond `low`/`high` robust sigmas
-    /// from the center are rejected, and the whole procedure repeats on the survivors.
+    /// ±1.5 s clamped, iterated to convergence (×1.134); values beyond `low`/`high` robust
+    /// sigmas from the center are rejected, and everything repeats on the survivors.
     Winsorized {
         low: f64,
         high: f64,
         max_iters: Option<u32>,
-        /// On the first pass, values farther than `cutoff` sigmas are replaced by the center
-        /// instead of the clamp limit (PixInsight's "winsorization cutoff"); `0` disables it.
+        /// First-pass winsorization cutoff in sigmas (PixInsight); `0` disables it.
         cutoff: f64,
         init: WinsorInit,
+        /// `Siril`: center stays the median, sample std. `PixInsight`: center becomes the
+        /// winsorized mean, Sn start, ratio test `(c - x)/s > k`.
+        convention: Convention,
     },
     /// One-pass percentile clipping (Siril): reject `x` when `(c - x)/c > low` or
-    /// `(x - c)/c > high`, with `c` the median.
+    /// `(x - c)/c > high`, with `c` the median. Verified against Siril 1.2.1.
     Percentile { low: f64, high: f64 },
 }
 
@@ -251,9 +270,6 @@ pub enum Combine {
     Median,
     /// Sum of the kept values.
     Sum,
-    /// Siril's "median sigma clipping": rejected values are replaced by the median of the
-    /// whole (valid) stack, then everything is averaged.
-    MeanReplaceMedian,
 }
 
 /// Arithmetic precision for center, spread and bounds.
@@ -286,6 +302,7 @@ impl Clip {
                 max_iters: Some(5),
                 center: Center::Median,
                 spread: Spread::Std,
+                convention: Convention::Astropy,
             },
             combine: Combine::Mean,
             precision: Precision::F64,
@@ -300,12 +317,11 @@ impl Clip {
         }
         c
     }
-    /// Siril's median sigma clipping: sigma clipping whose rejected values are replaced by
-    /// the median.
+    /// Siril's median sigma clipping: rejected values are replaced by the median.
     pub fn median_sigma(low: f64, high: f64) -> Clip {
-        Clip { combine: Combine::MeanReplaceMedian, ..Clip::sigma(low, high) }
+        Clip { rejection: Rejection::MedianSigma { low, high }, ..Clip::sigma(low, high) }
     }
-    /// Winsorized sigma clipping with a std-based start and no cutoff.
+    /// Winsorized sigma clipping (Siril's definition: median center, sample std start).
     pub fn winsorized(low: f64, high: f64) -> Clip {
         Clip {
             rejection: Rejection::Winsorized {
@@ -314,6 +330,7 @@ impl Clip {
                 max_iters: None,
                 cutoff: 0.0,
                 init: WinsorInit::Std,
+                convention: Convention::Siril,
             },
             combine: Combine::Mean,
             precision: Precision::F64,
@@ -385,10 +402,21 @@ impl Clip {
         self
     }
 
+    /// Follow another tool's definition (sigma and winsorized clipping).
+    pub fn convention(mut self, c: Convention) -> Clip {
+        match &mut self.rejection {
+            Rejection::Sigma { convention, .. } | Rejection::Winsorized { convention, .. } => *convention = c,
+            _ => {}
+        }
+        self
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
         let bad = |s: &str| Err(Error::Param(s.to_string()));
         match self.rejection {
-            Rejection::Sigma { low, high, .. } | Rejection::Winsorized { low, high, .. } => {
+            Rejection::Sigma { low, high, .. }
+            | Rejection::Winsorized { low, high, .. }
+            | Rejection::MedianSigma { low, high } => {
                 if !(low >= 0.0 && high >= 0.0) {
                     return bad("sigma bounds must be non-negative");
                 }
@@ -405,6 +433,11 @@ impl Clip {
                 return bad("winsorization cutoff must be 0 (off) or >= 1");
             }
         }
+        if let Rejection::Sigma { convention: Convention::Siril | Convention::PixInsight, center, spread, .. } = self.rejection {
+            if center != Center::Median || spread != Spread::Std {
+                return bad("the Siril convention is defined for median center and std spread");
+            }
+        }
         Ok(())
     }
 }
@@ -419,28 +452,27 @@ pub mod presets {
         Clip::sigma(sigma_lower, sigma_upper).max_iters(maxiters)
     }
 
-    /// Siril's "Sigma Clipping": median center, iterate until nothing is rejected.
+    /// Siril's "Sigma Clipping" (rejection type `s`): median center, sample std, until
+    /// nothing changes. Identical reject maps to Siril 1.2.1 in black-box tests.
     pub fn siril_sigma(low: f64, high: f64) -> Clip {
-        Clip::sigma(low, high).max_iters(None)
+        Clip::sigma(low, high).max_iters(None).convention(Convention::Siril)
     }
-    /// Siril's "MAD Clipping".
-    pub fn siril_mad(low: f64, high: f64) -> Clip {
-        Clip::mad(low, high).max_iters(None)
-    }
-    /// Siril's "Median Sigma Clipping".
+    /// Siril's "Median Sigma Clipping" (`m`). Identical reject maps to Siril 1.2.1.
     pub fn siril_median_sigma(low: f64, high: f64) -> Clip {
-        Clip::median_sigma(low, high).max_iters(None)
+        Clip::median_sigma(low, high)
     }
-    /// Siril's "Winsorized Sigma Clipping".
+    /// Siril's "Winsorized Sigma Clipping" (`w`). Matches Siril 1.2.1 on 99.9% of pixels in
+    /// black-box tests; see docs/presets.md for the known difference.
     pub fn siril_winsorized(low: f64, high: f64) -> Clip {
         Clip::winsorized(low, high)
     }
-    /// Siril's "Percentile Clipping".
+    /// Siril's "Percentile Clipping" (`p`). Identical to Siril 1.2.1 in black-box tests.
     pub fn siril_percentile(low: f64, high: f64) -> Clip {
         Clip::percentile(low, high)
     }
     /// PixInsight's winsorized sigma clipping as documented in PCL: Sn-based start, 1.5σ
     /// Huber clamp with the 1.134 correction, winsorization cutoff 5 on the first pass.
+    /// Not yet validated against PixInsight itself.
     pub fn pixinsight_winsorized(low: f64, high: f64) -> Clip {
         Clip {
             rejection: Rejection::Winsorized {
@@ -449,6 +481,7 @@ pub mod presets {
                 max_iters: None,
                 cutoff: 5.0,
                 init: WinsorInit::Sn,
+                convention: Convention::PixInsight,
             },
             combine: Combine::Mean,
             precision: Precision::F64,
