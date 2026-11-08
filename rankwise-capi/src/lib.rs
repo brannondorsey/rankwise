@@ -4,11 +4,11 @@
 //! no copies), writes into caller-owned outputs and returns an [`rw_status`]. Inputs are
 //! validated before any kernel runs; no Rust panic ever crosses the boundary.
 
-#![allow(non_camel_case_types, clippy::missing_safety_doc)]
+#![allow(non_camel_case_types, clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 use rankwise::{
-    presets, reduce_raw, ArgRank, Center, Clip, Combine, DType, Error, NanPolicy, Normalize, Op, Options,
-    Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Spread,
+    presets, reduce_raw, ArgRank, Center, Clip, Combine, DType, Error, NanPolicy, Normalize, Op, Options, Precision,
+    QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Spread,
 };
 use std::ffi::{c_char, CStr};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -156,11 +156,8 @@ unsafe fn run(
     let strides = [dtype.size() as isize];
     let stack = RawStack { dtype, frames: fr, shape: &shape, strides: &strides };
     let ostr: Vec<[isize; 1]> = outs.iter().map(|(_, d)| [d.size() as isize]).collect();
-    let raw: Vec<RawOut> = outs
-        .iter()
-        .zip(ostr.iter())
-        .map(|(&(p, d), s)| RawOut { ptr: p, dtype: d, strides: s })
-        .collect();
+    let raw: Vec<RawOut> =
+        outs.iter().zip(ostr.iter()).map(|(&(p, d), s)| RawOut { ptr: p, dtype: d, strides: s }).collect();
     let mptrs: Vec<*mut u8>;
     let mstr = [1isize];
     let rm;
@@ -326,31 +323,69 @@ pub unsafe extern "C" fn rw_median_f32(frames: *const *const f32, n: usize, npix
         if !nn(out) {
             return rw_status::RW_ERR_NULL;
         }
-        run(DType::F32, frames as _, n, npix, &Op::Median, &[(out as _, DType::F32)], None, &opts(NanPolicy::Propagate, None))
+        run(
+            DType::F32,
+            frames as _,
+            n,
+            npix,
+            &Op::Median,
+            &[(out as _, DType::F32)],
+            None,
+            &opts(NanPolicy::Propagate, None),
+        )
     })
 }
 
 /// `np.nanmedian` over `n` frames (NaN ignored; all-NaN pixels give NaN).
 #[no_mangle]
-pub unsafe extern "C" fn rw_nanmedian_f32(frames: *const *const f32, n: usize, npix: usize, out: *mut f32) -> rw_status {
+pub unsafe extern "C" fn rw_nanmedian_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    out: *mut f32,
+) -> rw_status {
     guarded(|| {
         if !nn(out) {
             return rw_status::RW_ERR_NULL;
         }
-        run(DType::F32, frames as _, n, npix, &Op::Median, &[(out as _, DType::F32)], None, &opts(NanPolicy::Omit, None))
+        run(
+            DType::F32,
+            frames as _,
+            n,
+            npix,
+            &Op::Median,
+            &[(out as _, DType::F32)],
+            None,
+            &opts(NanPolicy::Omit, None),
+        )
     })
 }
 
 /// Median of uint16 frames, as float64 (NumPy's dtype). `nodata` >= 0 marks missing values,
 /// which are skipped; pass -1 for none.
 #[no_mangle]
-pub unsafe extern "C" fn rw_median_u16(frames: *const *const u16, n: usize, npix: usize, nodata: i32, out: *mut f64) -> rw_status {
+pub unsafe extern "C" fn rw_median_u16(
+    frames: *const *const u16,
+    n: usize,
+    npix: usize,
+    nodata: i32,
+    out: *mut f64,
+) -> rw_status {
     guarded(|| {
         if !nn(out) {
             return rw_status::RW_ERR_NULL;
         }
         let nd = if nodata >= 0 { Some(nodata as f64) } else { None };
-        run(DType::U16, frames as _, n, npix, &Op::Median, &[(out as _, DType::F64)], None, &opts(NanPolicy::Propagate, nd))
+        run(
+            DType::U16,
+            frames as _,
+            n,
+            npix,
+            &Op::Median,
+            &[(out as _, DType::F64)],
+            None,
+            &opts(NanPolicy::Propagate, nd),
+        )
     })
 }
 
@@ -442,7 +477,14 @@ pub unsafe extern "C" fn rw_select_ranks_f32(
 /// Per-pixel minimum (`which` = 0), maximum (1) or range (2) of float32 frames.
 /// `nan_omit` != 0 ignores NaN.
 #[no_mangle]
-pub unsafe extern "C" fn rw_minmax_f32(frames: *const *const f32, n: usize, npix: usize, which: i32, nan_omit: i32, out: *mut f32) -> rw_status {
+pub unsafe extern "C" fn rw_minmax_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    which: i32,
+    nan_omit: i32,
+    out: *mut f32,
+) -> rw_status {
     guarded(|| {
         if !nn(out) {
             return rw_status::RW_ERR_NULL;
@@ -461,7 +503,14 @@ pub unsafe extern "C" fn rw_minmax_f32(frames: *const *const f32, n: usize, npix
 /// Which frame holds the minimum (`which` = 0), maximum (1) or lower median (2) of each pixel.
 /// First occurrence wins; with `nan_omit` != 0, NaN is skipped and all-NaN pixels give -1.
 #[no_mangle]
-pub unsafe extern "C" fn rw_arg_f32(frames: *const *const f32, n: usize, npix: usize, which: i32, nan_omit: i32, out: *mut i64) -> rw_status {
+pub unsafe extern "C" fn rw_arg_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    which: i32,
+    nan_omit: i32,
+    out: *mut i64,
+) -> rw_status {
     guarded(|| {
         if !nn(out) {
             return rw_status::RW_ERR_NULL;
@@ -479,23 +528,53 @@ pub unsafe extern "C" fn rw_arg_f32(frames: *const *const f32, n: usize, npix: u
 
 /// `scipy.stats.trim_mean(stack, proportion, axis=0)` for float32 frames.
 #[no_mangle]
-pub unsafe extern "C" fn rw_trimmed_mean_f32(frames: *const *const f32, n: usize, npix: usize, proportion: f64, out: *mut f32) -> rw_status {
+pub unsafe extern "C" fn rw_trimmed_mean_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    proportion: f64,
+    out: *mut f32,
+) -> rw_status {
     guarded(|| {
         if !nn(out) {
             return rw_status::RW_ERR_NULL;
         }
-        run(DType::F32, frames as _, n, npix, &Op::TrimMean(proportion), &[(out as _, DType::F32)], None, &opts(NanPolicy::Propagate, None))
+        run(
+            DType::F32,
+            frames as _,
+            n,
+            npix,
+            &Op::TrimMean(proportion),
+            &[(out as _, DType::F32)],
+            None,
+            &opts(NanPolicy::Propagate, None),
+        )
     })
 }
 
 /// `scipy.stats.median_abs_deviation(stack, axis=0, scale=scale)` for float32 frames.
 #[no_mangle]
-pub unsafe extern "C" fn rw_mad_f32(frames: *const *const f32, n: usize, npix: usize, scale: f64, out: *mut f32) -> rw_status {
+pub unsafe extern "C" fn rw_mad_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    scale: f64,
+    out: *mut f32,
+) -> rw_status {
     guarded(|| {
         if !nn(out) {
             return rw_status::RW_ERR_NULL;
         }
-        run(DType::F32, frames as _, n, npix, &Op::Mad { scale }, &[(out as _, DType::F32)], None, &opts(NanPolicy::Propagate, None))
+        run(
+            DType::F32,
+            frames as _,
+            n,
+            npix,
+            &Op::Mad { scale },
+            &[(out as _, DType::F32)],
+            None,
+            &opts(NanPolicy::Propagate, None),
+        )
     })
 }
 
@@ -513,10 +592,30 @@ pub unsafe extern "C" fn rw_clip_mean_f32(
     rejected: *mut u16,
 ) -> rw_status {
     if rejected.is_null() {
-        return rw_clip_combine_f32(frames, n, npix, clip, core::ptr::null(), out, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null());
+        return rw_clip_combine_f32(
+            frames,
+            n,
+            npix,
+            clip,
+            core::ptr::null(),
+            out,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null(),
+        );
     }
     let mut hi = vec![0u16; npix];
-    let s = rw_clip_combine_f32(frames, n, npix, clip, core::ptr::null(), out, rejected, hi.as_mut_ptr(), core::ptr::null());
+    let s = rw_clip_combine_f32(
+        frames,
+        n,
+        npix,
+        clip,
+        core::ptr::null(),
+        out,
+        rejected,
+        hi.as_mut_ptr(),
+        core::ptr::null(),
+    );
     if s == rw_status::RW_OK {
         let r = std::slice::from_raw_parts_mut(rejected, npix);
         for (a, b) in r.iter_mut().zip(hi.iter()) {
@@ -559,11 +658,7 @@ pub unsafe extern "C" fn rw_clip_combine_f32(
             }
             o.weights = arr(p.weights);
         }
-        let outs = [
-            (out as *mut u8, DType::F32),
-            (low as *mut u8, DType::U16),
-            (high as *mut u8, DType::U16),
-        ];
+        let outs = [(out as *mut u8, DType::F32), (low as *mut u8, DType::U16), (high as *mut u8, DType::U16)];
         let m = if mask.is_null() { None } else { Some(mask) };
         run(DType::F32, frames as _, n, npix, &Op::Clip(c), &outs, m, &o)
     })

@@ -93,18 +93,11 @@ pub(crate) fn collapse(
 ) -> Result<Space> {
     let nd = shape.len();
     if in_strides.len() != nd {
-        return Err(Error::Shape(format!(
-            "input has {} strides for {} dimensions",
-            in_strides.len(),
-            nd
-        )));
+        return Err(Error::Shape(format!("input has {} strides for {} dimensions", in_strides.len(), nd)));
     }
     for (j, s) in out_strides.iter().enumerate() {
         if s.len() != nd {
-            return Err(Error::Shape(format!(
-                "output {j} has {} dimensions, expected {nd}",
-                s.len()
-            )));
+            return Err(Error::Shape(format!("output {j} has {} dimensions, expected {nd}", s.len())));
         }
     }
     if let Some(m) = mask_strides {

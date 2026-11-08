@@ -106,10 +106,7 @@ impl Vector for F32x16 {
     }
     #[inline(always)]
     unsafe fn nonfinite_mask(self) -> K16 {
-        K16(_mm512_cmp_ps_mask::<_CMP_NLT_UQ>(
-            _mm512_abs_ps(self.0),
-            _mm512_set1_ps(f32::INFINITY),
-        ))
+        K16(_mm512_cmp_ps_mask::<_CMP_NLT_UQ>(_mm512_abs_ps(self.0), _mm512_set1_ps(f32::INFINITY)))
     }
     #[inline(always)]
     unsafe fn mask_none() -> K16 {
@@ -190,10 +187,7 @@ impl Vector for F64x8 {
     }
     #[inline(always)]
     unsafe fn nonfinite_mask(self) -> K8 {
-        K8(_mm512_cmp_pd_mask::<_CMP_NLT_UQ>(
-            _mm512_abs_pd(self.0),
-            _mm512_set1_pd(f64::INFINITY),
-        ))
+        K8(_mm512_cmp_pd_mask::<_CMP_NLT_UQ>(_mm512_abs_pd(self.0), _mm512_set1_pd(f64::INFINITY)))
     }
     #[inline(always)]
     unsafe fn mask_none() -> K8 {

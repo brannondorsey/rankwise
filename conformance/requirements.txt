@@ -1,0 +1,8 @@
+# Pinned conformance references (upgrade on purpose).
+numpy==2.5.3
+scipy==1.18.1
+astropy==8.0.2
+pytest
+hypothesis
+xarray
+dask

@@ -20,7 +20,9 @@ pub enum QIdx {
     Empty,
 }
 
-trait Real: Copy + PartialOrd + core::ops::Add<Output = Self> + core::ops::Sub<Output = Self> + core::ops::Mul<Output = Self> {
+trait Real:
+    Copy + PartialOrd + core::ops::Add<Output = Self> + core::ops::Sub<Output = Self> + core::ops::Mul<Output = Self>
+{
     fn c(x: f64) -> Self;
     fn f(self) -> f64;
     fn floor(self) -> Self;
@@ -288,14 +290,8 @@ mod tests {
 
     #[test]
     fn linear_indices() {
-        assert_eq!(
-            quantile_index(QuantileMethod::Linear, QForm::F64, 5, 0.5),
-            QIdx::Lerp { i0: 2, i1: 3, t: 0.0 }
-        );
-        assert_eq!(
-            quantile_index(QuantileMethod::Linear, QForm::F64, 5, 1.0),
-            QIdx::Lerp { i0: 4, i1: 4, t: 5.0 }
-        );
+        assert_eq!(quantile_index(QuantileMethod::Linear, QForm::F64, 5, 0.5), QIdx::Lerp { i0: 2, i1: 3, t: 0.0 });
+        assert_eq!(quantile_index(QuantileMethod::Linear, QForm::F64, 5, 1.0), QIdx::Lerp { i0: 4, i1: 4, t: 5.0 });
         assert_eq!(quantile_index(QuantileMethod::Lower, QForm::F64, 5, 0.6), QIdx::Take(2));
         assert_eq!(quantile_index(QuantileMethod::Nearest, QForm::F64, 5, 0.625), QIdx::Take(2));
     }

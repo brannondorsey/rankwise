@@ -21,19 +21,14 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::BadDepth(n) => write!(
-                f,
-                "stack depth {n} is out of range: rankwise v0.1 reduces 1..={} frames",
-                crate::MAX_FRAMES
-            ),
+            Error::BadDepth(n) => {
+                write!(f, "stack depth {n} is out of range: rankwise v0.1 reduces 1..={} frames", crate::MAX_FRAMES)
+            }
             Error::Shape(s) => write!(f, "shape mismatch: {s}"),
             Error::Param(s) => write!(f, "invalid parameter: {s}"),
             Error::DType(s) => write!(f, "unsupported dtype: {s}"),
             Error::UnsupportedIsa(s) => write!(f, "this CPU cannot run the {s} kernels"),
-            Error::UnknownIsa(s) => write!(
-                f,
-                "unknown ISA {s:?} (expected scalar, avx2, avx512, neon or auto)"
-            ),
+            Error::UnknownIsa(s) => write!(f, "unknown ISA {s:?} (expected scalar, avx2, avx512, neon or auto)"),
         }
     }
 }

@@ -9,8 +9,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use rankwise::{
     presets, reduce_raw, ArgRank, Center, Clip, Combine, DType, Error, Isa, NanPolicy, Normalize, Op, Options,
-    OutRounding, Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Rejection, Spread,
-    Staging,
+    OutRounding, Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Rejection, Spread, Staging,
 };
 
 fn err(e: Error) -> PyErr {
@@ -199,7 +198,8 @@ fn reduce(
             .zip(out_dts.iter())
             .map(|(o, &d)| RawOut { ptr: o.0 as *mut u8, dtype: d, strides: &o.2 })
             .collect();
-        let mptrs: Vec<*mut u8> = mask.as_ref().map(|m| m.0.iter().map(|&a| a as *mut u8).collect()).unwrap_or_default();
+        let mptrs: Vec<*mut u8> =
+            mask.as_ref().map(|m| m.0.iter().map(|&a| a as *mut u8).collect()).unwrap_or_default();
         let rm = mask.as_ref().map(|m| RawMask { frames: &mptrs, dtype: mask_dt.unwrap(), strides: &m.2 });
         // SAFETY: the Python layer validated shapes and keeps every buffer alive.
         unsafe { reduce_raw(&stack, &op, &raw_outs, rm.as_ref(), &opts) }
@@ -234,7 +234,14 @@ fn network_size(n: usize, ranks: Option<Vec<usize>>) -> usize {
 }
 
 #[pyfunction]
-fn describe(op: &Bound<'_, PyDict>, in_dtype: &str, frames: Vec<usize>, shape: Vec<usize>, strides: Vec<isize>, opts: &Bound<'_, PyDict>) -> PyResult<String> {
+fn describe(
+    op: &Bound<'_, PyDict>,
+    in_dtype: &str,
+    frames: Vec<usize>,
+    shape: Vec<usize>,
+    strides: Vec<isize>,
+    opts: &Bound<'_, PyDict>,
+) -> PyResult<String> {
     let op = parse_op(op)?;
     let opts = parse_opts(opts)?;
     let fptrs: Vec<*const u8> = frames.iter().map(|&a| a as *const u8).collect();

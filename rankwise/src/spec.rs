@@ -220,14 +220,7 @@ pub enum Rejection {
     /// Iterative k-sigma clipping: reject values more than `low`/`high` spreads from the
     /// center, recompute on the survivors, stop when nothing changes or after `max_iters`
     /// (`None` = until convergence). `convention` picks astropy's or Siril's details.
-    Sigma {
-        low: f64,
-        high: f64,
-        max_iters: Option<u32>,
-        center: Center,
-        spread: Spread,
-        convention: Convention,
-    },
+    Sigma { low: f64, high: f64, max_iters: Option<u32>, center: Center, spread: Spread, convention: Convention },
     /// Siril's median sigma clipping: rejected values are replaced by the median (the stack
     /// keeps its size), median and sample std are recomputed, until nothing new is rejected.
     MedianSigma { low: f64, high: f64 },
@@ -348,20 +341,13 @@ impl Clip {
     }
     /// No rejection: a plain (weighted, normalized) combine of the finite values.
     pub fn none() -> Clip {
-        Clip {
-            rejection: Rejection::None,
-            combine: Combine::Mean,
-            precision: Precision::F64,
-            mask_infinite: true,
-        }
+        Clip { rejection: Rejection::None, combine: Combine::Mean, precision: Precision::F64, mask_infinite: true }
     }
     /// Cap the number of rejection passes (`None` = until nothing changes).
     pub fn max_iters(mut self, iters: impl Into<Option<u32>>) -> Clip {
         let it = iters.into();
         match &mut self.rejection {
-            Rejection::Sigma { max_iters, .. } | Rejection::Winsorized { max_iters, .. } => {
-                *max_iters = it
-            }
+            Rejection::Sigma { max_iters, .. } | Rejection::Winsorized { max_iters, .. } => *max_iters = it,
             _ => {}
         }
         self
@@ -433,7 +419,9 @@ impl Clip {
                 return bad("winsorization cutoff must be 0 (off) or >= 1");
             }
         }
-        if let Rejection::Sigma { convention: Convention::Siril | Convention::PixInsight, center, spread, .. } = self.rejection {
+        if let Rejection::Sigma { convention: Convention::Siril | Convention::PixInsight, center, spread, .. } =
+            self.rejection
+        {
             if center != Center::Median || spread != Spread::Std {
                 return bad("the Siril convention is defined for median center and std spread");
             }

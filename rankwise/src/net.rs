@@ -128,13 +128,8 @@ pub fn plan(n: usize, needed: Option<&[usize]>, unroll: usize) -> NetPlan {
         chunk *= 2;
     }
     if chunk >= 8 {
-        let suffix: Vec<Comparator> = pr
-            .0
-            .iter()
-            .zip(pr.1.iter())
-            .filter(|(_, &l)| l as usize >= chunk)
-            .map(|(&c, _)| c)
-            .collect();
+        let suffix: Vec<Comparator> =
+            pr.0.iter().zip(pr.1.iter()).filter(|(_, &l)| l as usize >= chunk).map(|(&c, _)| c).collect();
         return NetPlan::Hybrid { n, chunk, suffix: Arc::new(suffix) };
     }
     NetPlan::Interp(Arc::new(pr.0.clone()))

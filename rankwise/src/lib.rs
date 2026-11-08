@@ -18,7 +18,14 @@
 //! assert_eq!(master[0], 15.0);
 //! ```
 
-#![allow(clippy::missing_safety_doc, clippy::needless_range_loop, clippy::too_many_arguments)]
+#![allow(
+    clippy::missing_safety_doc,
+    clippy::needless_range_loop,
+    clippy::too_many_arguments,
+    clippy::neg_cmp_op_on_partial_ord,
+    clippy::type_complexity,
+    clippy::manual_range_contains
+)]
 
 mod arch;
 mod clip;

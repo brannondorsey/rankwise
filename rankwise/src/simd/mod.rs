@@ -217,10 +217,7 @@ impl Isa {
 
     /// Every ISA this CPU supports, fastest first.
     pub fn available() -> Vec<Isa> {
-        [Isa::Avx512, Isa::Neon, Isa::Avx2, Isa::Scalar]
-            .into_iter()
-            .filter(|i| i.is_supported())
-            .collect()
+        [Isa::Avx512, Isa::Neon, Isa::Avx2, Isa::Scalar].into_iter().filter(|i| i.is_supported()).collect()
     }
 
     /// The fastest ISA this CPU supports, ignoring overrides.

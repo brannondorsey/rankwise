@@ -167,6 +167,12 @@ pub fn clip_frames(
 }
 
 /// astropy-compatible sigma-clipped mean (median center, population std).
-pub fn sigma_clip_mean_frames(frames: &[&[f32]], sigma_lower: f64, sigma_upper: f64, max_iters: Option<u32>, out: &mut [f32]) -> Result<()> {
+pub fn sigma_clip_mean_frames(
+    frames: &[&[f32]],
+    sigma_lower: f64,
+    sigma_upper: f64,
+    max_iters: Option<u32>,
+    out: &mut [f32],
+) -> Result<()> {
     clip_frames(frames, &Clip::sigma(sigma_lower, sigma_upper).max_iters(max_iters), out, None, None)
 }

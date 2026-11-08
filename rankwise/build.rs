@@ -4,6 +4,8 @@
 //! `#[target_feature]` kernel LLVM keeps the whole stack in vector registers instead of
 //! spilling a buffer to L1 after every compare-exchange (the prototype's bottleneck).
 
+#![allow(clippy::needless_range_loop)]
+
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -53,11 +55,7 @@ fn main() {
     }
     // Dispatchers. `kind` 0 = full sort, 1 = median-pruned.
     writeln!(out, "#[inline(always)]").unwrap();
-    writeln!(
-        out,
-        "pub(crate) unsafe fn unrolled<V: crate::simd::Vector>(b: *mut V, n: usize, kind: u8) {{"
-    )
-    .unwrap();
+    writeln!(out, "pub(crate) unsafe fn unrolled<V: crate::simd::Vector>(b: *mut V, n: usize, kind: u8) {{").unwrap();
     writeln!(out, "    match (kind, n) {{").unwrap();
     for n in 2..=MAX_UNROLL {
         writeln!(out, "        (0, {n}) => sort_{n}(b),").unwrap();

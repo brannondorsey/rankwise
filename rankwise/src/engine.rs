@@ -249,9 +249,10 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
     };
     let mut pad = [S::E::ZERO; MAXL];
 
-    let scale_off: Option<(Vec<S::E>, Vec<S::E>)> = job.norm.as_ref().map(|(s, o)| {
-        (s.iter().map(|&x| S::E::from_f64(x)).collect(), o.iter().map(|&x| S::E::from_f64(x)).collect())
-    });
+    let scale_off: Option<(Vec<S::E>, Vec<S::E>)> = job
+        .norm
+        .as_ref()
+        .map(|(s, o)| (s.iter().map(|&x| S::E::from_f64(x)).collect(), o.iter().map(|&x| S::E::from_f64(x)).collect()));
 
     let mut t0 = u.p0;
     while t0 < u.p1 {
@@ -342,7 +343,15 @@ unsafe fn norm<S: Vector>(x: S, s: S::E, o: S::E) -> S {
 
 /// Copy (and convert) `cnt` pixels of every frame into the tile, `ts` elements per frame.
 #[inline(always)]
-unsafe fn stage<S: Vector>(job: &Job, src: &[*const u8], ps: isize, t0: usize, cnt: usize, tile: &mut [S::E], ts: usize) {
+unsafe fn stage<S: Vector>(
+    job: &Job,
+    src: &[*const u8],
+    ps: isize,
+    t0: usize,
+    cnt: usize,
+    tile: &mut [S::E],
+    ts: usize,
+) {
     let n = job.n;
     let tp = tile.as_mut_ptr();
     macro_rules! go {
@@ -362,9 +371,7 @@ unsafe fn stage<S: Vector>(job: &Job, src: &[*const u8], ps: isize, t0: usize, c
                 for k in 0..n {
                     let base = src[k].offset(t0 as isize * ps);
                     let dst = tp.add(k * ts);
-                    if ps == core::mem::size_of::<$t>() as isize
-                        && TypeId::of::<$t>() == TypeId::of::<S::E>()
-                    {
+                    if ps == core::mem::size_of::<$t>() as isize && TypeId::of::<$t>() == TypeId::of::<S::E>() {
                         core::ptr::copy_nonoverlapping(base as *const S::E, dst, cnt);
                     } else {
                         for p in 0..cnt {
@@ -560,7 +567,8 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
                 for i in 0..lanes {
                     let m = ms[i];
                     // (m - 1) / 2 == m / 2 for odd m: np.ma.median's (x + x) / 2
-                    vals[i] = if m == 0 { f64::NAN } else { np_mid(at(blk.buf, (m - 1) / 2, i), at(blk.buf, m / 2, i)) };
+                    vals[i] =
+                        if m == 0 { f64::NAN } else { np_mid(at(blk.buf, (m - 1) / 2, i), at(blk.buf, m / 2, i)) };
                 }
             }
             put(&blk.outs[0], blk.p, &vals, lanes);
@@ -798,7 +806,14 @@ unsafe fn mad<S: crate::arch::SortVec, C: crate::arch::SortVec + FVector>(
 /// Which frame holds rank r in a stable argsort (NaN last): count values below the target,
 /// then find the right occurrence of the target among equal values, in frame order.
 #[inline(always)]
-unsafe fn argrank<S: Vector>(job: &Job, blk: &Blk<S>, rank: ArgRank, omit: bool, ms: &[usize; MAXL], vals: &mut [f64; MAXL]) {
+unsafe fn argrank<S: Vector>(
+    job: &Job,
+    blk: &Blk<S>,
+    rank: ArgRank,
+    omit: bool,
+    ms: &[usize; MAXL],
+    vals: &mut [f64; MAXL],
+) {
     let n = job.n;
     let l = S::L;
     // Per-lane rank and target value.

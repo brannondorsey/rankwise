@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop, clippy::unnecessary_unwrap)]
 //! Every kernel on every ISA against a scalar sort-based oracle.
 
 use rankwise::*;
@@ -80,7 +81,8 @@ fn run_f32(st: &[Vec<f32>], op: &Op, opts: &Options, nout: usize, dt: DType) -> 
     }
 }
 
-const NS: &[usize] = &[1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 40, 63, 64, 65, 100, 127, 128, 129, 255, 256, 300, 511, 512];
+const NS: &[usize] =
+    &[1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 40, 63, 64, 65, 100, 127, 128, 129, 255, 256, 300, 511, 512];
 const NPIX: usize = 77; // leaves a partial vector on every ISA
 
 #[test]
@@ -90,7 +92,11 @@ fn median_and_nanmedian() {
             for (nanf, ties) in [(0.0, false), (0.0, true), (0.2, false)] {
                 let st = stack(n, NPIX, nanf, ties, n as u64 * 7 + 1);
                 for omit in [false, true] {
-                    let opts = Options { isa: Some(isa), nan: if omit { NanPolicy::Omit } else { NanPolicy::Propagate }, ..Default::default() };
+                    let opts = Options {
+                        isa: Some(isa),
+                        nan: if omit { NanPolicy::Omit } else { NanPolicy::Propagate },
+                        ..Default::default()
+                    };
                     let got = run_f32(&st, &Op::Median, &opts, 1, DType::F32);
                     for p in 0..NPIX {
                         let mut c = column(&st, p);
@@ -149,7 +155,11 @@ fn quantiles_all_methods_and_forms() {
                     for omit in [false, true] {
                         let qs = vec![0.0, 0.1, 1.0 / 3.0, 0.5, 0.77, 1.0];
                         let spec = QuantileSpec { form, method, ..QuantileSpec::new(qs.clone()) };
-                        let opts = Options { isa: Some(isa), nan: if omit { NanPolicy::Omit } else { NanPolicy::Propagate }, ..Default::default() };
+                        let opts = Options {
+                            isa: Some(isa),
+                            nan: if omit { NanPolicy::Omit } else { NanPolicy::Propagate },
+                            ..Default::default()
+                        };
                         let got = run_f32(&st, &Op::Quantile(spec), &opts, qs.len(), DType::F64);
                         for p in 0..NPIX {
                             let mut c = column(&st, p);
@@ -158,7 +168,11 @@ fn quantiles_all_methods_and_forms() {
                             let m = if omit { c.iter().filter(|x| !x.is_nan()).count() } else { n };
                             for (j, &q) in qs.iter().enumerate() {
                                 let want = if !omit && has_nan { f64::NAN } else { lerp_ref(form, method, &c, m, q) };
-                                assert!(same(got[j][p], want), "{isa} n={n} {method:?} {form:?} omit={omit} q={q}: {} vs {want}", got[j][p]);
+                                assert!(
+                                    same(got[j][p], want),
+                                    "{isa} n={n} {method:?} {form:?} omit={omit} q={q}: {} vs {want}",
+                                    got[j][p]
+                                );
                             }
                         }
                     }
@@ -174,7 +188,11 @@ fn min_max_arg() {
         for &n in NS {
             let st = stack(n, NPIX, 0.1, true, n as u64 * 3 + 7);
             for omit in [false, true] {
-                let opts = Options { isa: Some(isa), nan: if omit { NanPolicy::Omit } else { NanPolicy::Propagate }, ..Default::default() };
+                let opts = Options {
+                    isa: Some(isa),
+                    nan: if omit { NanPolicy::Omit } else { NanPolicy::Propagate },
+                    ..Default::default()
+                };
                 let mn = run_f32(&st, &Op::Min, &opts, 1, DType::F32);
                 let mx = run_f32(&st, &Op::Max, &opts, 1, DType::F32);
                 let amn = run_f32(&st, &Op::ArgMin, &opts, 1, DType::I64);
@@ -192,8 +210,12 @@ fn min_max_arg() {
                         let mut bmn = valid[0];
                         let mut bmx = valid[0];
                         for &(i, x) in &valid {
-                            if x < bmn.1 { bmn = (i, x); }
-                            if x > bmx.1 { bmx = (i, x); }
+                            if x < bmn.1 {
+                                bmn = (i, x);
+                            }
+                            if x > bmx.1 {
+                                bmx = (i, x);
+                            }
                         }
                         (bmn.1 as f64, bmx.1 as f64, bmn.0 as f64, bmx.0 as f64)
                     };
@@ -213,7 +235,15 @@ fn min_max_arg() {
                         }
                     });
                     let m = valid.len();
-                    let want = if omit { if m == 0 { -1.0 } else { idx[(m - 1) / 2] as f64 } } else { idx[(n - 1) / 2] as f64 };
+                    let want = if omit {
+                        if m == 0 {
+                            -1.0
+                        } else {
+                            idx[(m - 1) / 2] as f64
+                        }
+                    } else {
+                        idx[(n - 1) / 2] as f64
+                    };
                     assert_eq!(amed[0][p], want, "{isa} argmedian n={n} omit={omit} p={p}");
                 }
             }
@@ -232,7 +262,7 @@ fn astropy_clip(c: &[f64], lo_s: f64, hi_s: f64, maxiters: i32) -> (f64, f64) {
     let mut it = 0;
     loop {
         let k = buf.len();
-        let med = if k % 2 == 0 { 0.5 * (buf[k / 2] + buf[k / 2 - 1]) } else { buf[(k - 1) / 2] };
+        let med = if k.is_multiple_of(2) { 0.5 * (buf[k / 2] + buf[k / 2 - 1]) } else { buf[(k - 1) / 2] };
         let mean = buf.iter().sum::<f64>() / k as f64;
         let std = (buf.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / k as f64).sqrt();
         lb = med - lo_s * std;
@@ -284,7 +314,8 @@ fn sigma_clip_matches_astropy_algorithm() {
                 assert_eq!(finite - wl - wh, kept.len());
                 let mut ks = kept.clone();
                 ks.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                let want = if ks.is_empty() { f64::NAN } else { (ks.iter().sum::<f64>() / ks.len() as f64) as f32 as f64 };
+                let want =
+                    if ks.is_empty() { f64::NAN } else { (ks.iter().sum::<f64>() / ks.len() as f64) as f32 as f64 };
                 assert!(same(out[p] as f64, want), "{isa} n={n} p={p} {} vs {want}", out[p]);
                 for k in 0..n {
                     let rej = !(c[k].is_finite() && c[k] >= lb && c[k] <= ub);
@@ -319,7 +350,12 @@ fn isas_agree_bit_for_bit() {
                 if let Some(b) = &base {
                     for j in 0..nout {
                         for p in 0..1001 {
-                            assert!(same(b[j][p], got[j][p]), "{op:?} n={n} {isa} out {j} p={p}: {} vs {}", b[j][p], got[j][p]);
+                            assert!(
+                                same(b[j][p], got[j][p]),
+                                "{op:?} n={n} {isa} out {j} p={p}: {} vs {}",
+                                b[j][p],
+                                got[j][p]
+                            );
                         }
                     }
                 } else {

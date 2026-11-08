@@ -6,15 +6,23 @@ fn main() {
     let n: usize = a.get(1).and_then(|s| s.parse().ok()).unwrap_or(31);
     let side: usize = a.get(2).and_then(|s| s.parse().ok()).unwrap_or(2048);
     let pad: usize = a.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let staging = match a.get(4).map(|s| s.as_str()) { Some("never") => Staging::Never, Some("always") => Staging::Always, _ => Staging::Auto };
+    let staging = match a.get(4).map(|s| s.as_str()) {
+        Some("never") => Staging::Never,
+        Some("always") => Staging::Always,
+        _ => Staging::Auto,
+    };
     let npix = side * side;
     let stride = npix + pad;
     let mut buf = vec![0f32; n * stride + 16];
     let mut s = 12345u64;
     for x in buf.iter_mut() {
-        s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
         *x = 1000.0 + ((s >> 40) as f32 / 16777216.0 - 0.5) * 60.0;
-        if (s & 1023) == 0 { *x += 5000.0; }
+        if (s & 1023) == 0 {
+            *x += 5000.0;
+        }
     }
     let frames: Vec<&[f32]> = (0..n).map(|k| &buf[k * stride..k * stride + npix]).collect();
     let mut out = vec![0f32; npix];
@@ -36,12 +44,25 @@ fn main() {
             let mut best = f64::MAX;
             for _ in 0..5 {
                 let mut outs: Vec<Out> = vec![Out::F32(&mut out)];
-                if let Op::Clip(_) = op { outs.push(Out::None); outs.push(Out::None); } else { for e in extra.iter_mut() { outs.push(Out::F32(e)); } }
+                if let Op::Clip(_) = op {
+                    outs.push(Out::None);
+                    outs.push(Out::None);
+                } else {
+                    for e in extra.iter_mut() {
+                        outs.push(Out::F32(e));
+                    }
+                }
                 let t = Instant::now();
                 reduce_frames(&frames, op, &mut outs, None, &opts).unwrap();
                 best = best.min(t.elapsed().as_secs_f64());
             }
-            println!("{:7} {:12} n={n} {side}x{side} pad={pad}: {:.3} s  {:6.1} ns/px", isa.name(), name, best, best / npix as f64 * 1e9);
+            println!(
+                "{:7} {:12} n={n} {side}x{side} pad={pad}: {:.3} s  {:6.1} ns/px",
+                isa.name(),
+                name,
+                best,
+                best / npix as f64 * 1e9
+            );
         }
     }
 }

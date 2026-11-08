@@ -31,7 +31,6 @@ unsafe fn sp<C: Vector>(x: f64) -> C {
     C::splat(C::E::from_f64(x))
 }
 
-
 /// Median of sorted ranks `[lo, hi)` per lane, astropy's way: `0.5 * (upper + lower)`.
 /// Gathers the two middle values lane by lane (cheaper than a masked pass over n).
 #[inline(always)]
@@ -228,8 +227,6 @@ unsafe fn mad_range<C: FVector + SortVec>(
     median_range(d as *const C, n, sp::<C>(0.0), cnt)
 }
 
-
-
 /// astropy `sigma_clip` (fast path) on sorted lanes. Returns the final kept rank range.
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
@@ -342,7 +339,7 @@ fn sn(x: &[f64]) -> f64 {
         meds.push(v);
     }
     meds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
-    meds[(c + 1) / 2 - 1]
+    meds[c.div_ceil(2) - 1]
 }
 
 /// Winsorized sigma clipping (Huber).
@@ -419,7 +416,11 @@ unsafe fn winsorized<C: FVector>(
             let snew = sp::<C>(1.134).mul(ss.div(cnt.sub(one)).sqrt());
             let delta = s.sub(snew).abs();
             let done = if pi {
-                if hit >= 1 { delta.div(s).lt(sp::<C>(5e-4)) } else { C::mask_none() }
+                if hit >= 1 {
+                    delta.div(s).lt(sp::<C>(5e-4))
+                } else {
+                    C::mask_none()
+                }
             } else {
                 // |s_new - s| <= 5e-4 * s
                 delta.gt(sp::<C>(5e-4).mul(s)).not()
@@ -555,7 +556,12 @@ unsafe fn load_raw_group<S: Vector, C: FVector>(raw: *const S, k: usize, g: usiz
 
 /// Reject, combine and write one block.
 #[inline(always)]
-pub(crate) unsafe fn clip_block<S: SortVec, C: FVector + SortVec>(job: &Job, plan: &ClipPlan, blk: &Blk<S>, ms: &[usize; MAXL]) {
+pub(crate) unsafe fn clip_block<S: SortVec, C: FVector + SortVec>(
+    job: &Job,
+    plan: &ClipPlan,
+    blk: &Blk<S>,
+    ms: &[usize; MAXL],
+) {
     let n = job.n;
     let groups = S::L / C::L;
     let cb = blk.scratch as *mut C;

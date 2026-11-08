@@ -58,10 +58,10 @@ pub fn natural_dtype(op: &Op, input: DType) -> DType {
             DType::F32 => DType::F32,
             _ => DType::F64,
         },
-        Op::Quantile(q) => {
-            Lerp::new(input, q.form, None, q.out_rounding).natural_dtype(q.method.is_discrete()
-                || (q.form == crate::spec::QForm::WeakInt && q.method == crate::spec::QuantileMethod::Linear))
-        }
+        Op::Quantile(q) => Lerp::new(input, q.form, None, q.out_rounding).natural_dtype(
+            q.method.is_discrete()
+                || (q.form == crate::spec::QForm::WeakInt && q.method == crate::spec::QuantileMethod::Linear),
+        ),
         Op::ArgMin | Op::ArgMax | Op::ArgRank(_) => DType::I64,
         Op::TrimMean(_) | Op::Iqr { .. } | Op::Mad { .. } => match input {
             DType::F32 => DType::F32,
@@ -86,13 +86,7 @@ fn needed_union(tab: &[QIdx], n: usize, out: &mut Vec<usize>) {
 }
 
 /// Validate and plan. `outs` must have [`Op::n_outputs`] entries.
-pub(crate) fn plan(
-    stack: &RawStack,
-    op: &Op,
-    outs: &[RawOut],
-    mask: Option<&RawMask>,
-    opts: &Options,
-) -> Result<Job> {
+pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&RawMask>, opts: &Options) -> Result<Job> {
     let n = stack.frames.len();
     if n == 0 || n > MAX_FRAMES {
         return Err(Error::BadDepth(n));
@@ -109,11 +103,7 @@ pub(crate) fn plan(
     }
     let isa = resolve_isa(opts.isa)?;
     let omit = opts.nan == NanPolicy::Omit || (in_dtype == DType::U16 && opts.nodata.is_some());
-    let has_norm = opts
-        .normalize
-        .as_ref()
-        .map(|z| z.scale.is_some() || z.offset.is_some())
-        .unwrap_or(false);
+    let has_norm = opts.normalize.as_ref().map(|z| z.scale.is_some() || z.offset.is_some()).unwrap_or(false);
     let sdt = if in_dtype == DType::U16 && has_norm { DType::F32 } else { in_dtype };
     if let Some(v) = opts.nodata {
         if in_dtype != DType::U16 {
@@ -176,11 +166,8 @@ pub(crate) fn plan(
             if q.q.iter().any(|x| !(*x >= 0.0 && *x <= 1.0)) {
                 return Err(Error::Param("Quantiles must be in the range [0, 1]".into()));
             }
-            let tabs: Vec<Vec<QIdx>> = q
-                .q
-                .iter()
-                .map(|&qq| (0..=n).map(|m| quantile_index(q.method, q.form, m, qq)).collect())
-                .collect();
+            let tabs: Vec<Vec<QIdx>> =
+                q.q.iter().map(|&qq| (0..=n).map(|m| quantile_index(q.method, q.form, m, qq)).collect()).collect();
             let mut need = Vec::new();
             for t in &tabs {
                 needed_union(t, n, &mut need);
@@ -275,7 +262,8 @@ pub(crate) fn plan(
     };
     let net_bitonic = net::bitonic_plan(n);
 
-    let out_strides: Vec<&[isize]> = outs.iter().map(|o| if o.ptr.is_null() { stack.strides_zero() } else { o.strides }).collect();
+    let out_strides: Vec<&[isize]> =
+        outs.iter().map(|o| if o.ptr.is_null() { stack.strides_zero() } else { o.strides }).collect();
     let space = collapse(stack.shape, stack.strides, &out_strides, mask.map(|m| m.strides))?;
     let esz = in_dtype.size() as isize;
     let need_stage = space.npix > 0 && (space.in_ps != esz || sdt != in_dtype);

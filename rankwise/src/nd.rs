@@ -55,7 +55,12 @@ impl From<Clip> for Reduction {
 pub trait Reduce<T: Sample, D: Dimension + RemoveAxis> {
     /// Reduce `axis` with a single-output op (median, a clipped mean, ...) into `out`, whose
     /// shape is the input's without `axis`.
-    fn reduce_into<O: OutSample>(&self, axis: Axis, r: impl Into<Reduction>, out: ArrayViewMut<O, D::Smaller>) -> Result<()>;
+    fn reduce_into<O: OutSample>(
+        &self,
+        axis: Axis,
+        r: impl Into<Reduction>,
+        out: ArrayViewMut<O, D::Smaller>,
+    ) -> Result<()>;
 }
 
 impl<S, T, D> Reduce<T, D> for ArrayBase<S, D>
@@ -64,7 +69,12 @@ where
     T: Sample,
     D: Dimension + RemoveAxis,
 {
-    fn reduce_into<O: OutSample>(&self, axis: Axis, r: impl Into<Reduction>, mut out: ArrayViewMut<O, D::Smaller>) -> Result<()> {
+    fn reduce_into<O: OutSample>(
+        &self,
+        axis: Axis,
+        r: impl Into<Reduction>,
+        mut out: ArrayViewMut<O, D::Smaller>,
+    ) -> Result<()> {
         let r = r.into();
         let a = axis.index();
         if a >= self.ndim() {
@@ -78,8 +88,7 @@ where
         let es = core::mem::size_of::<T>() as isize;
         let st = self.strides();
         let base = self.as_ptr() as *const u8;
-        let frames: Vec<*const u8> =
-            (0..shape[a]).map(|k| unsafe { base.offset(k as isize * st[a] * es) }).collect();
+        let frames: Vec<*const u8> = (0..shape[a]).map(|k| unsafe { base.offset(k as isize * st[a] * es) }).collect();
         let strides: Vec<isize> = st.iter().enumerate().filter(|(i, _)| *i != a).map(|(_, &s)| s * es).collect();
         let os = core::mem::size_of::<O>() as isize;
         let ostrides: Vec<isize> = out.strides().iter().map(|&s| s * os).collect();
