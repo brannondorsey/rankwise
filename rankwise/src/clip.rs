@@ -509,7 +509,7 @@ impl Fl for f64 {
 
 /// `sum f(k)` in the order the vector kernels use: four accumulators keyed by `k % 4`,
 /// combined `(a0 + a1) + (a2 + a3)`.
-fn sum4<T: Fl>(n: usize, f: impl Fn(usize) -> T) -> T {
+fn sum4<T: Fl>(n: usize, f: &dyn Fn(usize) -> T) -> T {
     let mut a = [T::ZERO; 4];
     for k in 0..n {
         a[k % 4] = a[k % 4] + f(k);
@@ -530,14 +530,23 @@ fn median_sigma_lane<T: Fl>(v: &[T], low: f64, high: f64) -> (usize, usize, f64)
     let mut flag = vec![false; m];
     let mut s = Vec::with_capacity(m);
     let half = T::of(0.5);
+    // Summation order that reproduces Siril on real frames: in order for f64, the vector
+    // kernels' four accumulators for f32 (checked on 3 × 16.8 M pixels, bench/ccd_real.py).
+    let sum = |n: usize, f: &dyn Fn(usize) -> T| -> T {
+        if core::mem::size_of::<T>() == 8 {
+            (0..n).fold(T::ZERO, |a, k| a + f(k))
+        } else {
+            sum4(n, f)
+        }
+    };
     for _ in 0..4 * m + 8 {
         s.clear();
         s.extend_from_slice(&w);
         s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
         let c = if m % 2 == 1 { s[m / 2] } else { (s[m / 2 - 1] + s[m / 2]) * half };
-        let mean = sum4(m, |k| s[k]) / T::of(m as f64);
+        let mean = sum(m, &|k| s[k]) / T::of(m as f64);
         let sd = if m > 1 {
-            (sum4(m, |k| (s[k] - mean) * (s[k] - mean)) / T::of((m - 1) as f64)).sqrt()
+            (sum(m, &|k| (s[k] - mean) * (s[k] - mean)) / T::of((m - 1) as f64)).sqrt()
         } else {
             T::of(f64::NAN)
         };
