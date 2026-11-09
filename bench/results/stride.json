@@ -11,7 +11,7 @@
    "scalar"
   ],
   "python": "3.13.18",
-  "date": "2026-11-08"
+  "date": "2026-11-09"
  },
  "unit": "ns per output pixel",
  "n": 31,
@@ -21,64 +21,138 @@
    "frame": "1024x1024",
    "stride_bytes": 4194304,
    "pad_bytes": 0,
-   "median_ns_px": 18.118205071665507,
-   "sigclip_ns_px": 56.84808158934462
+   "path": "skewed",
+   "median_ns_px": 13.951499938831546,
+   "sigclip_ns_px": 53.37121582096177
   },
   {
    "frame": "1024x1024",
    "stride_bytes": 4194368,
    "pad_bytes": 64,
-   "median_ns_px": 12.448336601106336,
-   "sigclip_ns_px": 49.382198333974834
+   "path": "direct",
+   "median_ns_px": 12.54444503741986,
+   "sigclip_ns_px": 50.09797859195642
   },
   {
    "frame": "1024x1024",
    "stride_bytes": 4198400,
    "pad_bytes": 4096,
-   "median_ns_px": 12.72982215819174,
-   "sigclip_ns_px": 47.36076641108367
+   "path": "direct",
+   "median_ns_px": 13.170297622454308,
+   "sigclip_ns_px": 47.637957572600754
   },
   {
    "frame": "2048x2048",
    "stride_bytes": 16777216,
    "pad_bytes": 0,
-   "median_ns_px": 20.802510738299198,
-   "sigclip_ns_px": 56.98441958449166
+   "path": "skewed",
+   "median_ns_px": 17.6102802752591,
+   "sigclip_ns_px": 56.44824242583002
   },
   {
    "frame": "2048x2048",
    "stride_bytes": 16777280,
    "pad_bytes": 64,
-   "median_ns_px": 14.860950708298764,
-   "sigclip_ns_px": 53.36752390873445
+   "path": "direct",
+   "median_ns_px": 15.245138406663402,
+   "sigclip_ns_px": 52.9760735034409
   },
   {
    "frame": "2048x2048",
    "stride_bytes": 16781312,
    "pad_bytes": 4096,
-   "median_ns_px": 14.201830387042257,
-   "sigclip_ns_px": 49.13158678987104
+   "path": "direct",
+   "median_ns_px": 14.518894910766841,
+   "sigclip_ns_px": 49.432349681893115
   },
   {
    "frame": "721x1440",
    "stride_bytes": 4152960,
    "pad_bytes": 0,
-   "median_ns_px": 11.901486168668821,
-   "sigclip_ns_px": 49.26073355051004
+   "path": "direct",
+   "median_ns_px": 13.883834180477121,
+   "sigclip_ns_px": 51.75001252075377
   },
   {
    "frame": "721x1440",
    "stride_bytes": 4153024,
    "pad_bytes": 64,
-   "median_ns_px": 12.055347510082688,
-   "sigclip_ns_px": 48.41858626214199
+   "path": "direct",
+   "median_ns_px": 13.093156687703015,
+   "sigclip_ns_px": 73.52771517172624
   },
   {
    "frame": "721x1440",
    "stride_bytes": 4157056,
    "pad_bytes": 4096,
-   "median_ns_px": 11.317542187086826,
-   "sigclip_ns_px": 49.09363249471492
+   "path": "direct",
+   "median_ns_px": 15.08688453559609,
+   "sigclip_ns_px": 75.77445003025262
+  }
+ ],
+ "depth": [
+  {
+   "n": 8,
+   "pow2_path": "skewed",
+   "pow2_median": 3.2139196391028912,
+   "pow2_sigclip": 19.41690444887123,
+   "padded_path": "direct",
+   "padded_median": 3.156281471426714,
+   "padded_sigclip": 19.223899841783187
+  },
+  {
+   "n": 16,
+   "pow2_path": "skewed",
+   "pow2_median": 5.798304557845524,
+   "pow2_sigclip": 28.384348869578414,
+   "padded_path": "direct",
+   "padded_median": 5.4753570557716795,
+   "padded_sigclip": 27.833655357953347
+  },
+  {
+   "n": 24,
+   "pow2_path": "skewed",
+   "pow2_median": 13.591401100930545,
+   "pow2_sigclip": 43.055312156682625,
+   "padded_path": "direct",
+   "padded_median": 10.583949088677214,
+   "padded_sigclip": 39.693799018525326
+  },
+  {
+   "n": 31,
+   "pow2_path": "skewed",
+   "pow2_median": 15.574431419876355,
+   "pow2_sigclip": 55.88924217262564,
+   "padded_path": "direct",
+   "padded_median": 13.156160354708957,
+   "padded_sigclip": 50.511650085717505
+  },
+  {
+   "n": 40,
+   "pow2_path": "skewed",
+   "pow2_median": 23.780823707811315,
+   "pow2_sigclip": 76.31886100780555,
+   "padded_path": "direct",
+   "padded_median": 22.669083594648033,
+   "padded_sigclip": 73.30724144036238
+  },
+  {
+   "n": 47,
+   "pow2_path": "skewed",
+   "pow2_median": 32.314027786049806,
+   "pow2_sigclip": 98.75023460406696,
+   "padded_path": "direct",
+   "padded_median": 25.548696517760373,
+   "padded_sigclip": 85.33193302136254
+  },
+  {
+   "n": 63,
+   "pow2_path": "staged",
+   "pow2_median": 46.53197002366105,
+   "pow2_sigclip": 130.6195564270904,
+   "padded_path": "direct",
+   "padded_median": 39.55539035812444,
+   "padded_sigclip": 120.07615661675797
   }
  ]
 }

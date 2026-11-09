@@ -1,0 +1,86 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-09"
+ },
+ "unit": "ns per output pixel",
+ "n": 31,
+ "threads": 1,
+ "rankwise": "0.1.0",
+ "rows": [],
+ "depth": [
+  {
+   "n": 8,
+   "pow2_path": "direct",
+   "pow2_median": 2.9292316437029564,
+   "pow2_sigclip": 19.040844917266043,
+   "padded_path": "direct",
+   "padded_median": 2.992523192787977,
+   "padded_sigclip": 19.092347145095722
+  },
+  {
+   "n": 16,
+   "pow2_path": "direct",
+   "pow2_median": 6.931695937725801,
+   "pow2_sigclip": 31.44419384072672,
+   "padded_path": "direct",
+   "padded_median": 5.6901187893421135,
+   "padded_sigclip": 29.266353607920735
+  },
+  {
+   "n": 24,
+   "pow2_path": "direct",
+   "pow2_median": 12.981106758090666,
+   "pow2_sigclip": 44.15805721254274,
+   "padded_path": "direct",
+   "padded_median": 9.72916889153269,
+   "padded_sigclip": 39.67807292969139
+  },
+  {
+   "n": 31,
+   "pow2_path": "direct",
+   "pow2_median": 21.209112167908106,
+   "pow2_sigclip": 61.45101928700658,
+   "padded_path": "direct",
+   "padded_median": 13.035400390180863,
+   "padded_sigclip": 52.990602492780646
+  },
+  {
+   "n": 40,
+   "pow2_path": "direct",
+   "pow2_median": 35.67067718458772,
+   "pow2_sigclip": 95.43896961269893,
+   "padded_path": "direct",
+   "padded_median": 22.12516975446527,
+   "padded_sigclip": 72.24656772570476
+  },
+  {
+   "n": 47,
+   "pow2_path": "direct",
+   "pow2_median": 54.20302677180966,
+   "pow2_sigclip": 111.31640338928744,
+   "padded_path": "direct",
+   "padded_median": 28.27250194549491,
+   "padded_sigclip": 88.50283145928061
+  },
+  {
+   "n": 63,
+   "pow2_path": "staged",
+   "pow2_median": 52.987537384717456,
+   "pow2_sigclip": 125.65365600618328,
+   "padded_path": "direct",
+   "padded_median": 49.2654399870604,
+   "padded_sigclip": 123.48438453626403
+  }
+ ]
+}
