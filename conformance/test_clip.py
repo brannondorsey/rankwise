@@ -121,3 +121,26 @@ def test_isas_agree_on_other_rejections():
     for isa, rs in results.items():
         for a, b in zip(base, rs):
             identical(a, b)
+
+
+@pytest.mark.parametrize("maxiters", [1, 5])
+def test_clip_combine_mad_is_mad_std(isa, maxiters):
+    """method="mad" clips with astropy's mad_std (a default stdfunc once turned it into std)."""
+    rng = np.random.default_rng(maxiters)
+    x = np.round(rng.normal(1000, 10, (10, 60, 70)))
+    hit = rng.random(x.shape) < 0.03
+    x[hit] += rng.uniform(30, 300, hit.sum())
+    mask = np.empty(x.shape, bool)
+    rw.clip_combine(x, "mad", sigma=5, maxiters=maxiters, mask=mask)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        sc = sigma_clip(x, sigma=5, maxiters=maxiters, cenfunc="median", stdfunc="mad_std", axis=0)
+    identical(mask, sc.mask)
+    if maxiters == 1:  # ccdproc's Combiner.sigma_clipping: callables, astropy's Python path, one pass
+        from astropy.stats import mad_std
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            py = sigma_clip(x, sigma=5, maxiters=1, cenfunc=np.ma.median, stdfunc=mad_std, axis=0, masked=True)
+        identical(mask, py.mask)
+    with pytest.raises(ValueError, match="mad_std"):
+        rw.clip_combine(x, "mad", stdfunc="std")

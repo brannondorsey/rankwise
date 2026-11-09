@@ -574,8 +574,8 @@ _SIRIL = {"sigma": "sigma", "mad": "mad", "median_sigma": "median_sigma", "winso
 
 
 def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=None, maxiters=5, *, axis=0,
-                 cenfunc="median", stdfunc="std", combine="mean", preset=None, out=None, rejected=None,
-                 low=None, high=None, mask=None, weights=None, scale=None, offset=None, precision="f64",
+                 cenfunc="median", stdfunc=None, combine="mean", preset=None, out=None, rejected=None,
+                 low=None, high=None, mask=None, weights=None, scale=None, offset=None, precision=None,
                  mask_infinite=True, return_counts=False, threads=1, isa=None):
     """Reject outliers along ``axis`` and combine the survivors.
 
@@ -583,8 +583,14 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
     ``mad_std`` as the spread), ``"median_sigma"`` (Siril: rejected values replaced by the
     median), ``"winsorized"`` (Siril's Huber-winsorized sigma) or ``"percentile"`` (Siril: one
     pass around the median; ``sigma`` is then the fractional threshold ``(low, high)``).
+    ``stdfunc`` (``"std"`` by default, or ``"mad_std"``) applies to ``method="sigma"``.
     ``preset="siril"`` follows Siril 1.2 (sample std, iterate to convergence); ``"pixinsight"``
     follows PCL's documented winsorized clipping. See docs/presets.md for what was verified.
+
+    ``precision`` is the arithmetic of center, spread, bounds and the combine: ``"f64"`` (the
+    default, as astropy) or ``"f32"`` (float32 data only). With ``preset="siril"``, f64 gives
+    Siril's stacked values bit for bit; f32 resolves exact ties (a value exactly k sigma from
+    the center) the way Siril does, with values then within 1 ulp.
 
     ``scale``/``offset`` normalize frame ``k`` as ``x * scale[k] + offset[k]`` on load;
     ``weights`` give a weighted mean. ``rejected``, ``low`` and ``high`` receive per-pixel
@@ -602,8 +608,10 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
         maxiters = None
     if preset not in (None, "astropy", "siril", "pixinsight"):
         raise ValueError(f"unknown preset {preset!r}")
-    op = {"kind": "clip", "method": method, "low": lo_s, "high": hi_s, "cenfunc": cenfunc, "stdfunc": stdfunc,
+    op = {"kind": "clip", "method": method, "low": lo_s, "high": hi_s, "cenfunc": cenfunc,
           "combine": combine, "precision": precision, "mask_infinite": bool(mask_infinite)}
+    if stdfunc is not None:
+        op["stdfunc"] = stdfunc
     if maxiters is not None:
         op["maxiters"] = int(maxiters)
     if preset in ("siril", "pixinsight"):
@@ -611,6 +619,7 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
         if preset == "siril" or maxiters == 5:
             op.pop("maxiters", None)  # both tools iterate until nothing changes
     s = _prep(a, axis)
+    op["precision"] = "f64" if precision is None else precision
     dt = np.dtype(np.float64) if s.dtype == "float64" else np.dtype(np.float32)
     work, final, copy = _prepare_out(out, s.shape, dt, False, s.axis)
     want_counts = return_counts or rejected is not None

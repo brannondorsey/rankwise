@@ -127,13 +127,14 @@ def check_siril(x, kind, work):
         rd = lambda s: np.asarray(fits.getdata(work / kind / "seq" / f"{name}_{s}_rejmap.fit"), np.float64)  # noqa: E731
         sl, sh = np.round(rd("low") * n).astype(int), np.round(rd("high") * n).astype(int)
         val = np.asarray(fits.getdata(work / kind / "seq" / f"{name}.fit"), np.float64)
-        out, lo, hi = rw.clip_combine(x, name, preset="siril", sigma=sig, return_counts=True)
-        same = (lo == sl) & (hi == sh)
-        rel = np.abs(out - val) / np.maximum(np.abs(val), 1e-30)
-        rows.append(dict(reference="siril-cli 1.2.1", method=name, sigma=sig, pixels=int(same.size),
-                         counts_identical_pixels=int(same.sum()), rejected_by_siril=int((sl + sh).sum()),
-                         rejected_by_rankwise=int((lo + hi).sum()),
-                         max_rel_value_diff_where_counts_agree=float(rel[same].max())))
+        for prec in ("f64", "f32") if name in ("sigma", "median_sigma", "winsorized") else ("f64",):
+            out, lo, hi = rw.clip_combine(x, name, preset="siril", sigma=sig, precision=prec, return_counts=True)
+            same = (lo == sl) & (hi == sh)
+            ulp = np.abs(out.astype(np.float64) - val) / np.spacing(np.abs(val).astype(np.float32)).astype(np.float64)
+            rows.append(dict(reference="siril-cli 1.2.1", method=name, precision=prec, sigma=sig,
+                             pixels=int(same.size), counts_identical_pixels=int(same.sum()),
+                             rejected_by_siril=int((sl + sh).sum()), rejected_by_rankwise=int((lo + hi).sum()),
+                             max_value_diff_ulp_where_counts_agree=float(ulp[same].max())))
     return rows
 
 

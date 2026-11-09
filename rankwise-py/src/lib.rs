@@ -67,6 +67,16 @@ fn parse_clip(d: &Bound<'_, PyDict>) -> PyResult<Clip> {
         });
     }
     if let Some(s) = get::<String>(d, "stdfunc")? {
+        // method="mad" fixes the spread; letting a default stdfunc through silently turned it
+        // back into std clipping.
+        if method == "mad" && s != "mad_std" {
+            return Err(PyValueError::new_err(format!(
+                "method='mad' clips with mad_std; use method='sigma', stdfunc={s:?} for that spread"
+            )));
+        }
+        if method != "sigma" && method != "mad" {
+            return Err(PyValueError::new_err(format!("stdfunc applies to method='sigma', not {method:?}")));
+        }
         c = c.spread(match s.as_str() {
             "std" => Spread::Std,
             "mad_std" => Spread::MadStd,

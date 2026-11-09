@@ -468,26 +468,80 @@ unsafe fn winsorized<C: FVector>(
 /// median and sample std of the whole stack, and replaces each value beyond the bounds by
 /// that median (the stack keeps its size), until a pass rejects nothing. Returns the kept rank
 /// range of the original sorted stack and the mean of the final stack.
-fn median_sigma_lane(v: &[f64], low: f64, high: f64) -> (usize, usize, f64) {
+/// Scalar arithmetic for one lane of median-sigma clipping, in the clip's precision.
+trait Fl:
+    Copy
+    + PartialOrd
+    + core::ops::Add<Output = Self>
+    + core::ops::Sub<Output = Self>
+    + core::ops::Mul<Output = Self>
+    + core::ops::Div<Output = Self>
+{
+    const ZERO: Self;
+    fn of(x: f64) -> Self;
+    fn f64(self) -> f64;
+    fn sqrt(self) -> Self;
+}
+impl Fl for f32 {
+    const ZERO: Self = 0.0;
+    fn of(x: f64) -> Self {
+        x as f32
+    }
+    fn f64(self) -> f64 {
+        self as f64
+    }
+    fn sqrt(self) -> Self {
+        f32::sqrt(self)
+    }
+}
+impl Fl for f64 {
+    const ZERO: Self = 0.0;
+    fn of(x: f64) -> Self {
+        x
+    }
+    fn f64(self) -> f64 {
+        self
+    }
+    fn sqrt(self) -> Self {
+        f64::sqrt(self)
+    }
+}
+
+/// `sum f(k)` in the order the vector kernels use: four accumulators keyed by `k % 4`,
+/// combined `(a0 + a1) + (a2 + a3)`.
+fn sum4<T: Fl>(n: usize, f: impl Fn(usize) -> T) -> T {
+    let mut a = [T::ZERO; 4];
+    for k in 0..n {
+        a[k % 4] = a[k % 4] + f(k);
+    }
+    (a[0] + a[1]) + (a[2] + a[3])
+}
+
+/// Siril's median sigma clipping for one lane: values beyond `k` sample standard deviations
+/// of the median are replaced by the median, until nothing changes. The statistics run in
+/// `T` (float32 statistics reproduce Siril's decisions on float32 data, exact ties included);
+/// the final mean in f64.
+fn median_sigma_lane<T: Fl>(v: &[T], low: f64, high: f64) -> (usize, usize, f64) {
     let m = v.len();
     if m == 0 {
         return (0, 0, f64::NAN);
     }
-    let mut w: Vec<f64> = v.to_vec();
+    let mut w: Vec<T> = v.to_vec();
     let mut flag = vec![false; m];
     let mut s = Vec::with_capacity(m);
+    let half = T::of(0.5);
     for _ in 0..4 * m + 8 {
         s.clear();
         s.extend_from_slice(&w);
         s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
-        let c = if m % 2 == 1 { s[m / 2] } else { (s[m / 2 - 1] + s[m / 2]) * 0.5 };
-        let mean = s.iter().sum::<f64>() / m as f64;
+        let c = if m % 2 == 1 { s[m / 2] } else { (s[m / 2 - 1] + s[m / 2]) * half };
+        let mean = sum4(m, |k| s[k]) / T::of(m as f64);
         let sd = if m > 1 {
-            (s.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (m - 1) as f64).sqrt()
+            (sum4(m, |k| (s[k] - mean) * (s[k] - mean)) / T::of((m - 1) as f64)).sqrt()
         } else {
-            f64::NAN
+            T::of(f64::NAN)
         };
-        let (kl, kh) = (low * sd, high * sd);
+        let (kl, kh) = (T::of(low) * sd, T::of(high) * sd);
         let mut any = false;
         for k in 0..m {
             if c - w[k] > kl || w[k] - c > kh {
@@ -502,7 +556,7 @@ fn median_sigma_lane(v: &[f64], low: f64, high: f64) -> (usize, usize, f64) {
     }
     let lo = flag.iter().take_while(|&&f| f).count();
     let hi = m - flag.iter().rev().take_while(|&&f| f).count();
-    let mean = w.iter().sum::<f64>() / m as f64;
+    let mean = w.iter().map(|x| x.f64()).sum::<f64>() / m as f64;
     (lo, hi.max(lo), mean)
 }
 
@@ -591,14 +645,18 @@ pub(crate) unsafe fn clip_block<S: SortVec, C: FVector + SortVec>(
             }
             Rejection::MedianSigma { low, high } => {
                 let (mut la, mut ha, mut va) = ([C::E::ZERO; MAXL], [C::E::ZERO; MAXL], [0f64; MAXL]);
-                let mut col = Vec::with_capacity(n);
+                let (mut c32, mut c64) = (Vec::with_capacity(n), Vec::with_capacity(n));
                 for i in 0..C::L {
                     let mi = ms[g * C::L + i];
-                    col.clear();
+                    c32.clear();
+                    c64.clear();
                     for k in 0..mi {
-                        col.push(at(cb, k, i).to_f64());
+                        let x = at(cb, k, i).to_f64();
+                        c32.push(x as f32);
+                        c64.push(x);
                     }
-                    let (l, h, v) = median_sigma_lane(&col, low, high);
+                    let (l, h, v) =
+                        if plan.f32 { median_sigma_lane(&c32, low, high) } else { median_sigma_lane(&c64, low, high) };
                     la[i] = C::E::from_usize(l);
                     ha[i] = C::E::from_usize(h);
                     va[i] = v;
