@@ -19,7 +19,7 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
   in-cache tile.
 * **Bindings.** Rust crate (`ndarray` and `rayon` features), C ABI with a cbindgen header,
   and an abi3 Python wheel that releases the GIL.
-* **Verification.** 1,036-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
+* **Verification.** 1,039-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
   astropy 8.0.2 on every ISA; exhaustive 0-1 principle tests; black-box checks against
   Siril 1.2.1.
 

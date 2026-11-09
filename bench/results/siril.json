@@ -1,0 +1,33 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-08"
+ },
+ "startup_seconds_subtracted": 0.04076849500052049,
+ "rows": [
+  {
+   "tool": "Siril 1.2.1",
+   "op": "median",
+   "seconds": 2.715402934998565,
+   "ns_per_px": 647.4025094505703,
+   "note": "includes reading 31 FITS files from the page cache"
+  },
+  {
+   "tool": "Siril 1.2.1",
+   "op": "sigclip",
+   "seconds": 3.4435193949993845,
+   "ns_per_px": 820.9990012644254,
+   "note": "includes reading 31 FITS files from the page cache"
+  }
+ ]
+}

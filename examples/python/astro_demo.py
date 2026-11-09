@@ -186,13 +186,13 @@ lv = np.where(removed < 400, 0, lv)
 heat = np.stack([lv * 255, lv * 160, lv * 40], -1)
 im = Image.fromarray(np.clip(base[..., None] + heat, 0, 255).astype(np.uint8))
 dr = ImageDraw.Draw(im)
-dr.rectangle([24, 1080, 600, 1176], fill=(0, 0, 0))
+dr.rectangle([24, 1080, 690, 1176], fill=(0, 0, 0))
 dr.text((40, 1090), "Signal removed by rejection, per pixel", font=ImageFont.truetype(font_b, 24), fill=(255, 255, 255))
 for j, (val, lab) in enumerate([(0, "< 400 e⁻"), (2000, "2k"), (10000, "10k"), (40000, "40k+")]):
     l_ = 0 if val == 0 else np.log10(val) / np.log10(40000)
     c = tuple(int(x) for x in np.array([255, 160, 40]) * l_)
-    dr.rectangle([40 + j * 135, 1132, 72 + j * 135, 1160], fill=c, outline=(110, 110, 110))
-    dr.text((80 + j * 135, 1134), lab, font=ImageFont.truetype(font_r, 20), fill=(230, 230, 230))
+    dr.rectangle([40 + j * 160, 1132, 72 + j * 160, 1160], fill=c, outline=(110, 110, 110))
+    dr.text((80 + j * 160, 1134), lab, font=ImageFont.truetype(font_r, 20), fill=(230, 230, 230))
 im.save(OUT / "rejection.jpg", quality=90, optimize=True, progressive=True)
 
 stats = dict(noise_e=nz, frames=N, shape=[H, W, 3], seconds=dict(numpy_mean=t_mean, rankwise_median=t_med,

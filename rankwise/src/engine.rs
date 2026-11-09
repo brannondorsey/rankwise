@@ -338,9 +338,7 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
 /// experiments.
 fn tile_budget() -> usize {
     static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *B.get_or_init(|| {
-        std::env::var("RANKWISE_TILE_BYTES").ok().and_then(|s| s.parse().ok()).unwrap_or(768 * 1024)
-    })
+    *B.get_or_init(|| std::env::var("RANKWISE_TILE_BYTES").ok().and_then(|s| s.parse().ok()).unwrap_or(768 * 1024))
 }
 
 #[inline(always)]

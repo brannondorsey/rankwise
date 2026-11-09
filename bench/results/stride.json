@@ -21,64 +21,64 @@
    "frame": "1024x1024",
    "stride_bytes": 4194304,
    "pad_bytes": 0,
-   "median_ns_px": 19.306552885914318,
-   "sigclip_ns_px": 56.039606094460126
+   "median_ns_px": 18.118205071665507,
+   "sigclip_ns_px": 56.84808158934462
   },
   {
    "frame": "1024x1024",
    "stride_bytes": 4194368,
    "pad_bytes": 64,
-   "median_ns_px": 13.358697890930582,
-   "sigclip_ns_px": 49.3199625011681
+   "median_ns_px": 12.448336601106336,
+   "sigclip_ns_px": 49.382198333974834
   },
   {
    "frame": "1024x1024",
    "stride_bytes": 4198400,
    "pad_bytes": 4096,
-   "median_ns_px": 12.767864225951552,
-   "sigclip_ns_px": 47.58570384955085
+   "median_ns_px": 12.72982215819174,
+   "sigclip_ns_px": 47.36076641108367
   },
   {
    "frame": "2048x2048",
    "stride_bytes": 16777216,
    "pad_bytes": 0,
-   "median_ns_px": 20.53639316587641,
-   "sigclip_ns_px": 57.64238166817981
+   "median_ns_px": 20.802510738299198,
+   "sigclip_ns_px": 56.98441958449166
   },
   {
    "frame": "2048x2048",
    "stride_bytes": 16777280,
    "pad_bytes": 64,
-   "median_ns_px": 14.857849121169275,
-   "sigclip_ns_px": 49.197337627371326
+   "median_ns_px": 14.860950708298764,
+   "sigclip_ns_px": 53.36752390873445
   },
   {
    "frame": "2048x2048",
    "stride_bytes": 16781312,
    "pad_bytes": 4096,
-   "median_ns_px": 23.984765291484162,
-   "sigclip_ns_px": 50.38023447988954
+   "median_ns_px": 14.201830387042257,
+   "sigclip_ns_px": 49.13158678987104
   },
   {
    "frame": "721x1440",
    "stride_bytes": 4152960,
    "pad_bytes": 0,
-   "median_ns_px": 12.242489212953242,
-   "sigclip_ns_px": 50.01305863790734
+   "median_ns_px": 11.901486168668821,
+   "sigclip_ns_px": 49.26073355051004
   },
   {
    "frame": "721x1440",
    "stride_bytes": 4153024,
    "pad_bytes": 64,
-   "median_ns_px": 18.64062259254743,
-   "sigclip_ns_px": 87.38393820329561
+   "median_ns_px": 12.055347510082688,
+   "sigclip_ns_px": 48.41858626214199
   },
   {
    "frame": "721x1440",
    "stride_bytes": 4157056,
    "pad_bytes": 4096,
-   "median_ns_px": 13.075084758872633,
-   "sigclip_ns_px": 50.187096432148316
+   "median_ns_px": 11.317542187086826,
+   "sigclip_ns_px": 49.09363249471492
   }
  ]
 }

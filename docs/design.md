@@ -119,6 +119,11 @@ break that:
   1024×1024 took 91 ns per pixel direct and 45 staged. rankwise stages when 48 or more
   frames start in the same L2 set; below that, the tile copy costs about what it saves.
 
+Open: between 24 and 47 frames on 2^k strides neither path is good. At 31 frames of
+1024×1024 the median takes 18 ns per pixel on 2^k strides against 12 with one cache line of
+padding (1.46×; the handoff's target is 1.2×); sigma clipping, being compute-bound, pays
+1.15×. Padding frames by 64 bytes when you allocate them avoids it.
+
 Both thresholds were measured on a 2 MiB-L2 Sapphire Rapids-class core
 ([benchmarks](benchmarks.md#power-of-two-strides)); `staging="always"`/`"never"` (Python
 `describe()` shows the choice) and `RANKWISE_TILE_BYTES` exist for measuring other CPUs.

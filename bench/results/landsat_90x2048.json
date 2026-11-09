@@ -1,0 +1,77 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-08"
+ },
+ "scenes": 90,
+ "side": 2048,
+ "nodata": 0,
+ "threads": 1,
+ "cloud_fraction": 0.4562679714626736,
+ "versions": {
+  "rankwise": "0.1.0",
+  "numpy": "2.5.3",
+  "bottleneck": "1.6.0",
+  "numbagg": "0.9.6"
+ },
+ "rows": [
+  {
+   "tool": "rankwise \u00b7 AVX-512 (uint16, nodata=0)",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.23668606100000034,
+   "ns_per_px": 56.430354356765825,
+   "identical": true
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2 (uint16, nodata=0)",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.34097425600157294,
+   "ns_per_px": 81.29459762610745,
+   "identical": true
+  },
+  {
+   "tool": "rankwise \u00b7 portable (uint16, nodata=0)",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 1.0158814209989941,
+   "ns_per_px": 242.2050049302564,
+   "identical": true
+  },
+  {
+   "tool": "NumPy 2.5 nanmedian (float32)",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 18.53458782599955,
+   "ns_per_px": 4418.990093707931,
+   "identical": true
+  },
+  {
+   "tool": "Bottleneck 1.6 nanmedian (float32)",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 3.576620510999419,
+   "ns_per_px": 852.7327802179858,
+   "identical": true
+  },
+  {
+   "tool": "numbagg 0.9 nanmedian (float32)",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 19.3125773619995,
+   "ns_per_px": 4604.477253436923,
+   "identical": true
+  }
+ ]
+}

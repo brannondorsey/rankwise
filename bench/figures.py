@@ -22,7 +22,7 @@ THEMES = {
     "light": dict(surface="#fcfcfb", ink="#0b0b0b", ink2="#52514e", muted="#8a8984", grid="#e6e5e0",
                   rw=["#2a78d6", "#6da7ec", "#b7d3f6"], other="#c3c2bb", s2="#eb6834"),
     "dark": dict(surface="#1a1a19", ink="#f0efec", ink2="#c3c2b7", muted="#8f8e88", grid="#2e2d2a",
-                 rw=["#3987e5", "#256abf", "#184f95"], other="#55544f", s2="#d95926"),
+                 rw=["#5598e7", "#3987e5", "#256abf"], other="#55544f", s2="#d95926"),
 }
 FONT = "Inter" if any("Inter" == f.name for f in font_manager.fontManager.ttflist) else "DejaVu Sans"
 plt.rcParams.update({"font.family": FONT, "font.size": 10.5, "svg.fonttype": "none"})
@@ -44,8 +44,9 @@ def panel_title(fig, ax, title, t):
 
 
 def headline(fig, title, sub, t, top=0.985):
+    h = fig.get_size_inches()[1]
     fig.text(0.015, top, title, ha="left", va="top", fontsize=15, fontweight="bold", color=t["ink"])
-    fig.text(0.015, top - 0.045, sub, ha="left", va="top", fontsize=9.5, color=t["ink2"])
+    fig.text(0.015, top - 0.34 / h, sub, ha="left", va="top", fontsize=9.5, color=t["ink2"])
 
 
 def rw_color(tool, t):
@@ -130,7 +131,8 @@ def sweep(theme):
         sp = [min(r[f"reducers_{key}"], r[f"imcombiners_{key}"]) / r[f"rankwise_{key}"] for r in d["rows"]]
         series.append((label, col, sp))
         ax.plot(ns, sp, color=col, linewidth=2, marker="o", markersize=6, markeredgecolor=t["surface"], markeredgewidth=1.5)
-        ax.text(ns[-1] * 1.12, sp[-1], f"{label}  {sp[-1]:.0f}×", va="center", color=t["ink"], fontsize=10)
+        ax.text(ns[-1] * 1.12, sp[-1], f"{label}  {sp[-1]:.1f}×" if sp[-1] < 10 else f"{label}  {sp[-1]:.0f}×",
+                va="center", color=t["ink"], fontsize=10)
         i = max(range(len(sp)), key=lambda k: sp[k])
         ax.annotate(f"{sp[i]:.0f}×", (ns[i], sp[i]), textcoords="offset points", xytext=(0, 9), ha="center", fontsize=9.5,
                     color=t["ink2"])
@@ -142,11 +144,12 @@ def sweep(theme):
     ax.set_xlim(ns[0] * 0.85, ns[-1] * 3.4)
     ax.set_ylim(0, max(max(s[2]) for s in series) * 1.18)
     ax.set_xlabel("Frames in the stack", color=t["ink2"])
-    ax.set_ylabel("Speedup over the faster of reducers and imcombiners", color=t["ink2"])
+    ax.set_ylabel("Speedup (×)", color=t["ink2"])
     lo = min(min(s[2]) for s in series)
     headline(fig, f"At least {lo:.1f}× faster at every stack depth from 8 to 511 frames",
-             "1024×1024 float32 frames, one core, AVX-512 · speedup = fastest competitor's time ÷ rankwise's time", t, top=0.975)
-    fig.subplots_adjust(left=0.09, right=0.98, top=0.8, bottom=0.13)
+             "1024×1024 float32 frames, one core, AVX-512 · speedup = time of the faster of reducers and imcombiners "
+             "÷ rankwise's time", t, top=0.975)
+    fig.subplots_adjust(left=0.07, right=0.98, top=0.8, bottom=0.13)
     fig.savefig(IMG / f"bench_sweep_{theme}.png", dpi=200, facecolor=t["surface"])
     plt.close(fig)
 
@@ -167,10 +170,10 @@ def ensemble(theme):
         bars(ax, rs, t, ref)
         panel_title(fig, ax, title, t)
         speed.append(min(r["seconds"] for r in rs if not r["tool"].startswith("rankwise")) / ref)
-    headline(fig, f"Ensemble p10/p50/p90 {speed[0]:.0f}× faster than NumPy, {speed[1]:.0f}× faster than the fastest NaN-aware tool",
+    headline(fig, f"Ensemble quantiles {speed[0]:.0f}× faster than NumPy, {speed[1]:.0f}× faster than fastnanquantile",
              "Seconds per lead time: 31 members × 721 × 1440 float32 (0.25° global grid), lower is better · one core", t)
-    fig.text(0.015, 0.01, "Every result is bit-identical to np.quantile / np.nanquantile, dtype included.", fontsize=8.5,
-             color=t["muted"])
+    fig.text(0.015, 0.01, "rankwise is bit-identical to np.quantile / np.nanquantile, dtype included; numbagg and "
+             "fastnanquantile differ from NumPy in the last bits.", fontsize=8.5, color=t["muted"])
     fig.subplots_adjust(left=0.27, right=0.98, top=0.8, bottom=0.08)
     fig.savefig(IMG / f"bench_ensemble_{theme}.png", dpi=200, facecolor=t["surface"])
     plt.close(fig)

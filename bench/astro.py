@@ -16,8 +16,10 @@ import numpy as np
 import rankwise as rw
 from common import astro_stack, best_of, machine, save, versions
 
-n = int(sys.argv[1]) if len(sys.argv) > 1 else 31
-side = int(sys.argv[2]) if len(sys.argv) > 2 else 2048
+args = [a for a in sys.argv[1:] if not a.startswith("--")]
+ONLY_RW = "--rankwise-only" in sys.argv  # re-measure rankwise rows, keep the saved competitor rows
+n = int(args[0]) if args else 31
+side = int(args[1]) if len(args) > 1 else 2048
 st = astro_stack(n, side, side, seed=1)
 px = side * side
 print(f"stack {st.shape} float32, {st.nbytes / 2**30:.2f} GiB")
@@ -52,14 +54,25 @@ lo = np.empty((side, side), np.uint16)
 hi = np.empty((side, side), np.uint16)
 for isa in rw.available_isas():
     label = {"avx512": "AVX-512", "avx2": "AVX2", "scalar": "scalar", "neon": "NEON"}[isa]
-    record(f"rankwise · {label}", "median", lambda: rw.median(st, axis=0, out=out, isa=isa), family="rankwise")
+    record(f"rankwise · {label}", "median", lambda: rw.median(st, axis=0, out=out, isa=isa), reps=7, family="rankwise")
     record(f"rankwise · {label}", "sigclip",
            lambda: (rw.sigma_clip_mean(st, axis=0, sigma=3, maxiters=5, out=out, low=lo, high=hi, isa=isa),),
-           kept=lambda: n - lo.astype(np.int64) - hi, family="rankwise")
+           reps=7, kept=lambda: n - lo.astype(np.int64) - hi, family="rankwise")
     if isa == "avx512":
         record(f"rankwise · {label} · f32 bounds", "sigclip",
                lambda: (rw.sigma_clip_mean(st, axis=0, out=out, low=lo, high=hi, precision="f32", isa=isa),),
-               kept=lambda: n - lo.astype(np.int64) - hi, family="rankwise")
+               reps=7, kept=lambda: n - lo.astype(np.int64) - hi, family="rankwise")
+
+if ONLY_RW:
+    import json  # noqa: E402
+
+    from common import RESULTS  # noqa: E402
+
+    old = json.loads((RESULTS / f"astro_{n}x{side}.json").read_text())
+    old["rows"] = rows + [r for r in old["rows"] if r["family"] != "rankwise"]
+    old["machine"] = machine()
+    save(f"astro_{n}x{side}", old)
+    sys.exit()
 
 import bottleneck as bn  # noqa: E402
 import imcombiners as ic  # noqa: E402
@@ -91,6 +104,6 @@ if px <= 2048 * 2048:
 
 save(f"astro_{n}x{side}", dict(
     machine=machine(), n=n, side=side, dtype="float32", threads=1,
-    method="best of 3 (2 for slow tools) after a warm-up, taskset to one core",
+    method="best of 7 for rankwise (sub-second runs), 3 or 2 for slower tools, after a warm-up; taskset to one core",
     versions=versions("rankwise", "numpy", "bottleneck", "numbagg", "reducers", "imcombiners", "astropy", "ccdproc"),
     rows=rows))

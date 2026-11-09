@@ -1,10 +1,71 @@
 stack (31, 2048, 2048) float32, 0.48 GiB
-rankwise · AVX-512                 median      0.089 s     21.2 ns/px  {'identical_to_np_median': True}
-rankwise · AVX-512                 sigclip     0.256 s     61.0 ns/px  {'max_rel_diff_vs_astropy_mean': 4.4223805806784513e-07, 'kept_counts_identical_to_astropy': 1.0}
-rankwise · AVX-512 · f32 bounds    sigclip     0.233 s     55.6 ns/px  {'max_rel_diff_vs_astropy_mean': 0.003638895176204939, 'kept_counts_identical_to_astropy': 0.9999997615814209}
-rankwise · AVX2                    median      0.151 s     36.0 ns/px  {'identical_to_np_median': True}
-rankwise · AVX2                    sigclip     0.397 s     94.6 ns/px  {'max_rel_diff_vs_astropy_mean': 4.4223805806784513e-07, 'kept_counts_identical_to_astropy': 1.0}
-rankwise · scalar                  median      0.344 s     82.0 ns/px  {'identical_to_np_median': True}
-rankwise · scalar                  sigclip     0.797 s    190.1 ns/px  {'max_rel_diff_vs_astropy_mean': 4.4223805806784513e-07, 'kept_counts_identical_to_astropy': 1.0}
-NumPy 2.5 median                   median      2.895 s    690.3 ns/px  {'identical_to_np_median': True}
-Bottleneck 1.6                     median      2.206 s    525.9 ns/px  {'identical_to_np_median': True}
+rankwise · AVX-512                 median      0.124 s     29.6 ns/px  {'identical_to_np_median': True}
+rankwise · AVX-512                 sigclip     0.287 s     68.5 ns/px  {'max_rel_diff_vs_astropy_mean': 4.4223805806784513e-07, 'kept_counts_identical_to_astropy': 1.0}
+rankwise · AVX-512 · f32 bounds    sigclip     0.240 s     57.3 ns/px  {'max_rel_diff_vs_astropy_mean': 0.003638895176204939, 'kept_counts_identical_to_astropy': 0.9999997615814209}
+rankwise · AVX2                    median      0.154 s     36.8 ns/px  {'identical_to_np_median': True}
+rankwise · AVX2                    sigclip     0.378 s     90.2 ns/px  {'max_rel_diff_vs_astropy_mean': 4.4223805806784513e-07, 'kept_counts_identical_to_astropy': 1.0}
+rankwise · scalar                  median      0.354 s     84.4 ns/px  {'identical_to_np_median': True}
+rankwise · scalar                  sigclip     0.744 s    177.5 ns/px  {'max_rel_diff_vs_astropy_mean': 4.4223805806784513e-07, 'kept_counts_identical_to_astropy': 1.0}
+NumPy 2.5 median                   median      2.980 s    710.5 ns/px  {'identical_to_np_median': True}
+Bottleneck 1.6                     median      2.214 s    527.9 ns/px  {'identical_to_np_median': True}
+numbagg 0.9 (nanmedian)            median     12.626 s   3010.2 ns/px  {'identical_to_np_median': True}
+reducers 0.4                       median      1.550 s    369.5 ns/px  {'identical_to_np_median': True}
+imcombiners 0.1                    median      1.632 s    389.2 ns/px  {'identical_to_np_median': True}
+reducers 0.4                       sigclip     3.496 s    833.4 ns/px  {'max_rel_diff_vs_astropy_mean': 0.01915787714203238}
+imcombiners 0.1                    sigclip     4.008 s    955.5 ns/px  {'max_rel_diff_vs_astropy_mean': 0.01915787714203238}
+astropy 8.0 sigma_clip             sigclip     4.817 s   1148.4 ns/px  {'max_rel_diff_vs_astropy_mean': 0.0}
+ccdproc 2.5 Combiner               median      8.199 s   1954.8 ns/px  {'identical_to_np_median': True}
+ccdproc 2.5 Combiner (1 pass)      sigclip     9.540 s   2274.4 ns/px  {'max_rel_diff_vs_astropy_mean': 0.49496946579815476}
+wrote /home/user/rankwise/bench/results/astro_31x2048.json
+rankwise · AVX-512                 quantile       0.016 s     15.4 ns/cell  identical=True
+rankwise · AVX-512                 nanquantile    0.029 s     27.7 ns/cell  identical=True
+rankwise · AVX2                    quantile       0.025 s     24.1 ns/cell  identical=True
+rankwise · AVX2                    nanquantile    0.062 s     59.9 ns/cell  identical=True
+rankwise · scalar                  quantile       0.102 s     97.9 ns/cell  identical=True
+rankwise · scalar                  nanquantile    0.116 s    111.6 ns/cell  identical=True
+NumPy 2.5 quantile                 quantile       1.332 s   1283.3 ns/cell  identical=True
+NumPy 2.5 nanquantile              nanquantile   44.106 s  42481.5 ns/cell  identical=True
+numbagg 0.9 nanquantile            nanquantile    4.757 s   4582.0 ns/cell  identical=False
+fastnanquantile 0.0.2              nanquantile    0.882 s    850.0 ns/cell  identical=False
+wrote /home/user/rankwise/bench/results/ensemble_31x721x1440.json
+{'frame': '1024x1024', 'stride_bytes': 4194304, 'pad_bytes': 0, 'median_ns_px': 18.118205071665507, 'sigclip_ns_px': 56.84808158934462}
+{'frame': '1024x1024', 'stride_bytes': 4194368, 'pad_bytes': 64, 'median_ns_px': 12.448336601106336, 'sigclip_ns_px': 49.382198333974834}
+{'frame': '1024x1024', 'stride_bytes': 4198400, 'pad_bytes': 4096, 'median_ns_px': 12.72982215819174, 'sigclip_ns_px': 47.36076641108367}
+{'frame': '2048x2048', 'stride_bytes': 16777216, 'pad_bytes': 0, 'median_ns_px': 20.802510738299198, 'sigclip_ns_px': 56.98441958449166}
+{'frame': '2048x2048', 'stride_bytes': 16777280, 'pad_bytes': 64, 'median_ns_px': 14.860950708298764, 'sigclip_ns_px': 53.36752390873445}
+{'frame': '2048x2048', 'stride_bytes': 16781312, 'pad_bytes': 4096, 'median_ns_px': 14.201830387042257, 'sigclip_ns_px': 49.13158678987104}
+{'frame': '721x1440', 'stride_bytes': 4152960, 'pad_bytes': 0, 'median_ns_px': 11.901486168668821, 'sigclip_ns_px': 49.26073355051004}
+{'frame': '721x1440', 'stride_bytes': 4153024, 'pad_bytes': 64, 'median_ns_px': 12.055347510082688, 'sigclip_ns_px': 48.41858626214199}
+{'frame': '721x1440', 'stride_bytes': 4157056, 'pad_bytes': 4096, 'median_ns_px': 11.317542187086826, 'sigclip_ns_px': 49.09363249471492}
+wrote /home/user/rankwise/bench/results/stride.json
+{'n': 8, 'rankwise_median': 3.1, 'rankwise_sigclip': 19.2, 'rankwise_avx2_median': 4.7, 'rankwise_avx2_sigclip': 24.7, 'reducers_median': 91.9, 'reducers_sigclip': 186.6, 'imcombiners_median': 82.7, 'imcombiners_sigclip': 186.7, 'numpy_median': 138.7}
+{'n': 15, 'rankwise_median': 5.2, 'rankwise_sigclip': 27.3, 'rankwise_avx2_median': 8.4, 'rankwise_avx2_sigclip': 35.2, 'reducers_median': 205.4, 'reducers_sigclip': 438.2, 'imcombiners_median': 198.0, 'imcombiners_sigclip': 471.4, 'numpy_median': 286.8}
+{'n': 31, 'rankwise_median': 18.3, 'rankwise_sigclip': 57.0, 'rankwise_avx2_median': 35.1, 'rankwise_avx2_sigclip': 85.1, 'reducers_median': 380.3, 'reducers_sigclip': 839.0, 'imcombiners_median': 357.2, 'imcombiners_sigclip': 945.5, 'numpy_median': 752.9}
+{'n': 63, 'rankwise_median': 44.8, 'rankwise_sigclip': 130.4, 'rankwise_avx2_median': 85.1, 'rankwise_avx2_sigclip': 175.3, 'reducers_median': 637.8, 'reducers_sigclip': 1659.7, 'imcombiners_median': 674.2, 'imcombiners_sigclip': 1905.4, 'numpy_median': 1723.8}
+{'n': 127, 'rankwise_median': 105.9, 'rankwise_sigclip': 292.6, 'rankwise_avx2_median': 177.6, 'rankwise_avx2_sigclip': 447.7, 'reducers_median': 1195.2, 'reducers_sigclip': 3714.3, 'imcombiners_median': 1198.3, 'imcombiners_sigclip': 3767.8, 'numpy_median': 3392.0}
+{'n': 255, 'rankwise_median': 277.5, 'rankwise_sigclip': 687.7, 'rankwise_avx2_median': 447.3, 'rankwise_avx2_sigclip': 1133.2, 'reducers_median': 2273.0, 'reducers_sigclip': 8054.7, 'imcombiners_median': 2314.1, 'imcombiners_sigclip': 8626.0, 'numpy_median': 6682.0}
+{'n': 511, 'rankwise_median': 839.8, 'rankwise_sigclip': 1772.5, 'rankwise_avx2_median': 1327.0, 'rankwise_avx2_sigclip': 2871.8, 'reducers_median': 4454.4, 'reducers_sigclip': 17453.2, 'imcombiners_median': 5001.1, 'imcombiners_sigclip': 18738.1, 'numpy_median': 13882.1}
+wrote /home/user/rankwise/bench/results/sweep_1024.json
+rankwise · AVX-512 (uint16, nodata=0) median       0.237 s     56.4 ns/px  identical=True
+rankwise · AVX2 (uint16, nodata=0) median       0.341 s     81.3 ns/px  identical=True
+rankwise · portable (uint16, nodata=0) median       1.016 s    242.2 ns/px  identical=True
+NumPy 2.5 nanmedian (float32)      median      18.535 s   4419.0 ns/px  identical=True
+Bottleneck 1.6 nanmedian (float32) median       3.577 s    852.7 ns/px  identical=True
+numbagg 0.9 nanmedian (float32)    median      19.313 s   4604.5 ns/px  identical=True
+wrote /home/user/rankwise/bench/results/landsat_90x2048.json
+{'tool': 'Siril 1.2.1', 'op': 'median', 'seconds': 2.715402934998565, 'ns_per_px': 647.4025094505703, 'note': 'includes reading 31 FITS files from the page cache'}
+{'tool': 'Siril 1.2.1', 'op': 'sigclip', 'seconds': 3.4435193949993845, 'ns_per_px': 820.9990012644254, 'note': 'includes reading 31 FITS files from the page cache'}
+wrote /home/user/rankwise/bench/results/siril.json
+downloaded (31, 81, 121, 257) in 6 s
+GEFS 2026-11-01T00: 31 members × 81 leads × 121 × 257, NaN: 0
+rankwise · AVX-512               0.032 s     12.7 ns/cell  identical=True
+rankwise · AVX2                  0.062 s     24.4 ns/cell  identical=True
+rankwise · portable              0.192 s     76.1 ns/cell  identical=True
+NumPy 2.5 quantile               2.623 s   1041.2 ns/cell  identical=True
+numbagg 0.9 nanquantile         12.014 s   4769.5 ns/cell  identical=True
+fastnanquantile 0.0.2            2.300 s    913.2 ns/cell  identical=True
+wrote /home/user/rankwise/bench/results/gefs_conus.json
+{"city": "Denver", "grid_point": [39.75, -105.0]}
+charts in /home/user/rankwise/docs/img
+wrote docs/benchmarks.md
+EXIT 0

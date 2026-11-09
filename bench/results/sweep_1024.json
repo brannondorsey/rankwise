@@ -1,0 +1,110 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-08"
+ },
+ "unit": "ns per output pixel",
+ "threads": 1,
+ "versions": {
+  "rankwise": "0.1.0",
+  "numpy": "2.5.3",
+  "reducers": "0.4.0",
+  "imcombiners": "0.1.1"
+ },
+ "rows": [
+  {
+   "n": 8,
+   "rankwise_median": 3.1192541119495765,
+   "rankwise_sigclip": 19.181104659454775,
+   "rankwise_avx2_median": 4.666618346957363,
+   "rankwise_avx2_sigclip": 24.740765571656944,
+   "reducers_median": 91.9259023676039,
+   "reducers_sigclip": 186.60222148893234,
+   "imcombiners_median": 82.68311023698627,
+   "imcombiners_sigclip": 186.68410110486698,
+   "numpy_median": 138.71449184264804
+  },
+  {
+   "n": 15,
+   "rankwise_median": 5.184454917456227,
+   "rankwise_sigclip": 27.273747442782547,
+   "rankwise_avx2_median": 8.394395829489088,
+   "rankwise_avx2_sigclip": 35.22954559326274,
+   "reducers_median": 205.42135524721783,
+   "reducers_sigclip": 438.1766262051556,
+   "imcombiners_median": 198.00897598301614,
+   "imcombiners_sigclip": 471.3897342675799,
+   "numpy_median": 286.79672622704265
+  },
+  {
+   "n": 31,
+   "rankwise_median": 18.29248809717687,
+   "rankwise_sigclip": 56.997233391364865,
+   "rankwise_avx2_median": 35.0504522315942,
+   "rankwise_avx2_sigclip": 85.09648990670526,
+   "reducers_median": 380.28204154931524,
+   "reducers_sigclip": 838.9856233585041,
+   "imcombiners_median": 357.2336626060657,
+   "imcombiners_sigclip": 945.4548444750438,
+   "numpy_median": 752.8748874659901
+  },
+  {
+   "n": 63,
+   "rankwise_median": 44.776170729510234,
+   "rankwise_sigclip": 130.39722728674928,
+   "rankwise_avx2_median": 85.09447765349398,
+   "rankwise_avx2_sigclip": 175.30653572024602,
+   "reducers_median": 637.7931509003731,
+   "reducers_sigclip": 1659.6939201359712,
+   "imcombiners_median": 674.1894474030646,
+   "imcombiners_sigclip": 1905.3836650857747,
+   "numpy_median": 1723.7859554295603
+  },
+  {
+   "n": 127,
+   "rankwise_median": 105.91431999322498,
+   "rankwise_sigclip": 292.62826061263183,
+   "rankwise_avx2_median": 177.5625801080094,
+   "rankwise_avx2_sigclip": 447.67697620316795,
+   "reducers_median": 1195.1877965914875,
+   "reducers_sigclip": 3714.316880225332,
+   "imcombiners_median": 1198.3205614081448,
+   "imcombiners_sigclip": 3767.847805024108,
+   "numpy_median": 3391.9758472434473
+  },
+  {
+   "n": 255,
+   "rankwise_median": 277.5079174042322,
+   "rankwise_sigclip": 687.6747522342047,
+   "rankwise_avx2_median": 447.3460884103081,
+   "rankwise_avx2_sigclip": 1133.1743488308955,
+   "reducers_median": 2273.029571533275,
+   "reducers_sigclip": 8054.737010956132,
+   "imcombiners_median": 2314.117645263111,
+   "imcombiners_sigclip": 8625.97362804446,
+   "numpy_median": 6682.014663696515
+  },
+  {
+   "n": 511,
+   "rankwise_median": 839.8317260741723,
+   "rankwise_sigclip": 1772.5255775456055,
+   "rankwise_avx2_median": 1327.0133962638847,
+   "rankwise_avx2_sigclip": 2871.797045706989,
+   "reducers_median": 4454.372579574054,
+   "reducers_sigclip": 17453.211434365414,
+   "imcombiners_median": 5001.0973215094955,
+   "imcombiners_sigclip": 18738.120768546985,
+   "numpy_median": 13882.126446724402
+  }
+ ]
+}

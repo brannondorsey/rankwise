@@ -39,80 +39,80 @@
    "tool": "rankwise \u00b7 AVX-512",
    "kind": "quantile",
    "family": "rankwise",
-   "seconds": 0.01681977100088261,
-   "ns_per_cell": 16.20027257751831,
+   "seconds": 0.016012889998819446,
+   "ns_per_cell": 15.423110262385814,
    "identical_to_numpy": true
   },
   {
    "tool": "rankwise \u00b7 AVX-512",
    "kind": "nanquantile",
    "family": "rankwise",
-   "seconds": 0.040968634999444475,
-   "ns_per_cell": 39.45969621613931,
+   "seconds": 0.0287345489996369,
+   "ns_per_cell": 27.67621070237797,
    "identical_to_numpy": true
   },
   {
    "tool": "rankwise \u00b7 AVX2",
    "kind": "quantile",
    "family": "rankwise",
-   "seconds": 0.024379480000789044,
-   "ns_per_cell": 23.48154569347072,
+   "seconds": 0.02500366900130757,
+   "ns_per_cell": 24.08274483867658,
    "identical_to_numpy": true
   },
   {
    "tool": "rankwise \u00b7 AVX2",
    "kind": "nanquantile",
    "family": "rankwise",
-   "seconds": 0.053301116000511684,
-   "ns_per_cell": 51.33795268965912,
+   "seconds": 0.062178078000215464,
+   "ns_per_cell": 59.8879623210582,
    "identical_to_numpy": true
   },
   {
    "tool": "rankwise \u00b7 scalar",
    "kind": "quantile",
    "family": "rankwise",
-   "seconds": 0.05112934099997801,
-   "ns_per_cell": 49.246167552760454,
+   "seconds": 0.10159690999898885,
+   "ns_per_cell": 97.85493720044387,
    "identical_to_numpy": true
   },
   {
    "tool": "rankwise \u00b7 scalar",
    "kind": "nanquantile",
    "family": "rankwise",
-   "seconds": 0.1150893489993905,
-   "ns_per_cell": 110.85042860936825,
+   "seconds": 0.11582001600072545,
+   "ns_per_cell": 111.55418400439729,
    "identical_to_numpy": true
   },
   {
    "tool": "NumPy 2.5 quantile",
    "kind": "quantile",
    "family": "competitor",
-   "seconds": 1.182222303999879,
-   "ns_per_cell": 1138.6792109722983,
+   "seconds": 1.3323892619991966,
+   "ns_per_cell": 1283.3152854823516,
    "identical_to_numpy": true
   },
   {
    "tool": "NumPy 2.5 nanquantile",
    "kind": "nanquantile",
    "family": "competitor",
-   "seconds": 46.183864337999694,
-   "ns_per_cell": 44482.84051664326,
+   "seconds": 44.10598130499966,
+   "ns_per_cell": 42481.48915953889,
    "identical_to_numpy": true
   },
   {
    "tool": "numbagg 0.9 nanquantile",
    "kind": "nanquantile",
    "family": "competitor",
-   "seconds": 5.098835273000077,
-   "ns_per_cell": 4911.037210086374,
+   "seconds": 4.757230133000121,
+   "ns_per_cell": 4582.013920673564,
    "identical_to_numpy": false
   },
   {
    "tool": "fastnanquantile 0.0.2",
    "kind": "nanquantile",
    "family": "competitor",
-   "seconds": 0.8421886779997294,
-   "ns_per_cell": 811.1695542453858,
+   "seconds": 0.8824862790006591,
+   "ns_per_cell": 849.9829316927292,
    "identical_to_numpy": false
   }
  ]

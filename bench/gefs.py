@@ -50,12 +50,16 @@ def load():
     return t2m, lat, lon, lead_h
 
 
+FIGURES_ONLY = "--figures-only" in sys.argv
+if FIGURES_ONLY:
+    sys.argv.remove("--figures-only")
+    CACHE = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "bench" / "data"
 t2m, lat, lon, lead_h = load()
 n, nl, nlat, nlon = t2m.shape
 cells = nl * nlat * nlon
 print(f"GEFS {INIT}: {n} members × {nl} leads × {nlat} × {nlon}, NaN: {int(np.isnan(t2m).sum())}")
 QS = [0.1, 0.5, 0.9]
-ref = np.quantile(t2m, QS, axis=0)
+ref = None if FIGURES_ONLY else np.quantile(t2m, QS, axis=0)
 rows = []
 
 
@@ -67,18 +71,20 @@ def record(tool, fn, reps=3, family="competitor"):
 
 
 out = np.empty((3,) + t2m.shape[1:], np.float64)
-for isa in rw.available_isas():
+for isa in [] if FIGURES_ONLY else rw.available_isas():
     label = {"avx512": "AVX-512", "avx2": "AVX2", "scalar": "portable", "neon": "NEON"}[isa]
     record(f"rankwise · {label}", lambda: rw.quantile(t2m, QS, axis=0, out=out, isa=isa), family="rankwise")
 import fastnanquantile as fnq  # noqa: E402
 import numbagg  # noqa: E402
 
-record("NumPy 2.5 quantile", lambda: np.quantile(t2m, QS, axis=0), reps=2)
-record("numbagg 0.9 nanquantile", lambda: numbagg.nanquantile(t2m, QS, axis=0), reps=2)
-record("fastnanquantile 0.0.2", lambda: np.stack([fnq.nanquantile(t2m, q, axis=0) for q in QS]), reps=2)
-save("gefs_conus", dict(machine=machine(), source=f"{URL} init {INIT}, temperature_2m, CONUS, leads 0-240 h (CC BY 4.0)",
-                        shape=[n, nl, nlat, nlon], quantiles=QS, threads=1,
-                        versions=versions("rankwise", "numpy", "numbagg", "fastnanquantile"), rows=rows))
+if not FIGURES_ONLY:
+    record("NumPy 2.5 quantile", lambda: np.quantile(t2m, QS, axis=0), reps=2)
+    record("numbagg 0.9 nanquantile", lambda: numbagg.nanquantile(t2m, QS, axis=0), reps=2)
+    record("fastnanquantile 0.0.2", lambda: np.stack([fnq.nanquantile(t2m, q, axis=0) for q in QS]), reps=2)
+if not FIGURES_ONLY:
+    save("gefs_conus", dict(machine=machine(), source=f"{URL} init {INIT}, temperature_2m, CONUS, leads 0-240 h (CC BY 4.0)",
+                            shape=[n, nl, nlat, nlon], quantiles=QS, threads=1,
+                            versions=versions("rankwise", "numpy", "numbagg", "fastnanquantile"), rows=rows))
 
 # ---------------------------------------------------------------- figures
 import matplotlib  # noqa: E402
@@ -128,22 +134,23 @@ for theme, t in THEMES.items():
     if theme == "dark":
         ramp = ramp[::-1][:6][::-1]
     cmap = LinearSegmentedColormap.from_list("blue", ramp)
-    fig, ax = plt.subplots(figsize=(9.2, 5.0), facecolor=t["surface"])
+    fig, ax = plt.subplots(figsize=(9.2, 5.9), facecolor=t["surface"])
     ax.set_facecolor(t["surface"])
     im = ax.imshow(spread, extent=[lon[0], lon[-1], lat[-1], lat[0]], cmap=cmap, aspect=1.25, interpolation="nearest")
+    ax.set_anchor("W")
     for s_ in ax.spines.values():
         s_.set_visible(False)
     ax.tick_params(colors=t["ink2"], length=0)
     ax.plot([clon], [clat], marker="o", markersize=6, color=t["s2"], markeredgecolor=t["surface"])
     ax.text(clon + 0.8, clat, city, color=t["ink"], fontsize=9.5, va="center")
-    cb = fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
+    cb = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.015, anchor=(0.0, 0.5))
     cb.outline.set_visible(False)
     cb.ax.tick_params(colors=t["ink2"], length=0)
     cb.set_label("p90 − p10 (°C)", color=t["ink2"])
     headline(fig, "Where the forecast is uncertain at day 5",
              "Spread between the 10th and 90th percentile of 31 members, 2 m temperature at +120 h · "
              "NOAA GEFS via dynamical.org", t, top=0.975)
-    fig.subplots_adjust(left=0.06, right=0.97, top=0.84, bottom=0.07)
+    fig.subplots_adjust(left=0.06, right=0.92, top=0.86, bottom=0.06)
     fig.savefig(IMG / f"gefs_spread_{theme}.png", dpi=200, facecolor=t["surface"])
     plt.close(fig)
 print(json.dumps({"city": city, "grid_point": [float(lat[iy]), float(lon[ix])]}))

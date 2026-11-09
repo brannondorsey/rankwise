@@ -11,7 +11,7 @@
    "scalar"
   ],
   "python": "3.13.18",
-  "date": "2026-11-08"
+  "date": "2026-11-09"
  },
  "n": 31,
  "side": 2048,
@@ -33,16 +33,16 @@
    "tool": "rankwise \u00b7 AVX-512",
    "op": "median",
    "family": "rankwise",
-   "seconds": 0.08512464200066461,
-   "ns_per_px": 20.295296192327644,
+   "seconds": 0.08517190899999605,
+   "ns_per_px": 20.30656552314664,
    "identical_to_np_median": true
   },
   {
    "tool": "rankwise \u00b7 AVX-512",
    "op": "sigclip",
    "family": "rankwise",
-   "seconds": 0.2993379580002511,
-   "ns_per_px": 71.36773061758306,
+   "seconds": 0.2523641699999999,
+   "ns_per_px": 60.16830682754514,
    "max_rel_diff_vs_astropy_mean": 4.4223805806784513e-07,
    "kept_counts_identical_to_astropy": 1.0
   },
@@ -50,8 +50,8 @@
    "tool": "rankwise \u00b7 AVX-512 \u00b7 f32 bounds",
    "op": "sigclip",
    "family": "rankwise",
-   "seconds": 0.2528551489995152,
-   "ns_per_px": 60.285365342978295,
+   "seconds": 0.23285565000000474,
+   "ns_per_px": 55.51711320877188,
    "max_rel_diff_vs_astropy_mean": 0.003638895176204939,
    "kept_counts_identical_to_astropy": 0.9999997615814209
   },
@@ -59,16 +59,16 @@
    "tool": "rankwise \u00b7 AVX2",
    "op": "median",
    "family": "rankwise",
-   "seconds": 0.15077422700051102,
-   "ns_per_px": 35.94737696659828,
+   "seconds": 0.1430601039999999,
+   "ns_per_px": 34.10818672180174,
    "identical_to_np_median": true
   },
   {
    "tool": "rankwise \u00b7 AVX2",
    "op": "sigclip",
    "family": "rankwise",
-   "seconds": 0.41238409700054035,
-   "ns_per_px": 98.32003045094976,
+   "seconds": 0.36440915200000745,
+   "ns_per_px": 86.88191223144709,
    "max_rel_diff_vs_astropy_mean": 4.4223805806784513e-07,
    "kept_counts_identical_to_astropy": 1.0
   },
@@ -76,16 +76,16 @@
    "tool": "rankwise \u00b7 scalar",
    "op": "median",
    "family": "rankwise",
-   "seconds": 0.42952825400061556,
-   "ns_per_px": 102.40751600280178,
+   "seconds": 0.3491682110000056,
+   "ns_per_px": 83.2481887340559,
    "identical_to_np_median": true
   },
   {
    "tool": "rankwise \u00b7 scalar",
    "op": "sigclip",
    "family": "rankwise",
-   "seconds": 0.911926938999386,
-   "ns_per_px": 217.4203250406709,
+   "seconds": 0.7634693230000096,
+   "ns_per_px": 182.02527117729414,
    "max_rel_diff_vs_astropy_mean": 4.4223805806784513e-07,
    "kept_counts_identical_to_astropy": 1.0
   },
@@ -93,80 +93,80 @@
    "tool": "NumPy 2.5 median",
    "op": "median",
    "family": "competitor",
-   "seconds": 3.328038338000624,
-   "ns_per_px": 793.4661717416344,
+   "seconds": 2.9799584630000027,
+   "ns_per_px": 710.4774625301368,
    "identical_to_np_median": true
   },
   {
    "tool": "Bottleneck 1.6",
    "op": "median",
    "family": "competitor",
-   "seconds": 2.2728795940001874,
-   "ns_per_px": 541.8967232704609,
+   "seconds": 2.2139718890011864,
+   "ns_per_px": 527.8520319464651,
    "identical_to_np_median": true
   },
   {
    "tool": "numbagg 0.9 (nanmedian)",
    "op": "median",
    "family": "competitor",
-   "seconds": 13.580760183000166,
-   "ns_per_px": 3237.9055459499755,
+   "seconds": 12.625569025000004,
+   "ns_per_px": 3010.1702272892007,
    "identical_to_np_median": true
   },
   {
    "tool": "reducers 0.4",
    "op": "median",
    "family": "competitor",
-   "seconds": 1.6681404529990687,
-   "ns_per_px": 397.71567654587477,
+   "seconds": 1.5496705830009887,
+   "ns_per_px": 369.4702584745857,
    "identical_to_np_median": true
   },
   {
    "tool": "imcombiners 0.1",
    "op": "median",
    "family": "competitor",
-   "seconds": 1.681490519998988,
-   "ns_per_px": 400.89858055090616,
+   "seconds": 1.6323965230003523,
+   "ns_per_px": 389.1936595440751,
    "identical_to_np_median": true
   },
   {
    "tool": "reducers 0.4",
    "op": "sigclip",
    "family": "competitor",
-   "seconds": 3.670156472000599,
-   "ns_per_px": 875.0334911347863,
+   "seconds": 3.49551941000027,
+   "ns_per_px": 833.3967709541964,
    "max_rel_diff_vs_astropy_mean": 0.01915787714203238
   },
   {
    "tool": "imcombiners 0.1",
    "op": "sigclip",
    "family": "competitor",
-   "seconds": 4.960588927000572,
-   "ns_per_px": 1182.696563482421,
+   "seconds": 4.007828368999981,
+   "ns_per_px": 955.5407450199082,
    "max_rel_diff_vs_astropy_mean": 0.01915787714203238
   },
   {
    "tool": "astropy 8.0 sigma_clip",
    "op": "sigclip",
    "family": "competitor",
-   "seconds": 5.244868321999093,
-   "ns_per_px": 1250.4740529058201,
+   "seconds": 4.816868904999865,
+   "ns_per_px": 1148.431040048567,
    "max_rel_diff_vs_astropy_mean": 0.0
   },
   {
    "tool": "ccdproc 2.5 Combiner",
    "op": "median",
    "family": "competitor",
-   "seconds": 8.86419196099996,
-   "ns_per_px": 2113.3880522251034,
+   "seconds": 8.198845445000188,
+   "ns_per_px": 1954.7570812702627,
    "identical_to_np_median": true
   },
   {
    "tool": "ccdproc 2.5 Combiner (1 pass)",
    "op": "sigclip",
    "family": "competitor",
-   "seconds": 10.786856115000774,
-   "ns_per_px": 2571.7869079114853,
+   "seconds": 9.539677111999481,
+   "ns_per_px": 2274.4362621306136,
    "max_rel_diff_vs_astropy_mean": 0.49496946579815476
   }
  ]

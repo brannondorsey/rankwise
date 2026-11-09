@@ -1,0 +1,79 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-08"
+ },
+ "source": "https://data.dynamical.org/noaa/gefs/forecast-35-day/latest.zarr init 2026-11-01T00, temperature_2m, CONUS, leads 0-240 h (CC BY 4.0)",
+ "shape": [
+  31,
+  81,
+  121,
+  257
+ ],
+ "quantiles": [
+  0.1,
+  0.5,
+  0.9
+ ],
+ "threads": 1,
+ "versions": {
+  "rankwise": "0.1.0",
+  "numpy": "2.5.3",
+  "numbagg": "0.9.6",
+  "fastnanquantile": "0.0.2"
+ },
+ "rows": [
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "family": "rankwise",
+   "seconds": 0.03200585299964587,
+   "ns_per_cell": 12.706498622051933,
+   "identical_to_numpy": true
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2",
+   "family": "rankwise",
+   "seconds": 0.06151248099922668,
+   "ns_per_cell": 24.420791255409373,
+   "identical_to_numpy": true
+  },
+  {
+   "tool": "rankwise \u00b7 portable",
+   "family": "rankwise",
+   "seconds": 0.19160711699987587,
+   "ns_per_cell": 76.06907299615496,
+   "identical_to_numpy": true
+  },
+  {
+   "tool": "NumPy 2.5 quantile",
+   "family": "competitor",
+   "seconds": 2.622759256999416,
+   "ns_per_cell": 1041.2497640792692,
+   "identical_to_numpy": true
+  },
+  {
+   "tool": "numbagg 0.9 nanquantile",
+   "family": "competitor",
+   "seconds": 12.01357231700058,
+   "ns_per_cell": 4769.45388999875,
+   "identical_to_numpy": true
+  },
+  {
+   "tool": "fastnanquantile 0.0.2",
+   "family": "competitor",
+   "seconds": 2.300162460998763,
+   "ns_per_cell": 913.1770723779726,
+   "identical_to_numpy": true
+  }
+ ]
+}

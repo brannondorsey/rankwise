@@ -5,11 +5,11 @@ one SIMD lane per slice, sorted by branch-free networks, with results identical 
 
 <p align="center"><img src="docs/img/hero.jpg" alt="A synthetic emission nebula: 40 noisy subs with satellite trails, an airplane and a meteor, sigma-clip stacked by rankwise" width="100%"></p>
 
-<p align="center"><sub>40 synthetic 30 s subs (1800×1200 RGB) with five satellite trails, an airplane, a meteor, cosmic rays and hot pixels,<br>stacked by <code>rankwise.sigma_clip_mean</code> in 0.6 s on one core. Every rejection decision is identical to astropy's.</sub></p>
+<p align="center"><sub>40 synthetic 30 s subs (1800×1200 RGB) with five satellite trails, an airplane, a meteor, cosmic rays and hot pixels,<br>stacked by <code>rankwise.sigma_clip_mean</code> in 1.1 s on one core, full rejection map included.<br>Every rejection decision is identical to astropy's.</sub></p>
 
 <p align="center">
-<b>__SIGCLIP_X__× faster sigma clipping</b> · <b>__MEDIAN_X__× faster medians</b> · <b>__QUANT_X__× faster ensemble quantiles</b><br>
-<sub>than the fastest open-source alternative, per core (<a href="docs/benchmarks.md">benchmarks</a>)</sub>
+<b>14× faster sigma clipping</b> · <b>18× faster medians</b> · <b>72× faster ensemble quantiles</b><br>
+<sub>than the fastest open-source alternative, per core · quantiles measured on real NOAA GEFS data · <a href="docs/benchmarks.md">benchmarks</a></sub>
 </p>
 
 ---
@@ -133,9 +133,9 @@ Reproduce: `taskset -c 1 python bench/astro.py`, `bench/sweep.py`, `bench/ensemb
 
 <p align="center"><img src="docs/img/compare.jpg" alt="The same crop four ways: one sub, mean, median and sigma-clipped mean" width="100%"></p>
 
-The plain mean is smooth but keeps every trail; the median is clean but __MED_NOISIER__% noisier; the
-sigma-clipped mean is both clean and smooth, with background noise falling from __NOISE_1__ e⁻ in one sub
-to __NOISE_SIG__ e⁻. The rejection map shows what was removed:
+The plain mean is smooth but keeps every trail; the median is clean but 25% noisier; the
+sigma-clipped mean is both clean and smooth, with background noise falling from 21.6 e⁻ in one sub
+to 3.4 e⁻. The rejection map shows what was removed:
 
 <p align="center"><img src="docs/img/rejection.jpg" alt="Signal removed per pixel: satellite trails, airplane lights, a meteor, cosmic rays and hot pixels" width="100%"></p>
 
@@ -155,19 +155,19 @@ to __NOISE_SIG__ e⁻. The rejection map shows what was removed:
 
 One GEFS run over the contiguous US, every member and lead time to 240 h, read from
 [dynamical.org](https://dynamical.org/catalog/noaa-gefs-forecast-35-day/) (CC BY 4.0):
-__GEFS_LINE__ (`bench/gefs.py`).
+p10/p50/p90 of 2.5 million 31-member slices take 0.032 s on one core, bit-identical to `np.quantile`, against 2.3 s for fastnanquantile and 2.6 s for NumPy (`bench/gefs.py`).
 
 ### Satellite composites: uint16 with nodata
 
 A cloud-free median of 90 uint16 scenes with clouds set to the fill value works on the
 integers directly (`rw.median(scenes, axis=0, nodata=0)`, 32 lanes per AVX-512 register):
-__LANDSAT_LINE__ (`bench/landsat.py`, synthetic scenes because the Landsat archive is
+0.24 s for 90 scenes of 2048×2048 on one core, identical to `np.nanmedian`, against 3.6 s for Bottleneck's float32 `nanmedian` (15×) (`bench/landsat.py`, synthetic scenes because the Landsat archive is
 requester-pays).
 
 ## Correctness
 
 "Identical" means the same dtype and the same values under IEEE equality, NaN equal to NaN.
-The conformance suite runs __N_TESTS__ tests on every ISA the CPU has, against pinned NumPy
+The conformance suite runs 1,039 tests on every ISA the CPU has, against pinned NumPy
 2.5.3, SciPy 1.18.1 and astropy 8.0.2: every stack depth from 1 to 17 plus 31–33, 63–65,
 127–129, 255, 256, 511 and 512; partial vectors; float32, float64 and uint16; every axis,
 frame lists, memory maps, negative and power-of-two strides; NaN from none to all-NaN slices,
