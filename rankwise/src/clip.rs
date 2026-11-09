@@ -10,6 +10,56 @@ use crate::engine::{at, lanes_f64, load_group, miss_mask, put, Blk, Job, MAXL};
 use crate::simd::{Element, FVector, Mask, Vector};
 use crate::spec::{Center, Combine, Convention, Rejection, Spread, WinsorInit};
 
+/// `sum_k f(k)` with four accumulators keyed by `k % 4`, combined `(a0 + a1) + (a2 + a3)`.
+/// A macro so the body always inlines with the caller's target features: as a function taking
+/// a closure, the AVX-512 float32 instance left the closure out of line.
+macro_rules! acc4 {
+    ($C:ty, $n:expr, |$k:ident| $body:expr) => {{
+        let n = $n;
+        let z = sp::<$C>(0.0);
+        let (mut a0, mut a1, mut a2, mut a3) = (z, z, z, z);
+        let mut k = 0;
+        while k + 4 <= n {
+            a0 = a0.add({
+                let $k = k;
+                $body
+            });
+            a1 = a1.add({
+                let $k = k + 1;
+                $body
+            });
+            a2 = a2.add({
+                let $k = k + 2;
+                $body
+            });
+            a3 = a3.add({
+                let $k = k + 3;
+                $body
+            });
+            k += 4;
+        }
+        if k < n {
+            a0 = a0.add({
+                let $k = k;
+                $body
+            });
+        }
+        if k + 1 < n {
+            a1 = a1.add({
+                let $k = k + 1;
+                $body
+            });
+        }
+        if k + 2 < n {
+            a2 = a2.add({
+                let $k = k + 2;
+                $body
+            });
+        }
+        a0.add(a1).add(a2.add(a3))
+    }};
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ClipPlan {
     pub rej: Rejection,
@@ -152,38 +202,13 @@ unsafe fn is_full<C: Vector>(n: usize, lo: C, hi: C) -> bool {
 pub(crate) unsafe fn sum_range<C: FVector>(cb: *const C, n: usize, lo: C, hi: C) -> C {
     let z = sp::<C>(0.0);
     if is_full(n, lo, hi) {
-        acc4(n, |k| *cb.add(k))
+        acc4!(C, n, |k| *cb.add(k))
     } else {
-        acc4(n, |k| {
+        acc4!(C, n, |k| {
             let kk = sp::<C>(k as f64);
             C::select(kk.lt(hi).andnot(kk.lt(lo)), *cb.add(k), z)
         })
     }
-}
-
-/// `sum_k f(k)` with four accumulators keyed by `k % 4`, combined `(a0 + a1) + (a2 + a3)`.
-#[inline(always)]
-unsafe fn acc4<C: FVector>(n: usize, f: impl Fn(usize) -> C) -> C {
-    let z = sp::<C>(0.0);
-    let (mut a0, mut a1, mut a2, mut a3) = (z, z, z, z);
-    let mut k = 0;
-    while k + 4 <= n {
-        a0 = a0.add(f(k));
-        a1 = a1.add(f(k + 1));
-        a2 = a2.add(f(k + 2));
-        a3 = a3.add(f(k + 3));
-        k += 4;
-    }
-    if k < n {
-        a0 = a0.add(f(k));
-    }
-    if k + 1 < n {
-        a1 = a1.add(f(k + 1));
-    }
-    if k + 2 < n {
-        a2 = a2.add(f(k + 2));
-    }
-    a0.add(a1).add(a2.add(a3))
 }
 
 /// Standard deviation over ranks `[lo, hi)` (two-pass), dividing by `cnt - ddof`.
@@ -191,12 +216,12 @@ unsafe fn acc4<C: FVector>(n: usize, f: impl Fn(usize) -> C) -> C {
 unsafe fn std_range<C: FVector>(cb: *const C, n: usize, lo: C, hi: C, mean: C, cnt: C, ddof: f64) -> C {
     let z = sp::<C>(0.0);
     let ss = if is_full(n, lo, hi) {
-        acc4(n, |k| {
+        acc4!(C, n, |k| {
             let d = (*cb.add(k)).sub(mean);
             d.mul(d)
         })
     } else {
-        acc4(n, |k| {
+        acc4!(C, n, |k| {
             let d = (*cb.add(k)).sub(mean);
             let kk = sp::<C>(k as f64);
             C::select(kk.lt(hi).andnot(kk.lt(lo)), d.mul(d), z)

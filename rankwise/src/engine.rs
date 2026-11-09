@@ -501,20 +501,25 @@ unsafe fn streaming<S: Vector>(
     p: usize,
 ) {
     let n = job.n;
-    let load = |k: usize, pad: &mut [S::E; MAXL]| -> S {
-        let mut x = if full {
-            S::load(ptrs[k].add(b))
-        } else {
-            for i in 0..lanes {
-                pad[i] = *ptrs[k].add(b + i);
+    // A macro, not a closure: a closure here was not inlined into the `#[target_feature]`
+    // caller and ran every load as a call (2.3x slower than np.max).
+    macro_rules! load {
+        ($k:expr, $pad:expr) => {{
+            let k = $k;
+            let mut x = if full {
+                S::load(ptrs.get_unchecked(k).add(b))
+            } else {
+                for i in 0..lanes {
+                    $pad[i] = *ptrs.get_unchecked(k).add(b + i);
+                }
+                S::load($pad.as_ptr())
+            };
+            if let Some((s, o)) = scale_off {
+                x = norm::<S>(x, *s.get_unchecked(k), *o.get_unchecked(k));
             }
-            S::load(pad.as_ptr())
-        };
-        if let Some((s, o)) = scale_off {
-            x = norm::<S>(x, s[k], o[k]);
-        }
-        x
-    };
+            x
+        }};
+    }
     let mut vals = [0f64; MAXL];
     match job.kern {
         Kern::MinMax { which, omit } => {
@@ -525,7 +530,7 @@ unsafe fn streaming<S: Vector>(
             let mut seen_missing = S::mask_none();
             let mut seen_valid = S::mask_none();
             for k in 0..n {
-                let x = load(k, pad);
+                let x = load!(k, pad);
                 let mm = miss_mask(x, job.missing);
                 seen_missing = seen_missing.or(mm);
                 if omit {
@@ -560,7 +565,7 @@ unsafe fn streaming<S: Vector>(
             let mut frozen = S::mask_none(); // propagate: a NaN was seen
             let mut found = S::mask_none(); // omit: a valid value was seen
             for k in 0..n {
-                let x = load(k, pad);
+                let x = load!(k, pad);
                 let kv = S::splat(S::E::from_usize(k));
                 let mm = miss_mask(x, job.missing);
                 if k == 0 && !omit {
