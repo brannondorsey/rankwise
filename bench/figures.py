@@ -108,7 +108,7 @@ def astro(theme):
     m = d["machine"]
     headline(fig, f"rankwise sigma-clips {speed['sigclip']:.0f}× and medians {speed['median']:.0f}× faster than the fastest alternative",
              f"Seconds to stack {d['n']} frames of {d['side']}×{d['side']} float32, lower is better · {m['cpu']}, one core, "
-             "best of 3 after a warm-up", t)
+             "best of repeated runs after a warm-up", t)
     note = "rankwise results are identical to np.median and to astropy's sigma_clip decisions on every pixel."
     if siril:
         note += "  * Siril reads its 31 FITS files from the page cache; the others start from arrays in RAM."
