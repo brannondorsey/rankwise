@@ -179,9 +179,55 @@ def ensemble(theme):
     plt.close(fig)
 
 
+def stride(theme):
+    """Power-of-two frame strides: time relative to padded frames, before and after skewed reads."""
+    t = THEMES[theme]
+    after = json.loads((RES / "stride.json").read_text())["depth"]
+    before = json.loads((RES / "stride_v0.1.json").read_text())["depth"]
+    fig, axes = plt.subplots(1, 2, figsize=(9.2, 4.0), facecolor=t["surface"], sharey=True)
+    top = 0
+    for ax, (key, title) in zip(axes, (("median", "Median"), ("sigclip", "Sigma-clipped mean"))):
+        style(ax, t)
+        ax.yaxis.grid(True, color=t["grid"], linewidth=0.8)
+        ax.xaxis.grid(False)
+        for rows, label, col, lw in ((before, "before (direct reads)", t["muted"], 1.6),
+                                     (after, "skewed reads", t["rw"][0], 2.2)):
+            ns = [r["n"] for r in rows]
+            rat = [r[f"pow2_{key}"] / r[f"padded_{key}"] for r in rows]
+            top = max(top, max(rat))
+            ax.plot(ns, rat, color=col, linewidth=lw, marker="o", markersize=5.5, markeredgecolor=t["surface"],
+                    markeredgewidth=1.3, label=label)
+            i = ns.index(31)
+            ax.annotate(f"{rat[i]:.2f}×", (31, rat[i]), textcoords="offset points", xytext=(0, 8), ha="center",
+                        fontsize=9.5, color=col if col != t["muted"] else t["ink2"])
+        ax.axhline(1.0, color=t["ink2"], linewidth=1)
+        ax.axhline(1.2, color=t["muted"], linewidth=1, linestyle=(0, (4, 3)))
+        ax.text(8, 1.2, "1.2× target", va="bottom", fontsize=8.5, color=t["muted"])
+        ax.axvspan(47.5, 66, color=t["grid"], alpha=0.5, linewidth=0)
+        ax.text(56, 1.0, "staged", ha="center", va="bottom", fontsize=8.5, color=t["muted"])
+        ax.set_xticks([8, 16, 24, 31, 40, 47, 63])
+        ax.set_xlim(5, 66)
+        ax.set_xlabel("Frames of 1024×1024", color=t["ink2"])
+        ax.set_title(title, loc="left", fontsize=11.5, color=t["ink"], fontweight="semibold")
+    axes[0].set_ylabel("2^k stride ÷ padded frames", color=t["ink2"])
+    axes[0].set_ylim(0.8, top * 1.12)
+    leg = axes[1].legend(frameon=False, loc="upper left", fontsize=9.5)
+    for txt in leg.get_texts():
+        txt.set_color(t["ink"])
+    b31 = next(r for r in before if r["n"] == 31)
+    a31 = next(r for r in after if r["n"] == 31)
+    headline(fig, f"Power-of-two frame strides: {b31['pow2_median'] / b31['padded_median']:.2f}× → "
+             f"{a31['pow2_median'] / a31['padded_median']:.2f}× the time of padded frames at 31 frames",
+             "NumPy's 2 MiB pages put every 2^k-strided frame in one cache set; skewed reads stagger groups of 8 frames "
+             "by a cache line · AVX-512, one core", t, top=0.975)
+    fig.subplots_adjust(left=0.08, right=0.98, top=0.76, bottom=0.14, wspace=0.08)
+    fig.savefig(IMG / f"bench_stride_{theme}.png", dpi=200, facecolor=t["surface"])
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     for th in THEMES:
-        for f in (astro, sweep, ensemble):
+        for f in (astro, sweep, ensemble, stride):
             try:
                 f(th)
             except FileNotFoundError as e:

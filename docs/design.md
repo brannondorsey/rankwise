@@ -112,21 +112,39 @@ break that:
   loads latency-bound. From 96 frames rankwise copies each frame's next run of pixels
   (768 KiB of tile for all frames together) into an L2-resident tile, one frame at a time,
   and runs the kernel on the tile: 1.7–1.9× faster at 127 frames.
-* **Power-of-two frame strides.** A contiguous stack of 2048×2048 float32 frames puts frame
-  starts 16 MiB apart, so every stream maps to the same cache sets. L2 is physically indexed,
-  so how bad this is depends on the page size: NumPy madvises large arrays onto 2 MiB pages,
-  which keeps the conflict, while 4 KiB pages scatter it. Measured from Python, 63 frames of
-  1024×1024 took 91 ns per pixel direct and 45 staged. rankwise stages when 48 or more
-  frames start in the same L2 set; below that, the tile copy costs about what it saves.
+* **Power-of-two frame strides.** A contiguous stack of 1024×1024 or 2048×2048 float32
+  frames puts frame starts 4 or 16 MiB apart, so the `n` lines one block needs all map to the
+  same cache set, and the lines the prefetchers fetch ahead for one stream evict another's.
+  L2 is physically indexed, so how bad this is depends on the page size: NumPy madvises
+  large arrays onto 2 MiB pages, which keeps the conflict (31 frames of 1024×1024: 1.4× the
+  time of frames padded by one cache line), while 4 KiB pages scatter most of it.
+  rankwise counts how many frames start in one L2 set and picks a read path:
+  * **8–47 frames: skewed reads.** Frames are split into groups of 8, and group `g` is read
+    `g` cache lines ahead of the block being sorted, so at most 8 streams share a set at any
+    moment. Each lead load goes straight into a slot-major ring (slot `i` holds block `i` of
+    every frame, contiguous) and the network sorts the slot in place, so skewing adds no
+    copy; each slot also carries the OR of its missing-value masks. Of group sizes 4, 6, 8,
+    12 and one frame per group, 8 was the best or within noise of it at every depth.
+  * **48 frames and up: the staging tile.** Skewed and staged reads tie at 63 frames and
+    staging wins beyond (more streams than the prefetchers track, see above).
 
-Open: between 24 and 47 frames on 2^k strides neither path is good. At 31 frames of
-1024×1024 the median takes 18 ns per pixel on 2^k strides against 12 with one cache line of
-padding (1.46×; the handoff's target is 1.2×); sigma clipping, being compute-bound, pays
-1.15×. Padding frames by 64 bytes when you allocate them avoids it.
+  | Frames (1024×1024, 2 MiB pages) | 8 | 16 | 24 | 31 | 40 | 47 | 63 |
+  |---|---|---|---|---|---|---|---|
+  | median, 2^k stride ÷ padded | 0.91 | 1.06 | 1.14 | 1.12 | 1.21 | 1.25 | 1.17 |
+  | sigma clip, 2^k stride ÷ padded | 0.96 | 1.00 | 1.09 | 1.12 | 1.05 | 1.06 | 1.04 |
+
+  Before skewed reads the 31-frame median ratio was 1.46×. Skewed reads of cache-resident
+  data cost the same as direct ones, so the remaining 10–25% is on the memory side (each ratio
+  is the best of four interleaved rounds on a noisy VM). With 4 KiB pages
+  a 1.3× gap at 31 frames remains that skewing does not touch; its cause is not identified
+  (no hardware counters on this VM). Padding frames by 64 bytes when you allocate them is
+  still the fastest layout.
 
 Both thresholds were measured on a 2 MiB-L2 Sapphire Rapids-class core
-([benchmarks](benchmarks.md#power-of-two-strides)); `staging="always"`/`"never"` (Python
-`describe()` shows the choice) and `RANKWISE_TILE_BYTES` exist for measuring other CPUs.
+([benchmarks](benchmarks.md#power-of-two-strides)). `Staging::{Never, Always, Skew}` in Rust
+(`staging="never"|"always"|"skew"` in Python's `describe()`) force a path, `describe()` shows
+the one chosen, and `RANKWISE_TILE_BYTES` sets the tile size, for measuring other CPUs;
+`cargo run --release --example stridebench` reproduces the table with 2 MiB pages from Rust.
 
 ## Errors
 

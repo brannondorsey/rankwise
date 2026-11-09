@@ -21,27 +21,37 @@ const DEEP_STAGE: usize = 96;
 /// lands every stream in one L2 set: staging halved the time at 63 frames of 1024×1024.
 const CONFLICT_STAGE: usize = 48;
 
-/// Whether many frames start at the same L2 set (address bits 6..17).
-fn set_conflict(frames: &[*const u8]) -> bool {
+/// Shallower stacks whose frames collide in the L2 set bits use skewed reads instead: at
+/// least this many frames sharing a set is what makes the conflict cost (measured 1.4x at 31
+/// frames of 1024×1024 on 2 MiB pages; skewed reads bring it to 1.1x of padded frames).
+const SKEW_SHARE: usize = 8;
+
+/// The most frames that start in one L2 set (address bits 6..16: 2048 sets of 64-byte lines,
+/// as in a 2 MiB 16-way L2; with 2 MiB pages these bits are physical too).
+fn set_share(frames: &[*const u8]) -> usize {
     let mut buckets = std::collections::HashMap::new();
     for &f in frames {
         *buckets.entry(((f as usize) >> 6) & 0x7FF).or_insert(0usize) += 1;
     }
-    buckets.values().any(|&c| c >= 16)
+    buckets.values().copied().max().unwrap_or(0)
 }
 
-/// When to read frames through an in-cache tile instead of straight from memory.
+/// How kernels read the frames.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Staging {
-    /// Stage when the layout needs it (non-unit pixel stride, dtype conversion), when the
-    /// stack is deep (96+ frames), or when 48+ frames collide in the L2 set bits
-    /// (power-of-two frame strides).
+    /// Choose per call: a tile when the layout needs it (non-unit pixel stride, dtype
+    /// conversion), when the stack is deep (96+ frames), or when 48+ frames collide in the L2
+    /// set bits (power-of-two frame strides); skewed reads when 8 or more frames of a
+    /// shallower stack collide; otherwise direct.
     #[default]
     Auto,
-    /// Only when the layout needs it.
+    /// Direct reads, except where the layout needs a tile.
     Never,
-    /// Always.
+    /// Always through a tile.
     Always,
+    /// Skewed reads (frame groups read a few cache lines apart), except where the layout
+    /// needs a tile.
+    Skew,
 }
 
 /// Per-frame normalization `x * scale[k] + offset[k]`, applied on load (two roundings).
@@ -286,11 +296,18 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
     let space = collapse(stack.shape, stack.strides, &out_strides, mask.map(|m| m.strides))?;
     let esz = in_dtype.size() as isize;
     let need_stage = space.npix > 0 && (space.in_ps != esz || sdt != in_dtype);
+    let share = if n >= SKEW_SHARE { set_share(stack.frames) } else { 0 };
     let staged = match opts.staging {
         Staging::Always => true,
-        Staging::Never => need_stage,
-        Staging::Auto => need_stage || n >= DEEP_STAGE || (n >= CONFLICT_STAGE && set_conflict(stack.frames)),
+        Staging::Never | Staging::Skew => need_stage,
+        Staging::Auto => need_stage || n >= DEEP_STAGE || (n >= CONFLICT_STAGE && share >= 16),
     };
+    let skew = !staged
+        && match opts.staging {
+            Staging::Skew => true,
+            Staging::Auto => share >= SKEW_SHARE,
+            _ => false,
+        };
     Ok(Job {
         n,
         in_dtype,
@@ -306,6 +323,7 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
         net_full,
         net_bitonic,
         staged,
+        skew,
         isa,
         threads: opts.threads.max(1),
     })
@@ -423,7 +441,13 @@ pub fn describe(stack: &RawStack, op: &Op, opts: &Options) -> Result<String> {
         job.n,
         job.net_fast.comparators(),
         job.net_full.comparators(),
-        if job.staged { "staged" } else { "direct" },
+        if job.staged {
+            "staged"
+        } else if job.skew {
+            "skewed"
+        } else {
+            "direct"
+        },
         job.space.rows(),
         job.space.npix,
     ))

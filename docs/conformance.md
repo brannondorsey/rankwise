@@ -8,7 +8,7 @@ NumPy 2.5.3, SciPy 1.18.1 and astropy 8.0.2 (`conformance/requirements.txt`).
 ```bash
 pip install -r conformance/requirements.txt
 maturin build --release -m rankwise-py/Cargo.toml -o dist && pip install --find-links dist rankwise
-python -m pytest conformance -q          # 1,039 tests, about a minute
+python -m pytest conformance -q          # 1,051 tests, about a minute
 ```
 
 ## What is checked
@@ -30,12 +30,14 @@ python -m pytest conformance -q          # 1,039 tests, about a minute
 The matrix: every stack depth 1–17 plus 31–33, 63–65, 127–129, 255, 256, 511 and 512; pixel
 counts that leave partial vectors (1, 7, 15, 16, 17, 33, 1001); float32, float64 and uint16
 (uint8 is widened); frame lists, memory-mapped files, every axis, negative, odd and
-power-of-two strides, Fortran order; NaN densities from none to whole all-NaN slices, ±inf,
+power-of-two strides (direct, skewed and staged reads), Fortran order; NaN densities from none to whole all-NaN slices, ±inf,
 ±0, heavy ties, subnormals and ±FLT_MAX; q at 0, 1, 0.5, k/(n−1), 1/3 and random, as a Python
 float, a list, float64 and float32 arrays, `np.float64` and `np.float32`, with and without
 `out=`; one and several threads; xarray `apply_ufunc` with dask. Hypothesis adds random
 shapes, values and q. The Rust side adds exhaustive 0-1 principle tests for n ≤ 20 and oracle
-tests on every ISA, including NEON (CI runs on aarch64; locally under qemu).
+tests on every ISA, including NEON (CI runs on aarch64; locally under qemu), and checks that
+direct, skewed and staged reads agree bit for bit at every frame alignment, thread count and
+block tail.
 
 ## NumPy behaviours rankwise reproduces
 

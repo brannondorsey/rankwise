@@ -112,24 +112,59 @@ def main():
         out.append("")
     ls = load("landsat_90x2048")
     if ls:
-        out += ["## Satellite composite: 90 uint16 scenes, 2048 × 2048, clouds as nodata", "",
-                f"{ls['cloud_fraction'] * 100:.0f}% of values are cloud (fill value 0). rankwise reads the uint16 data "
-                "with `nodata=0`; the baselines get float32 with NaN, converted once and not timed.", "",
+        src = ls.get("source")
+        out += ["## Real data: Landsat composite, 90 uint16 scenes, 2048 × 2048, clouds as nodata", "",
+                '<img alt="Landsat 8/9 over Seattle and Tacoma: one cloudy scene, the median with clouds, and the '
+                'median with clouds as nodata" src="img/landsat.jpg">', "",
+                (f"{src}. " if src else "") +
+                f"{ls['cloud_fraction'] * 100:.0f}% of the red-band values are flagged by QA_PIXEL as cloud, cirrus or "
+                "shadow and set to the fill value 0. rankwise reads the uint16 data with `nodata=0`; the baselines "
+                "get float32 with NaN, converted once and not timed.", "",
                 "| Tool | Seconds | ns / pixel | Identical to np.nanmedian |", "|---|---|---|---|"]
         for r in sorted(ls["rows"], key=lambda r: r["seconds"]):
             out.append(f"| {r['tool']} | {fmt_s(r['seconds'])} | {r['ns_per_px']:.1f} | {'yes' if r['identical'] else 'no'} |")
         out.append("")
+    e2e = load("e2e_astro")
+    if e2e:
+        out += ["## End to end: read 31 FITS files, then stack", "",
+                "The same 31 float32 FITS files of 2048 × 2048 (the astro set), from the page cache. The Python "
+                f"pipelines read them with {e2e['reader']} into one array, then reduce it; Siril reads them itself. "
+                "Seconds:", "",
+                "| Tool | Operation | Read | Reduce | Total | vs rankwise |", "|---|---|---|---|---|---|"]
+        for op in ("median", "sigclip"):
+            rows = sorted([r for r in e2e["rows"] if r["op"] == op], key=lambda r: r["total_seconds"])
+            best = min(r["total_seconds"] for r in rows if r["tool"].startswith("rankwise"))
+            for r in rows:
+                rd_ = r["read_seconds"]
+                red = "—" if rd_ is None else fmt_s(r["total_seconds"] - rd_)
+                out.append(f"| {r['tool']} | {'sigma-clipped mean' if op == 'sigclip' else 'median'} | "
+                           f"{'own I/O' if rd_ is None else fmt_s(rd_)} | {red} | {fmt_s(r['total_seconds'])} | "
+                           f"{r['total_seconds'] / best:.1f}× |")
+        out += ["", "Reading costs more than a rankwise median here, so the end-to-end gain is smaller than the "
+                "kernel's; with sigma clipping the kernel still dominates.", ""]
     st = load("stride")
     if st:
         out += ["## Power-of-two strides", "",
-                "A contiguous stack of 2^k-byte frames puts every frame's current cache line in the same set. "
-                "31 frames, rankwise AVX-512, ns per pixel:", "",
-                "| Frame | Stride | Median | Sigma clip |", "|---|---|---|---|"]
+                "A contiguous stack of 2^k-byte frames puts every frame's current cache line in the same set; NumPy's "
+                "2 MiB pages keep that conflict in L2. rankwise reads 8–47 such frames skewed and 48 or more through "
+                "its tile ([design](design.md#memory-layout-deep-stacks-and-the-power-of-two-stride)). "
+                "rankwise AVX-512, ns per pixel, best of four interleaved rounds.", "",
+                "31 frames:", "",
+                "| Frame | Stride | Read path | Median | Sigma clip |", "|---|---|---|---|---|"]
         for r in st["rows"]:
             pad = "exactly 2^k" if r["pad_bytes"] == 0 and r["frame"] != "721x1440" else f"+{r['pad_bytes']} B"
             if r["frame"] == "721x1440" and r["pad_bytes"] == 0:
                 pad = "not 2^k"
-            out.append(f"| {r['frame']} | {pad} | {r['median_ns_px']:.1f} | {r['sigclip_ns_px']:.1f} |")
+            out.append(f"| {r['frame']} | {pad} | {r.get('path', '?')} | {r['median_ns_px']:.1f} | "
+                       f"{r['sigclip_ns_px']:.1f} |")
+        if st.get("depth"):
+            out += ["", "1024 × 1024 frames by depth, exactly 2^k against +64 B:", "",
+                    "| Frames | 2^k path | 2^k median | padded median | ratio | 2^k σ-clip | padded σ-clip | ratio |",
+                    "|---|---|---|---|---|---|---|---|"]
+            for r in st["depth"]:
+                out.append(f"| {r['n']} | {r['pow2_path']} | {r['pow2_median']:.1f} | {r['padded_median']:.1f} | "
+                           f"{r['pow2_median'] / r['padded_median']:.2f}× | {r['pow2_sigclip']:.1f} | "
+                           f"{r['padded_sigclip']:.1f} | {r['pow2_sigclip'] / r['padded_sigclip']:.2f}× |")
         out.append("")
     (ROOT / "docs" / "benchmarks.md").write_text("\n".join(out) + "\n")
     print("wrote docs/benchmarks.md")

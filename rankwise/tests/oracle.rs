@@ -389,3 +389,144 @@ fn ndarray_any_axis_matches_frames() {
     let mut o3 = Array2::<f32>::zeros((30, 40));
     a.reduce_into(Axis(0), Clip::sigma(3.0, 3.0).max_iters(5).mean(), o3.view_mut()).unwrap();
 }
+
+/// Direct, tiled and skewed reads give the same bits for every kernel, ISA, depth and tail.
+#[test]
+fn read_paths_agree() {
+    for &n in &[1usize, 2, 7, 8, 9, 16, 17, 24, 31, 33, 47, 48, 64] {
+        for &(npix, nan) in &[(1001usize, 0.0), (1001, 0.05), (7, 0.05), (33, 0.0), (16 * 9, 0.3)] {
+            let st = stack(n, npix, nan, n % 3 == 0, 7 + n as u64);
+            let mut ops = vec![
+                Op::Median,
+                Op::Quantile(QuantileSpec { form: QForm::Weak, ..QuantileSpec::new(vec![0.1, 0.5, 0.9]) }),
+                Op::SelectRanks(vec![0, n / 2, n - 1]),
+                Op::Mad { scale: 1.0 },
+                Op::TrimMean(0.1),
+                Op::ArgRank(ArgRank::Median),
+                Op::Clip(Clip::sigma(2.5, 2.5)),
+                Op::Clip(presets::siril_winsorized(3.0, 3.0)),
+                Op::Min,
+                Op::ArgMax,
+            ];
+            if n >= 2 {
+                ops.push(Op::Iqr { lo: 25.0, hi: 75.0, scale: 1.0 });
+            }
+            for op in &ops {
+                let nout = op.n_outputs();
+                let dt = if matches!(op, Op::ArgRank(_) | Op::ArgMax) { DType::I64 } else { DType::F64 };
+                for &isa in &isas() {
+                    for nanp in [NanPolicy::Omit, NanPolicy::Propagate] {
+                        let opts = |staging, threads| Options {
+                            isa: Some(isa),
+                            nan: nanp,
+                            staging,
+                            threads,
+                            ..Default::default()
+                        };
+                        let base = run_f32(&st, op, &opts(Staging::Never, 1), nout, dt);
+                        for (staging, threads) in [(Staging::Always, 1), (Staging::Skew, 1), (Staging::Skew, 3)] {
+                            let got = run_f32(&st, op, &opts(staging, threads), nout, dt);
+                            for j in 0..nout {
+                                for p in 0..npix {
+                                    assert!(
+                                        same(base[j][p], got[j][p]),
+                                        "{op:?} n={n} npix={npix} {isa} {nanp:?} {staging:?} t={threads} out {j} p={p}: {} vs {}",
+                                        base[j][p],
+                                        got[j][p]
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Skewed reads with normalization and uint16 `nodata`.
+#[test]
+fn skewed_reads_normalize_and_nodata() {
+    let n = 21;
+    let npix = 517;
+    let st = stack(n, npix, 0.0, false, 99);
+    let scale: Vec<f64> = (0..n).map(|k| 1.0 + k as f64 / 64.0).collect();
+    let offset: Vec<f64> = (0..n).map(|k| k as f64 - 3.0).collect();
+    let u: Vec<Vec<u16>> = st.iter().map(|f| f.iter().map(|&x| ((x + 500.0) as u16) % 9).collect()).collect();
+    for &isa in &isas() {
+        let o = |staging| Options {
+            isa: Some(isa),
+            staging,
+            normalize: Some(Normalize { scale: Some(scale.clone()), offset: Some(offset.clone()) }),
+            ..Default::default()
+        };
+        let op = Op::Clip(Clip::sigma(2.0, 2.0));
+        let a = run_f32(&st, &op, &o(Staging::Never), 3, DType::F64);
+        let b = run_f32(&st, &op, &o(Staging::Skew), 3, DType::F64);
+        assert!(a.iter().flatten().zip(b.iter().flatten()).all(|(x, y)| same(*x, *y)), "{isa} normalized clip");
+        let views: Vec<&[u16]> = u.iter().map(|v| v.as_slice()).collect();
+        let med = |staging| {
+            let mut out = vec![0f64; npix];
+            let opts = Options { isa: Some(isa), staging, nodata: Some(0.0), ..Default::default() };
+            reduce_frames(&views, &Op::Median, &mut [Out::F64(&mut out)], None, &opts).unwrap();
+            out
+        };
+        let (a, b) = (med(Staging::Never), med(Staging::Skew));
+        assert!(a.iter().zip(&b).all(|(x, y)| same(*x, *y)), "{isa} u16 nodata median");
+    }
+}
+
+/// Every alignment of the frames (head blocks of every length) and of the tile.
+#[test]
+fn misaligned_frames_agree() {
+    let n = 19;
+    let npix = 300;
+    let st = stack(n, npix + 40, 0.03, false, 5);
+    let ops = [Op::Median, Op::Clip(Clip::sigma(2.5, 2.5)), Op::Max, Op::ArgMin];
+    for &isa in &isas() {
+        for op in &ops {
+            let dt = if matches!(op, Op::ArgMin) { DType::I64 } else { DType::F64 };
+            let nout = op.n_outputs();
+            let base: Vec<Vec<f32>> = st.iter().map(|f| f[..npix].to_vec()).collect();
+            let opts = |staging| Options { isa: Some(isa), nan: NanPolicy::Omit, staging, ..Default::default() };
+            let want = run_f32(&base, op, &opts(Staging::Always), nout, dt);
+            for off in 0..33 {
+                let shifted: Vec<Vec<f32>> = st.iter().map(|f| f[off..off + npix].to_vec()).collect();
+                // Re-home each frame at `off` elements past a 64-byte boundary.
+                let mut slab = vec![0f32; n * (npix + 64) + 64];
+                let a = slab.as_ptr().align_offset(64);
+                let views: Vec<&[f32]> = {
+                    for k in 0..n {
+                        let s0 = a + k * (npix + 64) + (off % 16);
+                        slab[s0..s0 + npix].copy_from_slice(&shifted[k]);
+                    }
+                    (0..n).map(|k| a + k * (npix + 64) + (off % 16)).map(|s0| &slab[s0..s0 + npix]).collect()
+                };
+                let want_s = run_f32(&shifted, op, &opts(Staging::Always), nout, dt);
+                for staging in [Staging::Never, Staging::Skew] {
+                    let o = opts(staging);
+                    let mut bufs = vec![vec![0f64; npix]; nout];
+                    let mut ibufs = vec![vec![0i64; npix]; nout];
+                    let mut outs: Vec<Out> = if dt == DType::I64 {
+                        ibufs.iter_mut().map(|b| Out::I64(b.as_mut_slice())).collect()
+                    } else {
+                        bufs.iter_mut().map(|b| Out::F64(b.as_mut_slice())).collect()
+                    };
+                    reduce_frames(&views, op, &mut outs, None, &o).unwrap();
+                    drop(outs);
+                    let got: Vec<Vec<f64>> = if dt == DType::I64 {
+                        ibufs.into_iter().map(|b| b.into_iter().map(|x| x as f64).collect()).collect()
+                    } else {
+                        bufs
+                    };
+                    for j in 0..nout {
+                        for p in 0..npix {
+                            assert!(same(want_s[j][p], got[j][p]), "{op:?} {isa} off={off} {staging:?} out {j} p={p}");
+                        }
+                    }
+                }
+            }
+            assert_eq!(want.len(), nout);
+        }
+    }
+}

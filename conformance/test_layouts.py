@@ -113,3 +113,24 @@ def test_conflicting_strides_take_the_staged_path(isa):
     o2, l2, h2 = rw.sigma_clip_mean(xs, axis=0, return_counts=True)
     identical(out.reshape(-1)[::7], o2)
     identical(lo.reshape(-1)[::7], l2)
+
+
+@pytest.mark.parametrize("n", [8, 17, 31, 47])
+def test_conflicting_strides_take_the_skewed_path(isa, n):
+    """Shallower stacks of frames 128 KiB apart use skewed reads; results don't change."""
+    import scipy.stats
+    from astropy.stats import sigma_clip
+
+    x = data((n, 128, 256), seed=n)
+    assert "path=skewed" in rw.describe(x, axis=0)
+    identical(rw.median(x, axis=0), np.median(x, axis=0))
+    identical(rw.nanmedian(x, axis=0), np.nanmedian(x, axis=0))
+    identical(rw.nanquantile(x, [0.1, 0.9], axis=0), np.nanquantile(x, [0.1, 0.9], axis=0))
+    identical(rw.select_ranks(x, [0, n // 2, n - 1], axis=0), np.sort(x, axis=0)[[0, n // 2, n - 1]])
+    identical(rw.argmedian(x, axis=0), np.argsort(x, axis=0, kind="stable")[(n - 1) // 2])
+    identical(rw.mad(x, axis=0, nan_policy="omit"), scipy.stats.median_abs_deviation(x, axis=0, nan_policy="omit"))
+    mask = np.empty(x.shape, bool)
+    out, lo, hi = rw.sigma_clip_mean(x, axis=0, sigma=(2.5, 2.5), mask=mask, return_counts=True)
+    sc = sigma_clip(x, sigma=2.5, maxiters=5, cenfunc="median", stdfunc="std", axis=0)
+    identical(mask, sc.mask)
+    identical((np.isfinite(x).sum(0) - lo - hi).astype(np.int64), (~sc.mask).sum(0).astype(np.int64))

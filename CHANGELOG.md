@@ -16,10 +16,12 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
   Siril and PixInsight presets; per-frame normalization and weights in the same pass.
 * **Inputs.** float32, float64 and uint16 (uint8 widened), any axis of a strided array or a
   list of frames, no whole-array copies; deep stacks and non-unit strides read through an
-  in-cache tile.
+  in-cache tile; 8–47 frames that start in the same cache set (power-of-two frame strides)
+  read skewed, a few cache lines apart per group of 8; full blocks start vector-aligned
+  however the frames are aligned.
 * **Bindings.** Rust crate (`ndarray` and `rayon` features), C ABI with a cbindgen header,
   and an abi3 Python wheel that releases the GIL.
-* **Verification.** 1,039-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
+* **Verification.** 1,051-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
   astropy 8.0.2 on every ISA; exhaustive 0-1 principle tests; black-box checks against
   Siril 1.2.1.
 

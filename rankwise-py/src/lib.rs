@@ -159,6 +159,7 @@ fn parse_opts(d: &Bound<'_, PyDict>) -> PyResult<Options> {
         staging: match get::<String>(d, "staging")?.as_deref() {
             Some("always") => Staging::Always,
             Some("never") => Staging::Never,
+            Some("skew") => Staging::Skew,
             _ => Staging::Auto,
         },
     })

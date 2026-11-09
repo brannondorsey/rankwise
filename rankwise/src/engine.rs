@@ -14,6 +14,10 @@ pub(crate) const SENTINEL: usize = 65535;
 /// Most lanes any vector type has (u16 on AVX-512).
 pub(crate) const MAXL: usize = 32;
 
+/// Frames per group in skewed reads: groups of 8 were fastest from 16 to 47 frames (2 MiB
+/// pages, 2 MiB 16-way L2), against 4, 16 and one frame per group.
+const SKEW_GROUP: usize = 8;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Missing {
     None,
@@ -81,6 +85,9 @@ pub(crate) struct Job {
     /// Read through an in-cache tile (non-unit pixel stride, dtype conversion, or the
     /// power-of-two frame-stride fix).
     pub staged: bool,
+    /// Read frame `k` a few cache lines ahead into a small ring (frames whose starts share
+    /// cache-set bits), so the lines one block needs never pile into one set.
+    pub skew: bool,
     pub isa: Isa,
     pub threads: usize,
 }
@@ -208,6 +215,17 @@ pub(crate) struct Blk<'a, S: Vector> {
 /// Process one unit of work: one row, pixels `p0..p1`.
 #[inline(always)]
 pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, u: Unit) {
+    // Skewed reads get their own instantiation: a runtime branch in the block loop cost the
+    // direct path 6%.
+    if job.skew && !job.staged && !job.kern.streaming() {
+        run_unit_in::<A, S, true>(job, u)
+    } else {
+        run_unit_in::<A, S, false>(job, u)
+    }
+}
+
+#[inline(always)]
+unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW: bool>(job: &Job, u: Unit) {
     let n = job.n;
     let l = S::L;
     let mut out_off = vec![0isize; job.outs.len()];
@@ -242,8 +260,11 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
     } else {
         u.p1 - u.p0
     };
-    let ts = tile_px.div_ceil(l) * l + if job.staged { 16 } else { 0 };
-    let mut tile: Vec<S::E> = if job.staged { vec![S::E::ZERO; n * ts] } else { vec![] };
+    // Rows are a whole number of vectors plus at least one cache line (no power-of-two row
+    // stride), and the tile is vector-aligned, so tile loads never split a cache line.
+    let ts = tile_px.div_ceil(l) * l + if job.staged { l.max(64 / esz) } else { 0 };
+    let mut tile: Vec<S> = if job.staged { vec![S::splat(S::E::ZERO); n * ts / l] } else { vec![] };
+    let tile_e = tile.as_mut_ptr() as *mut S::E;
     let mut ptrs: Vec<*const S::E> = vec![core::ptr::null(); n];
     let mut scratch_v: Vec<u8> = vec![0u8; 3 * n * 64 + 64];
     let scratch = {
@@ -257,66 +278,130 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
         .as_ref()
         .map(|(s, o)| (s.iter().map(|&x| S::E::from_f64(x)).collect(), o.iter().map(|&x| S::E::from_f64(x)).collect()));
 
+    // Skewed reads (frames whose starts share cache-set bits). Frames are split into `ng`
+    // contiguous groups of `gw`; group g is read g cache lines ahead of the block being sorted,
+    // so at most `gw` lines in flight share a cache set. Lead loads go straight into a
+    // slot-major ring (slot i holds block i of every frame, contiguous) that is sorted in
+    // place, so skewing adds no copy. Each slot carries the OR of its missing-value masks.
+    let skew = SKEW;
+    let line = (64 / (l * esz)).max(1);
+    let gw = if skew { SKEW_GROUP } else { n.max(1) };
+    let ng = n.div_ceil(gw).max(1);
+    let rr = ((ng - 1) * line + 1).next_power_of_two();
+    let sstride = n + 1;
+    let mut ring: Vec<S> = if skew { vec![S::splat(S::E::ZERO); rr * sstride] } else { vec![] };
+    let mut rmask: Vec<S::M> = vec![S::mask_none(); if skew { rr } else { 0 }];
+    let rp = ring.as_mut_ptr();
+    let mp = rmask.as_mut_ptr();
+    // Load block j (pixels head + j*l..) of group g into its slot (a macro, not a closure, so it inlines with the
+    // caller's target features).
+    macro_rules! lead {
+        ($g:expr, $j:expr, $head:expr) => {{
+            let (g, j, head) = ($g, $j, $head);
+            let slot = j & (rr - 1);
+            let sb = rp.add(slot * sstride);
+            let mut mm = S::mask_none();
+            for k in g * gw..((g + 1) * gw).min(n) {
+                let mut x = S::load(ptrs.get_unchecked(k).add(head + j * l));
+                if let Some((s, o)) = &scale_off {
+                    x = norm::<S>(x, *s.get_unchecked(k), *o.get_unchecked(k));
+                }
+                mm = mm.or(miss_mask(x, job.missing));
+                *sb.add(k) = x;
+            }
+            *mp.add(slot) = (*mp.add(slot)).or(mm);
+        }};
+    }
+
     let mut t0 = u.p0;
     while t0 < u.p1 {
         let t1 = (t0 + tile_px).min(u.p1);
         let cnt = t1 - t0;
         if job.staged {
-            stage::<S>(job, &src, in_ps, t0, cnt, &mut tile, ts);
+            stage::<S>(job, &src, in_ps, t0, cnt, core::slice::from_raw_parts_mut(tile_e, n * ts), ts);
             for k in 0..n {
-                ptrs[k] = tile.as_ptr().add(k * ts);
+                ptrs[k] = tile_e.add(k * ts);
             }
         } else {
             for k in 0..n {
                 ptrs[k] = src[k].offset(t0 as isize * in_ps) as *const S::E;
             }
         }
+        // Direct reads start with a short head block so the full blocks after it are
+        // vector-aligned and no load splits a cache line (NumPy puts large arrays 16 bytes
+        // into a line). On the machine measured this was within noise; it costs one partial
+        // block per row.
+        let va = l * esz;
+        let a0 = ptrs[0] as usize;
+        let head = if job.staged || !a0.is_multiple_of(esz) { 0 } else { ((va - a0 % va) % va / esz).min(cnt) };
+        let nfull = (cnt - head) / l;
+        if skew {
+            for g in 1..ng {
+                for j in 0..(g * line).min(nfull) {
+                    lead!(g, j, head);
+                }
+            }
+        }
         let mut b = 0;
         while b < cnt {
-            let lanes = (cnt - b).min(l);
+            let lanes = if b < head { head - b } else { (cnt - b).min(l) };
             let full = lanes == l || job.staged;
             let blk_p = t0 + b;
             if job.kern.streaming() {
                 streaming::<S>(job, &ptrs, b, lanes, full, &mut pad, &scale_off, &outs, blk_p);
-                b += l;
+                b += lanes;
                 continue;
             }
             // ---- load
             let mut anym = S::mask_none();
-            for k in 0..n {
-                let mut x = if full {
-                    S::load(ptrs[k].add(b))
-                } else {
-                    for i in 0..lanes {
-                        pad[i] = *ptrs[k].add(b + i);
+            let bp: *mut S = if skew && lanes == l {
+                let i = (b - head) / l;
+                for g in 0..ng {
+                    if i + g * line < nfull {
+                        lead!(g, i + g * line, head);
                     }
-                    S::load(pad.as_ptr())
-                };
-                if let Some((s, o)) = &scale_off {
-                    x = norm::<S>(x, s[k], o[k]);
                 }
-                anym = anym.or(miss_mask(x, job.missing));
-                *buf.as_mut_ptr().add(k) = x;
-            }
+                let slot = i & (rr - 1);
+                anym = *mp.add(slot);
+                *mp.add(slot) = S::mask_none();
+                rp.add(slot * sstride)
+            } else {
+                for k in 0..n {
+                    let mut x = if full {
+                        S::load(ptrs[k].add(b))
+                    } else {
+                        for i in 0..lanes {
+                            pad[i] = *ptrs[k].add(b + i);
+                        }
+                        S::load(pad.as_ptr())
+                    };
+                    if let Some((s, o)) = &scale_off {
+                        x = norm::<S>(x, s[k], o[k]);
+                    }
+                    anym = anym.or(miss_mask(x, job.missing));
+                    *buf.as_mut_ptr().add(k) = x;
+                }
+                buf.as_mut_ptr()
+            };
             let any_missing = anym.any();
             if !raw.is_empty() {
-                raw.copy_from_slice(&buf);
+                core::ptr::copy_nonoverlapping(bp, raw.as_mut_ptr(), n);
             }
             let mut m = S::splat(S::E::from_usize(n));
             if any_missing {
                 let one = S::splat(S::E::from_usize(1));
                 let big = S::splat(S::E::MAX);
                 for k in 0..n {
-                    let x = *buf.as_ptr().add(k);
+                    let x = *bp.add(k);
                     let mm = miss_mask(x, job.missing);
-                    *buf.as_mut_ptr().add(k) = S::select(mm, big, x);
+                    *bp.add(k) = S::select(mm, big, x);
                     m = S::select(mm, m.sub(one), m);
                 }
             }
             let plan = if any_missing && job.kern.per_lane_ranks() { &job.net_full } else { &job.net_fast };
-            S::apply_net(buf.as_mut_ptr(), plan);
+            S::apply_net(bp, plan);
             let blk = Blk {
-                buf: buf.as_mut_ptr(),
+                buf: bp,
                 raw: raw.as_ptr(),
                 m,
                 any_missing,
@@ -328,7 +413,7 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
                 scratch,
             };
             epilogue::<A, S>(job, &blk);
-            b += l;
+            b += lanes;
         }
         t0 = t1;
     }
