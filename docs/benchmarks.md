@@ -46,13 +46,13 @@ reducers and imcombiners clip differently from astropy (they do not re-apply the
 
 | Frames | rankwise median | rankwise σ-clip | reducers median | imcombiners median | reducers σ-clip | imcombiners σ-clip | NumPy median | median speedup | σ-clip speedup |
 |---|---|---|---|---|---|---|---|---|---|
-| 8 | 2.8 | 19.8 | 92 | 83 | 187 | 187 | 139 | 29.9× | 9.4× |
-| 15 | 5.0 | 26.7 | 205 | 198 | 438 | 471 | 287 | 39.6× | 16.4× |
-| 31 | 14.7 | 54.8 | 380 | 357 | 839 | 945 | 753 | 24.2× | 15.3× |
-| 63 | 45.4 | 134.7 | 638 | 674 | 1660 | 1905 | 1724 | 14.0× | 12.3× |
-| 127 | 110.8 | 320.2 | 1195 | 1198 | 3714 | 3768 | 3392 | 10.8× | 11.6× |
-| 255 | 361.1 | 685.6 | 2273 | 2314 | 8055 | 8626 | 6682 | 6.3× | 11.7× |
-| 511 | 670.8 | 1983.2 | 4454 | 5001 | 17453 | 18738 | 13882 | 6.6× | 8.8× |
+| 8 | 2.9 | 19.8 | 92 | 83 | 187 | 187 | 139 | 28.9× | 9.4× |
+| 15 | 5.9 | 28.7 | 205 | 198 | 438 | 471 | 287 | 33.3× | 15.2× |
+| 31 | 16.4 | 55.9 | 380 | 357 | 839 | 945 | 753 | 21.8× | 15.0× |
+| 63 | 46.4 | 147.0 | 638 | 674 | 1660 | 1905 | 1724 | 13.7× | 11.3× |
+| 127 | 179.9 | 312.8 | 1195 | 1198 | 3714 | 3768 | 3392 | 6.6× | 11.9× |
+| 255 | 379.5 | 740.6 | 2273 | 2314 | 8055 | 8626 | 6682 | 6.0× | 10.9× |
+| 511 | 776.2 | 1702.8 | 4454 | 5001 | 17453 | 18738 | 13882 | 5.7× | 10.2× |
 
 ns per output pixel, one core, AVX-512. Speedup is against the faster of reducers and imcombiners.
 
@@ -88,18 +88,35 @@ https://data.dynamical.org/noaa/gefs/forecast-35-day/latest.zarr init 2026-11-01
 | NumPy 2.5 quantile | 2.62 | 1041.2 | yes |
 | numbagg 0.9 nanquantile | 12 | 4769.5 | yes |
 
-## Satellite composite: 90 uint16 scenes, 2048 × 2048, clouds as nodata
+## Real data: Landsat composite, 90 uint16 scenes, 2048 × 2048, clouds as nodata
 
-46% of values are cloud (fill value 0). rankwise reads the uint16 data with `nodata=0`; the baselines get float32 with NaN, converted once and not timed.
+<img alt="Landsat 8/9 over Seattle and Tacoma: one cloudy scene, the median with clouds, and the median with clouds as nodata" src="img/landsat.jpg">
+
+Landsat C2 L2 SR, WRS-2 046/027, 2023-01-04 to 2024-12-24, via Microsoft Planetary Computer (USGS, public domain). 65% of the red-band values are flagged by QA_PIXEL as cloud, cirrus or shadow and set to the fill value 0. rankwise reads the uint16 data with `nodata=0`; the baselines get float32 with NaN, converted once and not timed.
 
 | Tool | Seconds | ns / pixel | Identical to np.nanmedian |
 |---|---|---|---|
-| rankwise · AVX-512 (uint16, nodata=0) | 0.237 | 56.4 | yes |
-| rankwise · AVX2 (uint16, nodata=0) | 0.341 | 81.3 | yes |
-| rankwise · portable (uint16, nodata=0) | 1.02 | 242.2 | yes |
-| Bottleneck 1.6 nanmedian (float32) | 3.58 | 852.7 | yes |
-| NumPy 2.5 nanmedian (float32) | 18.5 | 4419.0 | yes |
-| numbagg 0.9 nanmedian (float32) | 19.3 | 4604.5 | yes |
+| rankwise · AVX-512 (uint16, nodata=0) | 0.231 | 55.2 | yes |
+| rankwise · AVX2 (uint16, nodata=0) | 0.325 | 77.5 | yes |
+| rankwise · portable (uint16, nodata=0) | 1.07 | 256.0 | yes |
+| Bottleneck 1.6 nanmedian (float32) | 4.91 | 1170.7 | yes |
+| NumPy 2.5 nanmedian (float32) | 20.6 | 4900.8 | yes |
+| numbagg 0.9 nanmedian (float32) | 20.7 | 4944.0 | yes |
+
+## End to end: read 31 FITS files, then stack
+
+The same 31 float32 FITS files of 2048 × 2048 (the astro set), from the page cache. The Python pipelines read them with astropy.io.fits (memmap, byte-swapped) into one array, then reduce it; Siril reads them itself. Seconds:
+
+| Tool | Operation | Read | Reduce | Total | vs rankwise |
+|---|---|---|---|---|---|
+| rankwise · AVX-512 | median | 0.113 | 0.0963 | 0.209 | 1.0× |
+| reducers 0.4 | median | 0.113 | 1.61 | 1.73 | 8.3× |
+| Siril 1.2.1 | median | own I/O | — | 2.72 | 13.0× |
+| rankwise · AVX-512 | sigma-clipped mean | 0.113 | 0.247 | 0.359 | 1.0× |
+| Siril 1.2.1 | sigma-clipped mean | own I/O | — | 3.44 | 9.6× |
+| reducers 0.4 | sigma-clipped mean | 0.113 | 3.37 | 3.48 | 9.7× |
+
+Reading takes 0.11 s, longer than rankwise's median itself, so end to end rankwise is 8× faster than reducers for the median and 10× for sigma clipping, rather than the kernel-only ratios above.
 
 ## Power-of-two strides
 
@@ -109,25 +126,25 @@ A contiguous stack of 2^k-byte frames puts every frame's current cache line in t
 
 | Frame | Stride | Read path | Median | Sigma clip |
 |---|---|---|---|---|
-| 1024x1024 | exactly 2^k | skewed | 14.9 | 59.8 |
-| 1024x1024 | +64 B | direct | 13.8 | 53.0 |
-| 1024x1024 | +4096 B | direct | 13.5 | 51.9 |
-| 2048x2048 | exactly 2^k | skewed | 18.2 | 57.7 |
-| 2048x2048 | +64 B | direct | 15.5 | 50.1 |
-| 2048x2048 | +4096 B | direct | 14.8 | 49.1 |
-| 721x1440 | not 2^k | direct | 13.2 | 49.8 |
-| 721x1440 | +64 B | direct | 12.2 | 49.5 |
-| 721x1440 | +4096 B | direct | 13.2 | 48.6 |
+| 1024x1024 | exactly 2^k | skewed | 13.8 | 52.5 |
+| 1024x1024 | +64 B | direct | 11.1 | 48.2 |
+| 1024x1024 | +4096 B | direct | 12.9 | 47.9 |
+| 2048x2048 | exactly 2^k | skewed | 17.6 | 53.3 |
+| 2048x2048 | +64 B | direct | 14.8 | 50.7 |
+| 2048x2048 | +4096 B | direct | 13.7 | 52.0 |
+| 721x1440 | not 2^k | direct | 12.2 | 49.2 |
+| 721x1440 | +64 B | direct | 12.0 | 48.7 |
+| 721x1440 | +4096 B | direct | 11.5 | 49.4 |
 
 1024 × 1024 frames by depth, exactly 2^k against +64 B:
 
 | Frames | 2^k path | 2^k median | padded median | ratio | 2^k σ-clip | padded σ-clip | ratio |
 |---|---|---|---|---|---|---|---|
-| 8 | skewed | 3.1 | 3.4 | 0.91× | 19.6 | 20.4 | 0.96× |
-| 16 | skewed | 6.0 | 5.6 | 1.06× | 28.2 | 28.3 | 1.00× |
-| 24 | skewed | 11.4 | 10.0 | 1.14× | 44.1 | 40.3 | 1.09× |
-| 31 | skewed | 15.2 | 13.5 | 1.12× | 57.6 | 51.4 | 1.12× |
-| 40 | skewed | 25.8 | 21.3 | 1.21× | 75.5 | 71.8 | 1.05× |
-| 47 | skewed | 31.3 | 25.0 | 1.25× | 94.6 | 89.5 | 1.06× |
-| 63 | staged | 45.7 | 39.2 | 1.17× | 128.8 | 124.5 | 1.04× |
+| 8 | skewed | 3.0 | 2.8 | 1.06× | 21.2 | 20.5 | 1.03× |
+| 16 | skewed | 5.2 | 5.1 | 1.03× | 29.1 | 28.2 | 1.03× |
+| 24 | skewed | 10.5 | 9.3 | 1.13× | 41.4 | 38.6 | 1.07× |
+| 31 | skewed | 13.5 | 11.3 | 1.19× | 53.6 | 48.9 | 1.10× |
+| 40 | skewed | 22.1 | 19.1 | 1.16× | 76.3 | 71.4 | 1.07× |
+| 47 | skewed | 30.0 | 25.0 | 1.20× | 91.8 | 89.6 | 1.02× |
+| 63 | staged | 46.5 | 38.5 | 1.21× | 132.2 | 125.3 | 1.06× |
 

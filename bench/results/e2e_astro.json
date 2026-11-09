@@ -1,0 +1,64 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-09"
+ },
+ "files": 31,
+ "side": 2048,
+ "threads": 1,
+ "reader": "astropy.io.fits (memmap, byte-swapped)",
+ "versions": {
+  "rankwise": "0.1.0",
+  "numpy": "2.5.3",
+  "astropy": "8.0.2",
+  "reducers": "0.4.0"
+ },
+ "rows": [
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "read_seconds": 0.11263447199962684,
+   "total_seconds": 0.20896361999984947
+  },
+  {
+   "tool": "reducers 0.4",
+   "op": "median",
+   "read_seconds": 0.11263447199962684,
+   "total_seconds": 1.7271975280000333
+  },
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "sigclip",
+   "read_seconds": 0.11263447199962684,
+   "total_seconds": 0.35919167200154334
+  },
+  {
+   "tool": "reducers 0.4",
+   "op": "sigclip",
+   "read_seconds": 0.11263447199962684,
+   "total_seconds": 3.479830554999353
+  },
+  {
+   "tool": "Siril 1.2.1",
+   "op": "median",
+   "read_seconds": null,
+   "total_seconds": 2.715402934998565
+  },
+  {
+   "tool": "Siril 1.2.1",
+   "op": "sigclip",
+   "read_seconds": null,
+   "total_seconds": 3.4435193949993845
+  }
+ ]
+}

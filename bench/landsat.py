@@ -141,29 +141,30 @@ with_clouds = [np.median(raw[b], axis=0) for b in range(3)]
 pick = int(np.argmin(np.abs(masked - 0.55)))  # a typical half-cloudy acquisition
 single = [raw[b][pick] for b in range(3)]
 valid = (rgb[0] != 0).sum(0)
+import datetime as _dt  # noqa: E402
+
+day = _dt.date.fromisoformat(str(dates[pick])).strftime("%-d %b %Y")
 panels = [
-    ("One acquisition", f"{dates[pick]} · {masked[pick] * 100:.0f}% flagged cloud or shadow", display(single)),
-    ("Median of 90, clouds kept", "np.median: cloud fills every pixel that was cloudy half the time",
-     display(with_clouds)),
-    ("Median of 90, clouds as nodata", f"rankwise.median(nodata=0) · {valid.min()}–{valid.max()} clear looks per pixel",
-     display(composite)),
+    ("One acquisition", f"{day} · {masked[pick] * 100:.0f}% cloud or shadow", display(single)),
+    ("Median, clouds kept", f"np.median of {N} scenes", display(with_clouds)),
+    ("Median, clouds as nodata", f"rankwise.median(nodata=0) of {N}", display(composite)),
 ]
 OUT = ROOT / "docs" / "img"
 P = 1024  # panel size (downsampled 2×)
-pad, head = 12, 74
+pad, head = 16, 136
 W = 3 * P + 4 * pad
 H = P + head + 2 * pad
 canvas = Image.new("RGB", (W, H), (14, 14, 16))
 dr = ImageDraw.Draw(canvas)
-fb = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
-fr = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+fb = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
+fr = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 34)
 for j, (title, sub, img) in enumerate(panels):
     x = pad + j * (P + pad)
     dr.rectangle([x, pad, x + P - 1, pad + head - 1], fill=(0, 0, 0))
-    dr.text((x + 16, pad + 10), title, font=fb, fill=(255, 255, 255))
-    dr.text((x + 16, pad + 44), sub, font=fr, fill=(200, 200, 205))
+    dr.text((x + 24, pad + 16), title, font=fb, fill=(255, 255, 255))
+    dr.text((x + 24, pad + 82), sub, font=fr, fill=(200, 200, 205))
     canvas.paste(Image.fromarray(img).resize((P, P), Image.LANCZOS), (x, pad + head))
     if j == 2:
-        dr.rectangle([x - 2, pad - 2, x + P + 1, pad + head + P + 1], outline=(74, 144, 226), width=3)
+        dr.rectangle([x - 3, pad - 3, x + P + 2, pad + head + P + 2], outline=(74, 144, 226), width=5)
 canvas.save(OUT / "landsat.jpg", quality=88, optimize=True, progressive=True)
 print("wrote docs/img/landsat.jpg")

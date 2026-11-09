@@ -11,13 +11,14 @@
    "scalar"
   ],
   "python": "3.13.18",
-  "date": "2026-11-08"
+  "date": "2026-11-09"
  },
  "scenes": 90,
  "side": 2048,
  "nodata": 0,
  "threads": 1,
- "cloud_fraction": 0.4562679714626736,
+ "source": "Landsat C2 L2 SR, WRS-2 046/027, 2023-01-04 to 2024-12-24, via Microsoft Planetary Computer (USGS, public domain)",
+ "cloud_fraction": 0.6512758016586304,
  "versions": {
   "rankwise": "0.1.0",
   "numpy": "2.5.3",
@@ -29,48 +30,48 @@
    "tool": "rankwise \u00b7 AVX-512 (uint16, nodata=0)",
    "op": "median",
    "family": "rankwise",
-   "seconds": 0.23668606100000034,
-   "ns_per_px": 56.430354356765825,
+   "seconds": 0.2314615169998433,
+   "ns_per_px": 55.18472599979479,
    "identical": true
   },
   {
    "tool": "rankwise \u00b7 AVX2 (uint16, nodata=0)",
    "op": "median",
    "family": "rankwise",
-   "seconds": 0.34097425600157294,
-   "ns_per_px": 81.29459762610745,
+   "seconds": 0.32489299299959384,
+   "ns_per_px": 77.46052575101706,
    "identical": true
   },
   {
    "tool": "rankwise \u00b7 portable (uint16, nodata=0)",
    "op": "median",
    "family": "rankwise",
-   "seconds": 1.0158814209989941,
-   "ns_per_px": 242.2050049302564,
+   "seconds": 1.073586456999692,
+   "ns_per_px": 255.9629576205473,
    "identical": true
   },
   {
    "tool": "NumPy 2.5 nanmedian (float32)",
    "op": "median",
    "family": "competitor",
-   "seconds": 18.53458782599955,
-   "ns_per_px": 4418.990093707931,
+   "seconds": 20.555304363999312,
+   "ns_per_px": 4900.766459464863,
    "identical": true
   },
   {
    "tool": "Bottleneck 1.6 nanmedian (float32)",
    "op": "median",
    "family": "competitor",
-   "seconds": 3.576620510999419,
-   "ns_per_px": 852.7327802179858,
+   "seconds": 4.910441232001176,
+   "ns_per_px": 1170.7404212954464,
    "identical": true
   },
   {
    "tool": "numbagg 0.9 nanmedian (float32)",
    "op": "median",
    "family": "competitor",
-   "seconds": 19.3125773619995,
-   "ns_per_px": 4604.477253436923,
+   "seconds": 20.736673694000274,
+   "ns_per_px": 4944.008277416295,
    "identical": true
   }
  ]

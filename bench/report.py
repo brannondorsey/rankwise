@@ -140,8 +140,13 @@ def main():
                 out.append(f"| {r['tool']} | {'sigma-clipped mean' if op == 'sigclip' else 'median'} | "
                            f"{'own I/O' if rd_ is None else fmt_s(rd_)} | {red} | {fmt_s(r['total_seconds'])} | "
                            f"{r['total_seconds'] / best:.1f}× |")
-        out += ["", "Reading costs more than a rankwise median here, so the end-to-end gain is smaller than the "
-                "kernel's; with sigma clipping the kernel still dominates.", ""]
+        def tot(tool, op):
+            return next(r["total_seconds"] for r in e2e["rows"] if r["op"] == op and r["tool"].startswith(tool))
+        rd0 = e2e["rows"][0]["read_seconds"]
+        out += ["", f"Reading takes {rd0:.2f} s, longer than rankwise's median itself, so end to end rankwise is "
+                f"{tot('reducers', 'median') / tot('rankwise', 'median'):.0f}× faster than reducers for the median and "
+                f"{tot('reducers', 'sigclip') / tot('rankwise', 'sigclip'):.0f}× for sigma clipping, rather than the "
+                "kernel-only ratios above.", ""]
     st = load("stride")
     if st:
         out += ["## Power-of-two strides", "",
