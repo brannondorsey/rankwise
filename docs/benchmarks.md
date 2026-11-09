@@ -18,23 +18,23 @@ Every number here comes from the scripts in [`bench/`](../bench) and the JSON th
 
 | Tool | Operation | Seconds | ns / pixel | vs rankwise AVX-512 | Check |
 |---|---|---|---|---|---|
-| rankwise · AVX-512 · f32 bounds | sigma-clipped mean | 0.227 | 54.1 | 1.0× | astropy kept counts identical on 100% of pixels |
-| rankwise · AVX-512 | sigma-clipped mean | 0.243 | 57.9 | 1.1× | astropy kept counts identical on 100% of pixels |
-| rankwise · AVX2 | sigma-clipped mean | 0.333 | 79.3 | 1.5× | astropy kept counts identical on 100% of pixels |
-| rankwise · scalar | sigma-clipped mean | 0.72 | 171.6 | 3.2× | astropy kept counts identical on 100% of pixels |
-| reducers 0.4 | sigma-clipped mean | 3.5 | 833.4 | 15.4× | mean differs from astropy's by up to 1.9% |
-| imcombiners 0.1 | sigma-clipped mean | 4.01 | 955.5 | 17.7× | mean differs from astropy's by up to 1.9% |
-| astropy 8.0 sigma_clip | sigma-clipped mean | 4.82 | 1148.4 | 21.2× | mean differs from astropy's by up to 0% |
-| ccdproc 2.5 Combiner (1 pass) | sigma-clipped mean | 9.54 | 2274.4 | 42.1× | mean differs from astropy's by up to 49% |
-| rankwise · AVX-512 | median | 0.0751 | 17.9 | 1.0× | identical to np.median |
-| rankwise · AVX2 | median | 0.109 | 26.0 | 1.5× | identical to np.median |
-| rankwise · scalar | median | 0.295 | 70.4 | 3.9× | identical to np.median |
-| reducers 0.4 | median | 1.55 | 369.5 | 20.6× | identical to np.median |
-| imcombiners 0.1 | median | 1.63 | 389.2 | 21.7× | identical to np.median |
-| Bottleneck 1.6 | median | 2.21 | 527.9 | 29.5× | identical to np.median |
-| NumPy 2.5 median | median | 2.98 | 710.5 | 39.7× | identical to np.median |
-| ccdproc 2.5 Combiner | median | 8.2 | 1954.8 | 109.2× | identical to np.median |
-| numbagg 0.9 (nanmedian) | median | 12.6 | 3010.2 | 168.2× | identical to np.median |
+| rankwise · AVX-512 · f32 bounds | sigma-clipped mean | 0.229 | 54.5 | 1.0× | astropy kept counts identical on 100% of pixels |
+| rankwise · AVX-512 | sigma-clipped mean | 0.245 | 58.4 | 1.1× | astropy kept counts identical on 100% of pixels |
+| rankwise · AVX2 | sigma-clipped mean | 0.358 | 85.3 | 1.6× | astropy kept counts identical on 100% of pixels |
+| rankwise · scalar | sigma-clipped mean | 0.743 | 177.2 | 3.2× | astropy kept counts identical on 100% of pixels |
+| reducers 0.4 | sigma-clipped mean | 3.5 | 833.4 | 15.3× | mean differs from astropy's by up to 1.9% |
+| imcombiners 0.1 | sigma-clipped mean | 4.01 | 955.5 | 17.5× | mean differs from astropy's by up to 1.9% |
+| astropy 8.0 sigma_clip | sigma-clipped mean | 4.82 | 1148.4 | 21.1× | mean differs from astropy's by up to 0% |
+| ccdproc 2.5 Combiner (1 pass) | sigma-clipped mean | 9.54 | 2274.4 | 41.7× | mean differs from astropy's by up to 49% |
+| rankwise · AVX-512 | median | 0.0761 | 18.1 | 1.0× | identical to np.median |
+| rankwise · AVX2 | median | 0.108 | 25.8 | 1.4× | identical to np.median |
+| rankwise · scalar | median | 0.294 | 70.1 | 3.9× | identical to np.median |
+| reducers 0.4 | median | 1.55 | 369.5 | 20.4× | identical to np.median |
+| imcombiners 0.1 | median | 1.63 | 389.2 | 21.5× | identical to np.median |
+| Bottleneck 1.6 | median | 2.21 | 527.9 | 29.1× | identical to np.median |
+| NumPy 2.5 median | median | 2.98 | 710.5 | 39.2× | identical to np.median |
+| ccdproc 2.5 Combiner | median | 8.2 | 1954.8 | 107.8× | identical to np.median |
+| numbagg 0.9 (nanmedian) | median | 12.6 | 3010.2 | 165.9× | identical to np.median |
 | Siril 1.2.1 (reads FITS) | median | 2.72 | 647.4 | — | own I/O |
 | Siril 1.2.1 (reads FITS) | sigma-clipped mean | 3.44 | 821.0 | — | own I/O |
 
@@ -46,13 +46,13 @@ reducers and imcombiners clip differently from astropy (they do not re-apply the
 
 | Frames | rankwise median | rankwise σ-clip | reducers median | imcombiners median | reducers σ-clip | imcombiners σ-clip | NumPy median | median speedup | σ-clip speedup |
 |---|---|---|---|---|---|---|---|---|---|
-| 8 | 2.9 | 19.8 | 92 | 83 | 187 | 187 | 139 | 28.9× | 9.4× |
-| 15 | 5.9 | 28.7 | 205 | 198 | 438 | 471 | 287 | 33.3× | 15.2× |
-| 31 | 16.4 | 55.9 | 380 | 357 | 839 | 945 | 753 | 21.8× | 15.0× |
-| 63 | 46.4 | 147.0 | 638 | 674 | 1660 | 1905 | 1724 | 13.7× | 11.3× |
-| 127 | 179.9 | 312.8 | 1195 | 1198 | 3714 | 3768 | 3392 | 6.6× | 11.9× |
-| 255 | 379.5 | 740.6 | 2273 | 2314 | 8055 | 8626 | 6682 | 6.0× | 10.9× |
-| 511 | 776.2 | 1702.8 | 4454 | 5001 | 17453 | 18738 | 13882 | 5.7× | 10.2× |
+| 8 | 2.8 | 21.1 | 92 | 83 | 187 | 187 | 139 | 29.8× | 8.9× |
+| 15 | 5.4 | 28.3 | 205 | 198 | 438 | 471 | 287 | 36.9× | 15.5× |
+| 31 | 13.9 | 53.7 | 380 | 357 | 839 | 945 | 753 | 25.6× | 15.6× |
+| 63 | 54.6 | 130.3 | 638 | 674 | 1660 | 1905 | 1724 | 11.7× | 12.7× |
+| 127 | 109.0 | 284.4 | 1195 | 1198 | 3714 | 3768 | 3392 | 11.0× | 13.1× |
+| 255 | 265.6 | 659.4 | 2273 | 2314 | 8055 | 8626 | 6682 | 8.6× | 12.2× |
+| 511 | 761.8 | 1815.9 | 4454 | 5001 | 17453 | 18738 | 13882 | 5.8× | 9.6× |
 
 ns per output pixel, one core, AVX-512. Speedup is against the faster of reducers and imcombiners.
 
@@ -121,6 +121,8 @@ Reading takes 0.11 s, longer than rankwise's median itself, so end to end rankwi
 ## Power-of-two strides
 
 A contiguous stack of 2^k-byte frames puts every frame's current cache line in the same set; NumPy's 2 MiB pages keep that conflict in L2. rankwise reads 8–47 such frames skewed and 48 or more through its tile ([design](design.md#memory-layout-deep-stacks-and-the-power-of-two-stride)). rankwise AVX-512, ns per pixel, best of four interleaved rounds.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="img/bench_stride_dark.png"><img alt="Time on power-of-two strides relative to padded frames, before and after skewed reads" src="img/bench_stride_light.png"></picture>
 
 31 frames:
 

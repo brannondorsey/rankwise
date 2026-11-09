@@ -154,6 +154,8 @@ def main():
                 "2 MiB pages keep that conflict in L2. rankwise reads 8–47 such frames skewed and 48 or more through "
                 "its tile ([design](design.md#memory-layout-deep-stacks-and-the-power-of-two-stride)). "
                 "rankwise AVX-512, ns per pixel, best of four interleaved rounds.", "",
+                picture("bench_stride", "Time on power-of-two strides relative to padded frames, before and after "
+                        "skewed reads"), "",
                 "31 frames:", "",
                 "| Frame | Stride | Read path | Median | Sigma clip |", "|---|---|---|---|---|"]
         for r in st["rows"]:
