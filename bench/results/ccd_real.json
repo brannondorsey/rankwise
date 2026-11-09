@@ -1,0 +1,454 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-09"
+ },
+ "source": "Zenodo 3245296 (M. Craig, CC BY 4.0), Apogee Aspen CG16M, 4109x4096",
+ "versions": {
+  "rankwise": "0.1.0",
+  "numpy": "2.5.3",
+  "astropy": "8.0.2",
+  "ccdproc": "2.5.1"
+ },
+ "kinds": {
+  "bias": {
+   "frames": 10,
+   "shape": [
+    4096,
+    4109
+   ],
+   "rows": [
+    {
+     "reference": "astropy sigma_clip",
+     "sigma": 3.0,
+     "stdfunc": "std",
+     "maxiters": 5,
+     "pixels": 16830464,
+     "masks_identical_pixels": 16830464,
+     "rejected_values": 60569,
+     "max_mean_diff_ulp": 0.0,
+     "rankwise_seconds": 0.956526321999263,
+     "reference_seconds": 5.551055230000202
+    },
+    {
+     "reference": "astropy sigma_clip",
+     "sigma": 5.0,
+     "stdfunc": "mad_std",
+     "maxiters": 5,
+     "pixels": 16830464,
+     "masks_identical_pixels": 16830464,
+     "rejected_values": 1155057,
+     "max_mean_diff_ulp": 0.0,
+     "rankwise_seconds": 1.1311535320000985,
+     "reference_seconds": 8.767132627999672
+    },
+    {
+     "reference": "ccdproc Combiner.sigma_clipping + average_combine",
+     "sigma": 5.0,
+     "stdfunc": "mad_std",
+     "maxiters": 1,
+     "pixels": 16830464,
+     "masks_identical_pixels": 16830464,
+     "rejected_values": 813125,
+     "max_rel_mean_diff": 0.0,
+     "rankwise_seconds": 1.3133482079992973,
+     "reference_seconds": 22.277059475998612
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "sigma",
+     "precision": "f64",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830463,
+     "rejected_by_siril": 6490,
+     "rejected_by_rankwise": 6489,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "sigma",
+     "precision": "f32",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830464,
+     "rejected_by_siril": 6490,
+     "rejected_by_rankwise": 6490,
+     "max_value_diff_ulp_where_counts_agree": 2.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "median_sigma",
+     "precision": "f64",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830463,
+     "rejected_by_siril": 6521,
+     "rejected_by_rankwise": 6520,
+     "max_value_diff_ulp_where_counts_agree": 1.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "median_sigma",
+     "precision": "f32",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830464,
+     "rejected_by_siril": 6521,
+     "rejected_by_rankwise": 6521,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "winsorized",
+     "precision": "f64",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16798542,
+     "rejected_by_siril": 1977196,
+     "rejected_by_rankwise": 2026680,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "winsorized",
+     "precision": "f32",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16803885,
+     "rejected_by_siril": 1977196,
+     "rejected_by_rankwise": 2003153,
+     "max_value_diff_ulp_where_counts_agree": 2.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "percentile",
+     "precision": "f64",
+     "sigma": [
+      0.2,
+      0.1
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830464,
+     "rejected_by_siril": 66,
+     "rejected_by_rankwise": 66,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    }
+   ]
+  },
+  "dark": {
+   "frames": 10,
+   "shape": [
+    4096,
+    4109
+   ],
+   "rows": [
+    {
+     "reference": "astropy sigma_clip",
+     "sigma": 3.0,
+     "stdfunc": "std",
+     "maxiters": 5,
+     "pixels": 16830464,
+     "masks_identical_pixels": 16830464,
+     "rejected_values": 62958,
+     "max_mean_diff_ulp": 0.0,
+     "rankwise_seconds": 0.964322894000361,
+     "reference_seconds": 5.929568187000768
+    },
+    {
+     "reference": "astropy sigma_clip",
+     "sigma": 5.0,
+     "stdfunc": "mad_std",
+     "maxiters": 5,
+     "pixels": 16830464,
+     "masks_identical_pixels": 16830464,
+     "rejected_values": 1154453,
+     "max_mean_diff_ulp": 0.0,
+     "rankwise_seconds": 1.3634032739992108,
+     "reference_seconds": 8.990056553999239
+    },
+    {
+     "reference": "ccdproc Combiner.sigma_clipping + average_combine",
+     "sigma": 5.0,
+     "stdfunc": "mad_std",
+     "maxiters": 1,
+     "pixels": 16830464,
+     "masks_identical_pixels": 16830464,
+     "rejected_values": 814407,
+     "max_rel_mean_diff": 0.0,
+     "rankwise_seconds": 0.9434540530000959,
+     "reference_seconds": 21.176495103998604
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "sigma",
+     "precision": "f64",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830463,
+     "rejected_by_siril": 7278,
+     "rejected_by_rankwise": 7277,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "sigma",
+     "precision": "f32",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830464,
+     "rejected_by_siril": 7278,
+     "rejected_by_rankwise": 7278,
+     "max_value_diff_ulp_where_counts_agree": 2.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "median_sigma",
+     "precision": "f64",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830463,
+     "rejected_by_siril": 7311,
+     "rejected_by_rankwise": 7310,
+     "max_value_diff_ulp_where_counts_agree": 1.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "median_sigma",
+     "precision": "f32",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830464,
+     "rejected_by_siril": 7311,
+     "rejected_by_rankwise": 7311,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "winsorized",
+     "precision": "f64",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16798835,
+     "rejected_by_siril": 1988524,
+     "rejected_by_rankwise": 2036561,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "winsorized",
+     "precision": "f32",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16803694,
+     "rejected_by_siril": 1988524,
+     "rejected_by_rankwise": 2015858,
+     "max_value_diff_ulp_where_counts_agree": 2.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "percentile",
+     "precision": "f64",
+     "sigma": [
+      0.2,
+      0.1
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830464,
+     "rejected_by_siril": 598,
+     "rejected_by_rankwise": 598,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    }
+   ]
+  },
+  "flat": {
+   "frames": 10,
+   "shape": [
+    4096,
+    4109
+   ],
+   "rows": [
+    {
+     "reference": "astropy sigma_clip",
+     "sigma": 3.0,
+     "stdfunc": "std",
+     "maxiters": 5,
+     "pixels": 16830464,
+     "masks_identical_pixels": 16830464,
+     "rejected_values": 56098,
+     "max_mean_diff_ulp": 0.0,
+     "rankwise_seconds": 0.9281457659999433,
+     "reference_seconds": 5.520821000000069
+    },
+    {
+     "reference": "astropy sigma_clip",
+     "sigma": 5.0,
+     "stdfunc": "mad_std",
+     "maxiters": 5,
+     "pixels": 16830464,
+     "masks_identical_pixels": 16830464,
+     "rejected_values": 1091370,
+     "max_mean_diff_ulp": 0.0,
+     "rankwise_seconds": 1.202039321000484,
+     "reference_seconds": 8.688132813000266
+    },
+    {
+     "reference": "ccdproc Combiner.sigma_clipping + average_combine",
+     "sigma": 5.0,
+     "stdfunc": "mad_std",
+     "maxiters": 1,
+     "pixels": 16830464,
+     "masks_identical_pixels": 16830464,
+     "rejected_values": 775234,
+     "max_rel_mean_diff": 0.0,
+     "rankwise_seconds": 0.9916711400001077,
+     "reference_seconds": 26.10310427100012
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "sigma",
+     "precision": "f64",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830463,
+     "rejected_by_siril": 5469,
+     "rejected_by_rankwise": 5468,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "sigma",
+     "precision": "f32",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830464,
+     "rejected_by_siril": 5469,
+     "rejected_by_rankwise": 5469,
+     "max_value_diff_ulp_where_counts_agree": 2.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "median_sigma",
+     "precision": "f64",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830463,
+     "rejected_by_siril": 5488,
+     "rejected_by_rankwise": 5487,
+     "max_value_diff_ulp_where_counts_agree": 1.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "median_sigma",
+     "precision": "f32",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830464,
+     "rejected_by_siril": 5488,
+     "rejected_by_rankwise": 5488,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "winsorized",
+     "precision": "f64",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16797699,
+     "rejected_by_siril": 1951724,
+     "rejected_by_rankwise": 1992308,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "winsorized",
+     "precision": "f32",
+     "sigma": [
+      3.0,
+      3.0
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16797787,
+     "rejected_by_siril": 1951724,
+     "rejected_by_rankwise": 1992299,
+     "max_value_diff_ulp_where_counts_agree": 3.0
+    },
+    {
+     "reference": "siril-cli 1.2.1",
+     "method": "percentile",
+     "precision": "f64",
+     "sigma": [
+      0.2,
+      0.1
+     ],
+     "pixels": 16830464,
+     "counts_identical_pixels": 16830464,
+     "rejected_by_siril": 40,
+     "rejected_by_rankwise": 40,
+     "max_value_diff_ulp_where_counts_agree": 0.0
+    }
+   ]
+  }
+ }
+}

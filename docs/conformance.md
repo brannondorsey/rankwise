@@ -8,7 +8,7 @@ NumPy 2.5.3, SciPy 1.18.1 and astropy 8.0.2 (`conformance/requirements.txt`).
 ```bash
 pip install -r conformance/requirements.txt
 maturin build --release -m rankwise-py/Cargo.toml -o dist && pip install --find-links dist rankwise
-python -m pytest conformance -q          # 1,051 tests, about a minute
+python -m pytest conformance -q          # 1,057 tests, about a minute
 ```
 
 ## What is checked
@@ -38,6 +38,25 @@ shapes, values and q. The Rust side adds exhaustive 0-1 principle tests for n �
 tests on every ISA, including NEON (CI runs on aarch64; locally under qemu), and checks that
 direct, skewed and staged reads agree bit for bit at every frame alignment, thread count and
 block tail.
+
+## Real data
+
+`bench/ccd_real.py` runs the rejection checks on real calibration frames: 10 bias, 10 dark
+(90 s) and 10 flat frames of 4109 × 4096 from an Apogee Aspen CG16M (Zenodo 3245296, M. Craig,
+CC BY 4.0), 16.8 million pixels per stack.
+
+| rankwise | Reference | Bias, dark and flat |
+|---|---|---|
+| `sigma_clip_mean(sigma=3, stdfunc="std")` | astropy `sigma_clip(..., axis=0)` | identical masks on every pixel; means bit-identical to the float64 mean of the kept values, rounded once |
+| `sigma_clip_mean(sigma=5, stdfunc="mad_std")` | the same | identical masks; means bit-identical |
+| `clip_combine(method="mad", sigma=5, maxiters=1)` on float64 | ccdproc 2.5.1 `Combiner.sigma_clipping(func=np.ma.median, dev_func=mad_std)` + `average_combine` | identical masks and means |
+| Siril presets | `siril-cli` 1.2.1 | see [presets](presets.md#real-frames) |
+
+The ccdproc comparison found a bug that the synthetic suite had missed:
+`clip_combine(method="mad")` clipped with the standard deviation, because the Python wrapper
+always passed its default `stdfunc="std"`. It is fixed and covered by a conformance test.
+On these stacks rankwise took about 1 s per call on one core, astropy 6–9 s and ccdproc 21 s
+(single runs, not the benchmark method).
 
 ## NumPy behaviours rankwise reproduces
 

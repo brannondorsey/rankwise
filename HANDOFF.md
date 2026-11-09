@@ -14,14 +14,17 @@ original handoff (Brannon has it; its §4 facts are all folded into [docs/confor
    min/max/ptp, arg-variants, trimmed mean/IQR/MAD, five rejection algorithms with
    astropy/Siril/PixInsight presets, NaN and `nodata`, f32/f64/u16 (u8 widened), any axis or
    frame lists, n ≤ 512, AVX-512/AVX2/NEON/portable chosen at runtime. Rust crate, C ABI +
-   header, abi3 Python wheel. 1,039 conformance tests pass on every ISA.
-2. **Speed (one core, AVX-512, vs the fastest alternative):** sigma clip 14×, median 18×
-   (31 × 2048²); ≥ 5.3× at every depth 8–511; real GEFS quantiles 72×; uint16 nodata median
-   15×. Targets were ≥ 5×.
-3. **Before 0.1.0 can ship** (§4): real-data validation against Siril 1.4 / DSS / PixInsight,
-   desktop CPUs (Zen 4/5, AVX2-only Intel, Apple M), real Landsat, an end-to-end run with file
-   reads, the PCL license check, a legal review (TI US9665542), and Brannon registering the
-   names. The power-of-two stride gap at 24–47 frames (1.46× vs the 1.2× target) is open.
+   header, abi3 Python wheel. 1,057 conformance tests pass on every ISA.
+2. **Speed (one core, AVX-512, vs the fastest alternative):** sigma clip 14×, median 20×
+   (31 × 2048²); ≥ 5.8× at every depth 8–511; real GEFS quantiles 72×; real Landsat uint16
+   nodata median 21×; end to end with FITS reads 8–10×. Targets were ≥ 5×.
+3. **Real-data validation done:** CCD calibration frames (3 × 16.8 Mpx stacks) give masks
+   identical to astropy and ccdproc on every pixel; Siril 1.2.1 presets match except exact
+   ties (documented, `precision="f32"` reproduces them). Power-of-two strides: 1.02–1.21× of
+   padded frames at every depth (was up to 1.92×).
+4. **Before 0.1.0 can ship** (§4): validation against Siril 1.4 / DSS / PixInsight on real
+   light frames, desktop CPUs (Zen 4/5, AVX2-only Intel, Apple M), the PCL license check, a
+   legal review (TI US9665542), and Brannon registering the names.
 
 ## 1. Working agreements for this repo
 
@@ -67,7 +70,7 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets --features ran
 
 pip install -r conformance/requirements.txt
 maturin build --release -m rankwise-py/Cargo.toml -o dist && pip install --find-links dist rankwise
-python -m pytest conformance -q                           # 1,039 tests, ~1 min per ISA set
+python -m pytest conformance -q                           # 1,057 tests, ~1.5 min
 
 pip install -r bench/requirements.txt                     # read its header: two packages need --no-deps
 bash bench/run_all.sh                                     # pins taskset -c 1, then charts + report
@@ -86,12 +89,12 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 
 | # | Item | State | Recommendation |
 |---|---|---|---|
-| 1 | **M7 real-data validation** | Siril comparisons used synthetic stacks and Siril 1.2.1 (Ubuntu apt). No DSS, no PixInsight. | Get a real registered light set from Brannon; compare against Siril 1.4 (build from source or AppImage), DSS, PixInsight and astropy. Add the script under `bench/` and a page section. |
-| 2 | **Desktop CPUs** | All numbers are from one 2.1 GHz Xeon cloud VM (±15% noise). | Run `bench/run_all.sh` on Zen 4/5, an AVX2-only Intel and an Apple M chip; commit each JSON with its machine block; extend `report.py` to show a per-CPU table. |
-| 3 | **Power-of-two strides, 24–47 frames** | 31 × 1024² median: 18 ns/px on 2^k strides vs 12 padded (1.46×; target 1.2×). Sigma clip 1.15×. Staging only pays from 48 frames; software prefetch and a grouped-comparator interpreter were tried and were slower. | Try staging only the frames that share an L2 set (partial tile), or walking two blocks a page apart in alternation. Measure with `bench/stride.py` and `staging="always"/"never"`. If nothing lands, keep the documented padding advice. |
-| 4 | **Real Landsat demo** | `bench/landsat.py` uses synthetic uint16 scenes with cloud nodata: the USGS bucket is requester-pays. | Needs AWS credentials (ask Brannon); the script's shape and nodata handling already match C2 L2 SR. |
-| 5 | **End-to-end with file reads** | Only Siril's rows include I/O. | Add a run that reads the 31 FITS files (astropy.io.fits or fitsio, memory-mapped) and then calls rankwise, next to Siril's row. |
-| 6 | **Siril presets** | sigma, median-sigma, percentile: identical at n = 5, 8, 15, 31. Winsorized: exact at 31, 95–98% below ~8 frames. k-MAD (`rej a`): not reproduced; `preset="siril", method="mad"` raises. Details in [docs/presets.md](docs/presets.md). | Retest against Siril 1.4 before more black-box work; its docs may have changed. Do not read Siril source. |
+| 1 | **M7 validation on real light frames** | Done on real calibration frames (`bench/ccd_real.py`: astropy and ccdproc identical, Siril 1.2.1 presets per docs/presets.md). Not done: real registered light frames, Siril 1.4, DSS, PixInsight. | Get a registered light set from Brannon; extend `bench/ccd_real.py` (it already drives `siril-cli` with `-rejmaps`). |
+| 2 | **Desktop CPUs** | All numbers are from one 2.1 GHz Xeon cloud VM with bursty noise (back-to-back runs vary 11–16 ns/px). | Run `bench/run_all.sh` on Zen 4/5, an AVX2-only Intel and an Apple M chip; commit each JSON with its machine block; extend `report.py` to show a per-CPU table. |
+| 3 | **Power-of-two strides** | Fixed for NumPy's 2 MiB pages: skewed reads (8–47 frames) and staging (48+) give 1.02–1.21× of padded frames (`bench/stride.py`, design.md). With 4 KiB pages a 1.3× gap at 31 frames remains, cause unknown (no perf counters on the VM). | Profile the 4 KiB case on a machine with `perf` (L1 vs L2 vs 4K aliasing); `cargo run --release --example stridebench -- 31 1024 0 auto 0` reproduces it. |
+| 4 | **Landsat** | Done with real data via Microsoft Planetary Computer (no AWS credentials needed). | — |
+| 5 | **End-to-end with file reads** | Done (`bench/e2e.py`): reading 31 FITS files takes 0.11 s, more than rankwise's median. | A faster reader (fitsio, or memory-mapped native-endian files) would show more of the kernel's gain. |
+| 6 | **Siril presets** | sigma, median-sigma, percentile identical on synthetic data; on real frames one exact tie per 16.8 Mpx stack goes the other way in f64 (Siril computes in float32; `precision="f32"` matches every pixel). Winsorized 99.8% at 10 frames, small-stack gap as documented. k-MAD (`rej a`) not reproduced; `preset="siril", method="mad"` raises. | Retest against Siril 1.4 before more black-box work. Do not read Siril source. |
 | 7 | **PixInsight winsorized preset** | Implemented from PCL's public docs (Sn·1.1926 start, cutoff 5); never run against PixInsight. | Check the PCL license, then validate on Brannon's PixInsight install or drop the preset from 0.1.0. |
 | 8 | **Legal** | Design log notes TI US9665542 (different method). | Brannon arranges review before 1.0. |
 | 9 | **Release** | `wheels.yml` builds manylinux x86-64/aarch64, macOS arm64/x86-64 and Windows wheels but does not publish. Names unregistered. | When Brannon registers names: add trusted publishing to `wheels.yml`, `cargo publish` the crate (capi stays unpublished or ships as release artifacts), tag `v0.1.0`, move the CHANGELOG entry out of "unreleased". |
@@ -130,11 +133,27 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 * **GEFS data** comes from `https://data.dynamical.org/noaa/gefs/forecast-35-day/latest.zarr`
   (needs `aiohttp`); `bench/gefs.py` caches a 310 MB `.npz` in `bench/data/` (gitignored) and
   `--figures-only` redraws the charts from the cache.
+* **NumPy places large arrays 16 bytes into a cache line**; rankwise starts each row with a
+  short head block so full blocks are vector-aligned (measured within noise here, kept for
+  other CPUs).
+* **Closures inside `#[target_feature]` functions may not inline** and then lose the target
+  features: a closure in the skewed-read loop made it 3× slower. Use `macro_rules!` for
+  per-block helpers. A runtime branch in the block loop cost the direct path 6%; the skewed
+  path is a separate `const SKEW: bool` instantiation.
+* **Measure with interleaved rounds.** This VM's noise comes in bursts of seconds; `stride.py`
+  and `sweep.py` alternate configurations within rounds and keep each one's best. A/B two
+  builds with two `stridebench` binaries in the same loop.
+* **ccdproc 2.5 clips through astropy's pure-Python path** (callable `func`/`dev_func`,
+  `maxiters=1`), which counts passes like the C path at `maxiters=1` but not at 0 or 2+.
+* **Data sources that work from this VM:** Landsat via Planetary Computer (`pystac-client`,
+  `planetary-computer`, `rasterio`); CCD frames from Zenodo 3245296; GEFS from dynamical.org.
+  All cache under `bench/data/` (gitignored).
 * **Charts** use `bench/figures.py`'s `THEMES` (light/dark), Inter, and `headline()`; README
   images are `<picture>` pairs. Regenerate both themes when changing any chart.
 
 ## 7. Suggested first session
 
 1. `cargo test` + conformance on your machine to confirm a clean baseline.
-2. Item 3 (stride gap) if you have only a VM; items 1–2 if Brannon can provide data and hardware.
+2. Items 1–2 if Brannon can provide light frames and hardware; item 3's 4 KiB case if you have
+   `perf`; otherwise the v0.2 backlog.
 3. File the §5 backlog as `v0.2` issues once Brannon confirms he wants issues created.

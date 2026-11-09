@@ -177,13 +177,15 @@ against 4.9 s for Bottleneck's float32 `nanmedian` (21×) and 21 s for NumPy
 ## Correctness
 
 "Identical" means the same dtype and the same values under IEEE equality, NaN equal to NaN.
-The conformance suite runs 1,051 tests on every ISA the CPU has, against pinned NumPy
+The conformance suite runs 1,057 tests on every ISA the CPU has, against pinned NumPy
 2.5.3, SciPy 1.18.1 and astropy 8.0.2: every stack depth from 1 to 17 plus 31–33, 63–65,
 127–129, 255, 256, 511 and 512; partial vectors; float32, float64 and uint16; every axis,
 frame lists, memory maps, negative and power-of-two strides; NaN from none to all-NaN slices,
 ±inf, ±0, ties, subnormals and ±FLT_MAX; every quantile method and every way of passing `q`.
 The Rust networks are checked exhaustively for n ≤ 20 with the 0-1 principle, and the NEON
-kernels run on aarch64 in CI.
+kernels run on aarch64 in CI. On real CCD calibration frames (3 stacks of 10 × 16.8 million
+pixels) the rejection masks are identical to astropy's and ccdproc's on every pixel
+([real data](docs/conformance.md#real-data)).
 
 Siril's sigma, median-sigma and percentile clipping are reproduced exactly (identical reject
 maps and stacked values against `siril-cli` 1.2.1); see [presets](docs/presets.md) for
