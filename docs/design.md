@@ -116,7 +116,7 @@ break that:
   frames puts frame starts 4 or 16 MiB apart, so the `n` lines one block needs all map to the
   same cache set, and the lines the prefetchers fetch ahead for one stream evict another's.
   L2 is physically indexed, so how bad this is depends on the page size: NumPy madvises
-  large arrays onto 2 MiB pages, which keeps the conflict (31 frames of 1024×1024: 1.4× the
+  large arrays onto 2 MiB pages, which keeps the conflict (31 frames of 1024×1024: 1.6× the
   time of frames padded by one cache line), while 4 KiB pages scatter most of it.
   rankwise counts how many frames start in one L2 set and picks a read path:
   * **8–47 frames: skewed reads.** Frames are split into groups of 8, and group `g` is read
@@ -128,13 +128,16 @@ break that:
   * **48 frames and up: the staging tile.** Skewed and staged reads tie at 63 frames and
     staging wins beyond (more streams than the prefetchers track, see above).
 
+  Time on 2^k strides ÷ time on frames padded by 64 bytes:
+
   | Frames (1024×1024, 2 MiB pages) | 8 | 16 | 24 | 31 | 40 | 47 | 63 |
   |---|---|---|---|---|---|---|---|
-  | median, 2^k stride ÷ padded | 0.91 | 1.06 | 1.14 | 1.12 | 1.21 | 1.25 | 1.17 |
-  | sigma clip, 2^k stride ÷ padded | 0.96 | 1.00 | 1.09 | 1.12 | 1.05 | 1.06 | 1.04 |
+  | median, previous build (direct reads) | 0.98 | 1.22 | 1.33 | 1.63 | 1.61 | 1.92 | 1.08 |
+  | median, skewed reads | 1.06 | 1.03 | 1.13 | 1.19 | 1.16 | 1.20 | 1.21 |
+  | sigma clip, skewed reads | 1.03 | 1.03 | 1.07 | 1.10 | 1.07 | 1.02 | 1.06 |
 
-  Before skewed reads the 31-frame median ratio was 1.46×. Skewed reads of cache-resident
-  data cost the same as direct ones, so the remaining 10–25% is on the memory side (each ratio
+  (63 frames are staged in both builds.) Skewed reads of cache-resident data cost the same as
+  direct ones, so the remaining 2–21% is on the memory side (each ratio
   is the best of four interleaved rounds on a noisy VM). With 4 KiB pages
   a 1.3× gap at 31 frames remains that skewing does not touch; its cause is not identified
   (no hardware counters on this VM). Padding frames by 64 bytes when you allocate them is

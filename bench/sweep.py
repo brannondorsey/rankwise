@@ -17,20 +17,26 @@ import rankwise as rw
 from common import RESULTS, astro_stack, best_of, machine, save, versions
 
 ONLY_RW = "--rankwise-only" in sys.argv
+ROUNDS = 5
 old = {r["n"]: r for r in json.loads((RESULTS / "sweep_1024.json").read_text())["rows"]} if ONLY_RW else {}
 rows = []
 for n in (8, 15, 31, 63, 127, 255, 511):
     st = astro_stack(n, 1024, 1024, seed=n)
     px = st[0].size
     out = np.empty(st.shape[1:], np.float32)
-    reps = 7 if n <= 63 else 3
+    reps = 3 if n <= 63 else 2
     r = dict(old.get(n, {}), n=n)
     r["rankwise_path"] = rw.describe(st, axis=0).split("path=")[1].split()[0]
-    r["rankwise_median"] = best_of(lambda: rw.median(st, axis=0, out=out), reps) / px * 1e9
-    r["rankwise_sigclip"] = best_of(lambda: rw.sigma_clip_mean(st, axis=0, out=out), reps) / px * 1e9
+    cases = {"rankwise_median": lambda: rw.median(st, axis=0, out=out),
+             "rankwise_sigclip": lambda: rw.sigma_clip_mean(st, axis=0, out=out)}
     if "avx2" in rw.available_isas():
-        r["rankwise_avx2_median"] = best_of(lambda: rw.median(st, axis=0, out=out, isa="avx2"), reps) / px * 1e9
-        r["rankwise_avx2_sigclip"] = best_of(lambda: rw.sigma_clip_mean(st, axis=0, out=out, isa="avx2"), reps) / px * 1e9
+        cases["rankwise_avx2_median"] = lambda: rw.median(st, axis=0, out=out, isa="avx2")
+        cases["rankwise_avx2_sigclip"] = lambda: rw.sigma_clip_mean(st, axis=0, out=out, isa="avx2")
+    best = {k: float("inf") for k in cases}
+    for _ in range(ROUNDS):  # interleaved rounds: this VM's noise comes in bursts of seconds
+        for k, fn in cases.items():
+            best[k] = min(best[k], best_of(fn, reps))
+    r.update({k: v / px * 1e9 for k, v in best.items()})
     if not ONLY_RW:
         r["reducers_median"] = best_of(lambda: rd.median(st, axis=0), 2) / px * 1e9
         r["reducers_sigclip"] = best_of(
