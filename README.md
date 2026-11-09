@@ -8,7 +8,7 @@ one SIMD lane per slice, sorted by branch-free networks, with results identical 
 <p align="center"><sub>40 synthetic 30 s subs (1800×1200 RGB) with five satellite trails, an airplane, a meteor, cosmic rays and hot pixels,<br>stacked by <code>rankwise.sigma_clip_mean</code> in 1.1 s on one core, full rejection map included.<br>Every rejection decision is identical to astropy's.</sub></p>
 
 <p align="center">
-<b>14× faster sigma clipping</b> · <b>20× faster medians</b> · <b>72× faster ensemble quantiles</b> · <b>21× faster cloud-free composites</b><br>
+<b>15× faster sigma clipping</b> · <b>21× faster medians</b> · <b>72× faster ensemble quantiles</b> · <b>21× faster cloud-free composites</b><br>
 <sub>than the fastest open-source alternative, per core · quantiles on real NOAA GEFS data, composites on real Landsat scenes · <a href="docs/benchmarks.md">benchmarks</a></sub>
 </p>
 
@@ -106,7 +106,7 @@ More in [docs/design.md](docs/design.md).
 
 ## Benchmarks
 
-One core per tool, the same array in RAM for everyone, best of three runs after a warm-up,
+One core per tool, the same array in RAM for everyone, best of repeated runs after a warm-up,
 and every result checked against its reference ([method and full tables](docs/benchmarks.md)).
 
 <picture>

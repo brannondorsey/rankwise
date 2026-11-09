@@ -44,8 +44,9 @@ def main():
             "rankwise runs with `threads=1`.",
             "* **Same input for everyone.** Each tool gets the same array, already in RAM. Siril reads its own FITS "
             "files (from the page cache) and is marked as such.",
-            "* **Timing:** best of N runs after a warm-up: 7 for rankwise's sub-second runs, which this VM's noise "
-            "affects most, 3 for most tools, 2 or 1 for tools that take tens of seconds.",
+            "* **Timing:** best of N runs after a warm-up. rankwise's sub-second runs, which this VM's noise affects "
+            "most, keep their best over interleaved rounds spread across the measurement (the noise comes in bursts "
+            "of seconds); other tools take the best of 3, or 2 or 1 for runs of tens of seconds.",
             "* **Every result is checked**, not just timed: medians against `np.median`, quantiles against "
             "`np.quantile`/`np.nanquantile`, sigma clipping against astropy's mask.",
             "* **Like for like.** NaN-aware tools are compared with rankwise's NaN-aware functions; ccdproc's "

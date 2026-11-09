@@ -33,16 +33,16 @@
    "tool": "rankwise \u00b7 AVX-512",
    "op": "median",
    "family": "rankwise",
-   "seconds": 0.07609042600051907,
-   "ns_per_px": 18.141371250276343,
+   "seconds": 0.07224292600039917,
+   "ns_per_px": 17.224055767154496,
    "identical_to_np_median": true
   },
   {
    "tool": "rankwise \u00b7 AVX-512",
    "op": "sigclip",
    "family": "rankwise",
-   "seconds": 0.2448099089997413,
-   "ns_per_px": 58.36723065370114,
+   "seconds": 0.2303276429993275,
+   "ns_per_px": 54.914389371711614,
    "max_rel_diff_vs_astropy_mean": 4.4223805806784513e-07,
    "kept_counts_identical_to_astropy": 1.0
   },
@@ -50,8 +50,8 @@
    "tool": "rankwise \u00b7 AVX-512 \u00b7 f32 bounds",
    "op": "sigclip",
    "family": "rankwise",
-   "seconds": 0.2287933810002869,
-   "ns_per_px": 54.54859280593083,
+   "seconds": 0.22132197999962955,
+   "ns_per_px": 52.76727199545611,
    "max_rel_diff_vs_astropy_mean": 0.003638895176204939,
    "kept_counts_identical_to_astropy": 0.9999997615814209
   },
@@ -59,16 +59,16 @@
    "tool": "rankwise \u00b7 AVX2",
    "op": "median",
    "family": "rankwise",
-   "seconds": 0.10810193799989065,
-   "ns_per_px": 25.773510456059135,
+   "seconds": 0.11194906200034893,
+   "ns_per_px": 26.690736293875915,
    "identical_to_np_median": true
   },
   {
    "tool": "rankwise \u00b7 AVX2",
    "op": "sigclip",
    "family": "rankwise",
-   "seconds": 0.3575747209997644,
-   "ns_per_px": 85.25245690340147,
+   "seconds": 0.29687760199885815,
+   "ns_per_px": 70.78113603564695,
    "max_rel_diff_vs_astropy_mean": 4.4223805806784513e-07,
    "kept_counts_identical_to_astropy": 1.0
   },
@@ -76,16 +76,16 @@
    "tool": "rankwise \u00b7 scalar",
    "op": "median",
    "family": "rankwise",
-   "seconds": 0.293896349001443,
-   "ns_per_px": 70.07034993206096,
+   "seconds": 0.23478402199907578,
+   "ns_per_px": 55.97687292076964,
    "identical_to_np_median": true
   },
   {
    "tool": "rankwise \u00b7 scalar",
    "op": "sigclip",
    "family": "rankwise",
-   "seconds": 0.7430712620007398,
-   "ns_per_px": 177.16199445742126,
+   "seconds": 0.658424957000534,
+   "ns_per_px": 156.98074269307472,
    "max_rel_diff_vs_astropy_mean": 4.4223805806784513e-07,
    "kept_counts_identical_to_astropy": 1.0
   },

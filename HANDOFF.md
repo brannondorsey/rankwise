@@ -15,7 +15,7 @@ original handoff (Brannon has it; its §4 facts are all folded into [docs/confor
    astropy/Siril/PixInsight presets, NaN and `nodata`, f32/f64/u16 (u8 widened), any axis or
    frame lists, n ≤ 512, AVX-512/AVX2/NEON/portable chosen at runtime. Rust crate, C ABI +
    header, abi3 Python wheel. 1,057 conformance tests pass on every ISA.
-2. **Speed (one core, AVX-512, vs the fastest alternative):** sigma clip 14×, median 20×
+2. **Speed (one core, AVX-512, vs the fastest alternative):** sigma clip 15×, median 21×
    (31 × 2048²); ≥ 5.8× at every depth 8–511; real GEFS quantiles 72×; real Landsat uint16
    nodata median 21×; end to end with FITS reads 8–10×. Targets were ≥ 5×.
 3. **Real-data validation done:** CCD calibration frames (3 × 16.8 Mpx stacks) give masks

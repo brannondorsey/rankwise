@@ -7,7 +7,7 @@ Every number here comes from the scripts in [`bench/`](../bench) and the JSON th
 * **Machine:** Intel(R) Xeon(R) Processor @ 2.10GHz, 4 vCPUs (cloud VM, KVM), ISAs available: avx512, avx2, scalar.
 * **One core for every tool.** Scripts run under `taskset -c 1`, and thread pools are pinned with `OMP_NUM_THREADS`, `NUMBA_NUM_THREADS`, `RAYON_NUM_THREADS` and friends set to 1 before any import. rankwise runs with `threads=1`.
 * **Same input for everyone.** Each tool gets the same array, already in RAM. Siril reads its own FITS files (from the page cache) and is marked as such.
-* **Timing:** best of N runs after a warm-up: 7 for rankwise's sub-second runs, which this VM's noise affects most, 3 for most tools, 2 or 1 for tools that take tens of seconds.
+* **Timing:** best of N runs after a warm-up. rankwise's sub-second runs, which this VM's noise affects most, keep their best over interleaved rounds spread across the measurement (the noise comes in bursts of seconds); other tools take the best of 3, or 2 or 1 for runs of tens of seconds.
 * **Every result is checked**, not just timed: medians against `np.median`, quantiles against `np.quantile`/`np.nanquantile`, sigma clipping against astropy's mask.
 * **Like for like.** NaN-aware tools are compared with rankwise's NaN-aware functions; ccdproc's `Combiner.sigma_clipping` does a single pass and is labeled so.
 * The machine is a shared cloud VM; repeated runs vary by about ±15%.
@@ -18,23 +18,23 @@ Every number here comes from the scripts in [`bench/`](../bench) and the JSON th
 
 | Tool | Operation | Seconds | ns / pixel | vs rankwise AVX-512 | Check |
 |---|---|---|---|---|---|
-| rankwise · AVX-512 · f32 bounds | sigma-clipped mean | 0.229 | 54.5 | 1.0× | astropy kept counts identical on 100% of pixels |
-| rankwise · AVX-512 | sigma-clipped mean | 0.245 | 58.4 | 1.1× | astropy kept counts identical on 100% of pixels |
-| rankwise · AVX2 | sigma-clipped mean | 0.358 | 85.3 | 1.6× | astropy kept counts identical on 100% of pixels |
-| rankwise · scalar | sigma-clipped mean | 0.743 | 177.2 | 3.2× | astropy kept counts identical on 100% of pixels |
-| reducers 0.4 | sigma-clipped mean | 3.5 | 833.4 | 15.3× | mean differs from astropy's by up to 1.9% |
-| imcombiners 0.1 | sigma-clipped mean | 4.01 | 955.5 | 17.5× | mean differs from astropy's by up to 1.9% |
-| astropy 8.0 sigma_clip | sigma-clipped mean | 4.82 | 1148.4 | 21.1× | mean differs from astropy's by up to 0% |
-| ccdproc 2.5 Combiner (1 pass) | sigma-clipped mean | 9.54 | 2274.4 | 41.7× | mean differs from astropy's by up to 49% |
-| rankwise · AVX-512 | median | 0.0761 | 18.1 | 1.0× | identical to np.median |
-| rankwise · AVX2 | median | 0.108 | 25.8 | 1.4× | identical to np.median |
-| rankwise · scalar | median | 0.294 | 70.1 | 3.9× | identical to np.median |
-| reducers 0.4 | median | 1.55 | 369.5 | 20.4× | identical to np.median |
-| imcombiners 0.1 | median | 1.63 | 389.2 | 21.5× | identical to np.median |
-| Bottleneck 1.6 | median | 2.21 | 527.9 | 29.1× | identical to np.median |
-| NumPy 2.5 median | median | 2.98 | 710.5 | 39.2× | identical to np.median |
-| ccdproc 2.5 Combiner | median | 8.2 | 1954.8 | 107.8× | identical to np.median |
-| numbagg 0.9 (nanmedian) | median | 12.6 | 3010.2 | 165.9× | identical to np.median |
+| rankwise · AVX-512 · f32 bounds | sigma-clipped mean | 0.221 | 52.8 | 1.0× | astropy kept counts identical on 100% of pixels |
+| rankwise · AVX-512 | sigma-clipped mean | 0.23 | 54.9 | 1.0× | astropy kept counts identical on 100% of pixels |
+| rankwise · AVX2 | sigma-clipped mean | 0.297 | 70.8 | 1.3× | astropy kept counts identical on 100% of pixels |
+| rankwise · scalar | sigma-clipped mean | 0.658 | 157.0 | 3.0× | astropy kept counts identical on 100% of pixels |
+| reducers 0.4 | sigma-clipped mean | 3.5 | 833.4 | 15.8× | mean differs from astropy's by up to 1.9% |
+| imcombiners 0.1 | sigma-clipped mean | 4.01 | 955.5 | 18.1× | mean differs from astropy's by up to 1.9% |
+| astropy 8.0 sigma_clip | sigma-clipped mean | 4.82 | 1148.4 | 21.8× | mean differs from astropy's by up to 0% |
+| ccdproc 2.5 Combiner (1 pass) | sigma-clipped mean | 9.54 | 2274.4 | 43.1× | mean differs from astropy's by up to 49% |
+| rankwise · AVX-512 | median | 0.0722 | 17.2 | 1.0× | identical to np.median |
+| rankwise · AVX2 | median | 0.112 | 26.7 | 1.5× | identical to np.median |
+| rankwise · scalar | median | 0.235 | 56.0 | 3.2× | identical to np.median |
+| reducers 0.4 | median | 1.55 | 369.5 | 21.5× | identical to np.median |
+| imcombiners 0.1 | median | 1.63 | 389.2 | 22.6× | identical to np.median |
+| Bottleneck 1.6 | median | 2.21 | 527.9 | 30.6× | identical to np.median |
+| NumPy 2.5 median | median | 2.98 | 710.5 | 41.2× | identical to np.median |
+| ccdproc 2.5 Combiner | median | 8.2 | 1954.8 | 113.5× | identical to np.median |
+| numbagg 0.9 (nanmedian) | median | 12.6 | 3010.2 | 174.8× | identical to np.median |
 | Siril 1.2.1 (reads FITS) | median | 2.72 | 647.4 | — | own I/O |
 | Siril 1.2.1 (reads FITS) | sigma-clipped mean | 3.44 | 821.0 | — | own I/O |
 

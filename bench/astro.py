@@ -35,8 +35,8 @@ del sc
 rows = []
 
 
-def record(tool, op, fn, reps=3, kept=None, family="competitor"):
-    t = best_of(fn, reps)
+def record(tool, op, fn, reps=3, kept=None, family="competitor", t=None):
+    t = best_of(fn, reps) if t is None else t
     out = np.asarray(fn() if kept is None else fn()[0], np.float64)
     if op == "median":
         check = {"identical_to_np_median": bool(np.array_equal(out, ref_med))}
@@ -52,16 +52,27 @@ def record(tool, op, fn, reps=3, kept=None, family="competitor"):
 out = np.empty((side, side), np.float32)
 lo = np.empty((side, side), np.uint16)
 hi = np.empty((side, side), np.uint16)
+cases = []  # (tool, op, fn, kept)
 for isa in rw.available_isas():
     label = {"avx512": "AVX-512", "avx2": "AVX2", "scalar": "scalar", "neon": "NEON"}[isa]
-    record(f"rankwise · {label}", "median", lambda: rw.median(st, axis=0, out=out, isa=isa), reps=7, family="rankwise")
-    record(f"rankwise · {label}", "sigclip",
-           lambda: (rw.sigma_clip_mean(st, axis=0, sigma=3, maxiters=5, out=out, low=lo, high=hi, isa=isa),),
-           reps=7, kept=lambda: n - lo.astype(np.int64) - hi, family="rankwise")
+    cases.append((f"rankwise · {label}", "median", lambda isa=isa: rw.median(st, axis=0, out=out, isa=isa), None))
+    cases.append((f"rankwise · {label}", "sigclip",
+                  lambda isa=isa: (rw.sigma_clip_mean(st, axis=0, sigma=3, maxiters=5, out=out, low=lo, high=hi,
+                                                      isa=isa),),
+                  lambda: n - lo.astype(np.int64) - hi))
     if isa == "avx512":
-        record(f"rankwise · {label} · f32 bounds", "sigclip",
-               lambda: (rw.sigma_clip_mean(st, axis=0, out=out, low=lo, high=hi, precision="f32", isa=isa),),
-               reps=7, kept=lambda: n - lo.astype(np.int64) - hi, family="rankwise")
+        cases.append((f"rankwise · {label} · f32 bounds", "sigclip",
+                      lambda isa=isa: (rw.sigma_clip_mean(st, axis=0, out=out, low=lo, high=hi, precision="f32",
+                                                          isa=isa),),
+                      lambda: n - lo.astype(np.int64) - hi))
+# Interleaved rounds: this VM's noise comes in bursts of seconds, so each case keeps its best
+# over rounds spread across the whole measurement instead of 7 back-to-back runs.
+best = [float("inf")] * len(cases)
+for _ in range(5):
+    for i, (_, _, fn, _) in enumerate(cases):
+        best[i] = min(best[i], best_of(fn, 3))
+for (tool, op, fn, kept), t in zip(cases, best):
+    record(tool, op, fn, kept=kept, family="rankwise", t=t)
 
 if ONLY_RW:
     import json  # noqa: E402
@@ -104,6 +115,6 @@ if px <= 2048 * 2048:
 
 save(f"astro_{n}x{side}", dict(
     machine=machine(), n=n, side=side, dtype="float32", threads=1,
-    method="best of 7 for rankwise (sub-second runs), 3 or 2 for slower tools, after a warm-up; taskset to one core",
+    method="rankwise: best of 5 interleaved rounds of 3 runs; slower tools: best of 3 or 2; after a warm-up; one core",
     versions=versions("rankwise", "numpy", "bottleneck", "numbagg", "reducers", "imcombiners", "astropy", "ccdproc"),
     rows=rows))
