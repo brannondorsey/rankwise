@@ -1,6 +1,6 @@
 """Weather case study on real data: NOAA GEFS 2 m temperature from dynamical.org.
 
-    taskset -c 1 python bench/gefs.py [cache_dir]
+    taskset -c 1 python bench/gefs.py [--figures-only] [cache_dir]
 
 Loads one run (init 2026-11-01T00) over the contiguous US for every member and every lead
 time to 240 h (31 × 81 × 121 × 257, about 310 MB), then
@@ -22,6 +22,9 @@ import numpy as np
 import rankwise as rw
 from common import best_of, machine, save, versions
 
+FIGURES_ONLY = "--figures-only" in sys.argv
+if FIGURES_ONLY:
+    sys.argv.remove("--figures-only")
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "bench" / "data"
 CACHE.mkdir(parents=True, exist_ok=True)
@@ -50,10 +53,6 @@ def load():
     return t2m, lat, lon, lead_h
 
 
-FIGURES_ONLY = "--figures-only" in sys.argv
-if FIGURES_ONLY:
-    sys.argv.remove("--figures-only")
-    CACHE = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "bench" / "data"
 t2m, lat, lon, lead_h = load()
 n, nl, nlat, nlon = t2m.shape
 cells = nl * nlat * nlon

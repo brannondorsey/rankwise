@@ -1,0 +1,21 @@
+# Competitors and tools the benchmarks were measured with (see bench/results/*.json).
+# imcombiners 0.1.1 and ccdproc 2.5.1 pull in deps that fail to build on Python 3.13
+# (pims); install them with --no-deps after the rest:
+#   pip install -r bench/requirements.txt
+#   pip install --no-deps imcombiners==0.1.1 ccdproc==2.5.1 astroscrappy reproject
+# Siril 1.2.1: apt-get install siril (provides siril-cli), used by bench/siril/.
+numpy==2.5.3
+scipy==1.18.1
+astropy==8.0.2
+bottleneck==1.6.0
+numbagg==0.9.6
+reducers==0.4.0
+fastnanquantile==0.0.2
+matplotlib
+pillow
+xarray
+dask
+zarr
+fsspec
+aiohttp
+requests
