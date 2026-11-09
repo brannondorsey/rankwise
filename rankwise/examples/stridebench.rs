@@ -79,7 +79,7 @@ fn main() {
         let t = Instant::now();
         let mut acc = [0f32; 16];
         for f in &frames {
-            for c in f.chunks_exact(16) {
+            for c in f.as_chunks::<16>().0 {
                 for i in 0..16 {
                     acc[i] += c[i];
                 }
