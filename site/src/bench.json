@@ -1,0 +1,371 @@
+{
+ "machine": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+ "median": [
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "s": 0.07224292600039917
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2",
+   "s": 0.11194906200034893
+  },
+  {
+   "tool": "rankwise \u00b7 scalar",
+   "s": 0.23478402199907578
+  },
+  {
+   "tool": "NumPy 2.5 median",
+   "s": 2.9799584630000027
+  },
+  {
+   "tool": "Bottleneck 1.6",
+   "s": 2.2139718890011864
+  },
+  {
+   "tool": "numbagg 0.9 (nanmedian)",
+   "s": 12.625569025000004
+  },
+  {
+   "tool": "reducers 0.4",
+   "s": 1.5496705830009887
+  },
+  {
+   "tool": "imcombiners 0.1",
+   "s": 1.6323965230003523
+  },
+  {
+   "tool": "ccdproc 2.5 Combiner",
+   "s": 8.198845445000188
+  }
+ ],
+ "sigclip": [
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "s": 0.2303276429993275
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2",
+   "s": 0.29687760199885815
+  },
+  {
+   "tool": "rankwise \u00b7 scalar",
+   "s": 0.658424957000534
+  },
+  {
+   "tool": "reducers 0.4",
+   "s": 3.49551941000027
+  },
+  {
+   "tool": "imcombiners 0.1",
+   "s": 4.007828368999981
+  },
+  {
+   "tool": "astropy 8.0 sigma_clip",
+   "s": 4.816868904999865
+  },
+  {
+   "tool": "ccdproc 2.5 Combiner \u00b7 1 pass",
+   "s": 9.539677111999481
+  }
+ ],
+ "gefs": [
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "s": 0.03200585299964587
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2",
+   "s": 0.06151248099922668
+  },
+  {
+   "tool": "rankwise \u00b7 portable",
+   "s": 0.19160711699987587
+  },
+  {
+   "tool": "NumPy 2.5 quantile",
+   "s": 2.622759256999416
+  },
+  {
+   "tool": "numbagg 0.9 nanquantile",
+   "s": 12.01357231700058
+  },
+  {
+   "tool": "fastnanquantile 0.0.2",
+   "s": 2.300162460998763
+  }
+ ],
+ "landsat": [
+  {
+   "tool": "rankwise \u00b7 AVX-512 (uint16, nodata=0)",
+   "s": 0.2314615169998433
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2 (uint16, nodata=0)",
+   "s": 0.32489299299959384
+  },
+  {
+   "tool": "rankwise \u00b7 portable (uint16, nodata=0)",
+   "s": 1.073586456999692
+  },
+  {
+   "tool": "NumPy 2.5 nanmedian (float32)",
+   "s": 20.555304363999312
+  },
+  {
+   "tool": "Bottleneck 1.6 nanmedian (float32)",
+   "s": 4.910441232001176
+  },
+  {
+   "tool": "numbagg 0.9 nanmedian (float32)",
+   "s": 20.736673694000274
+  }
+ ],
+ "ensemble": [
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "kind": "quantile",
+   "s": 0.016012889998819446
+  },
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "kind": "nanquantile",
+   "s": 0.0287345489996369
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2",
+   "kind": "quantile",
+   "s": 0.02500366900130757
+  },
+  {
+   "tool": "rankwise \u00b7 AVX2",
+   "kind": "nanquantile",
+   "s": 0.062178078000215464
+  },
+  {
+   "tool": "rankwise \u00b7 scalar",
+   "kind": "quantile",
+   "s": 0.10159690999898885
+  },
+  {
+   "tool": "rankwise \u00b7 scalar",
+   "kind": "nanquantile",
+   "s": 0.11582001600072545
+  },
+  {
+   "tool": "NumPy 2.5 quantile",
+   "kind": "quantile",
+   "s": 1.3323892619991966
+  },
+  {
+   "tool": "NumPy 2.5 nanquantile",
+   "kind": "nanquantile",
+   "s": 44.10598130499966
+  },
+  {
+   "tool": "numbagg 0.9 nanquantile",
+   "kind": "nanquantile",
+   "s": 4.757230133000121
+  },
+  {
+   "tool": "fastnanquantile 0.0.2",
+   "kind": "nanquantile",
+   "s": 0.8824862790006591
+  }
+ ],
+ "siril": [
+  {
+   "tool": "Siril 1.2.1 \u00b7 own I/O",
+   "op": "median",
+   "s": 2.715402934998565
+  },
+  {
+   "tool": "Siril 1.2.1 \u00b7 own I/O",
+   "op": "sigclip",
+   "s": 3.4435193949993845
+  }
+ ],
+ "sweep": [
+  {
+   "n": 8,
+   "rankwise_median": 2.774769781999087,
+   "rankwise_sigclip": 21.07170677181913,
+   "rankwise_avx2_median": 4.3206653602134715,
+   "rankwise_avx2_sigclip": 24.767447471402136,
+   "reducers_median": 91.9259023676039,
+   "reducers_sigclip": 186.60222148893234,
+   "imcombiners_median": 82.68311023698627,
+   "imcombiners_sigclip": 186.68410110486698,
+   "numpy_median": 138.71449184264804,
+   "rankwise_path": "skewed"
+  },
+  {
+   "n": 15,
+   "rankwise_median": 5.3638668055799865,
+   "rankwise_sigclip": 28.320226670708326,
+   "rankwise_avx2_median": 7.6616191863054794,
+   "rankwise_avx2_sigclip": 32.59765911020618,
+   "reducers_median": 205.42135524721783,
+   "reducers_sigclip": 438.1766262051556,
+   "imcombiners_median": 198.00897598301614,
+   "imcombiners_sigclip": 471.3897342675799,
+   "numpy_median": 286.79672622704265,
+   "rankwise_path": "skewed"
+  },
+  {
+   "n": 31,
+   "rankwise_median": 13.949680329264357,
+   "rankwise_sigclip": 53.6696138381948,
+   "rankwise_avx2_median": 24.04252243126681,
+   "rankwise_avx2_sigclip": 74.19288730776962,
+   "reducers_median": 380.28204154931524,
+   "reducers_sigclip": 838.9856233585041,
+   "imcombiners_median": 357.2336626060657,
+   "imcombiners_sigclip": 945.4548444750438,
+   "numpy_median": 752.8748874659901,
+   "rankwise_path": "skewed"
+  },
+  {
+   "n": 63,
+   "rankwise_median": 54.6071538924664,
+   "rankwise_sigclip": 130.259592057147,
+   "rankwise_avx2_median": 68.26861381412085,
+   "rankwise_avx2_sigclip": 170.1974468235057,
+   "reducers_median": 637.7931509003731,
+   "reducers_sigclip": 1659.6939201359712,
+   "imcombiners_median": 674.1894474030646,
+   "imcombiners_sigclip": 1905.3836650857747,
+   "numpy_median": 1723.7859554295603,
+   "rankwise_path": "staged"
+  },
+  {
+   "n": 127,
+   "rankwise_median": 108.99358844802809,
+   "rankwise_sigclip": 284.37090015404067,
+   "rankwise_avx2_median": 173.6586589806688,
+   "rankwise_avx2_sigclip": 443.5397510538924,
+   "reducers_median": 1195.1877965914875,
+   "reducers_sigclip": 3714.316880225332,
+   "imcombiners_median": 1198.3205614081448,
+   "imcombiners_sigclip": 3767.847805024108,
+   "numpy_median": 3391.9758472434473,
+   "rankwise_path": "staged"
+  },
+  {
+   "n": 255,
+   "rankwise_median": 265.56783580718167,
+   "rankwise_sigclip": 659.3738574971197,
+   "rankwise_avx2_median": 431.28032493552905,
+   "rankwise_avx2_sigclip": 1113.1983823787357,
+   "reducers_median": 2273.029571533275,
+   "reducers_sigclip": 8054.737010956132,
+   "imcombiners_median": 2314.117645263111,
+   "imcombiners_sigclip": 8625.97362804446,
+   "numpy_median": 6682.014663696515,
+   "rankwise_path": "staged"
+  },
+  {
+   "n": 511,
+   "rankwise_median": 761.7952966689628,
+   "rankwise_sigclip": 1815.9144268038717,
+   "rankwise_avx2_median": 1089.6913204185705,
+   "rankwise_avx2_sigclip": 2669.5202989587137,
+   "reducers_median": 4454.372579574054,
+   "reducers_sigclip": 17453.211434365414,
+   "imcombiners_median": 5001.0973215094955,
+   "imcombiners_sigclip": 18738.120768546985,
+   "numpy_median": 13882.126446724402,
+   "rankwise_path": "staged"
+  }
+ ],
+ "e2e": [
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "read_seconds": 0.11263447199962684,
+   "total_seconds": 0.20896361999984947
+  },
+  {
+   "tool": "reducers 0.4",
+   "op": "median",
+   "read_seconds": 0.11263447199962684,
+   "total_seconds": 1.7271975280000333
+  },
+  {
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "sigclip",
+   "read_seconds": 0.11263447199962684,
+   "total_seconds": 0.35919167200154334
+  },
+  {
+   "tool": "reducers 0.4",
+   "op": "sigclip",
+   "read_seconds": 0.11263447199962684,
+   "total_seconds": 3.479830554999353
+  },
+  {
+   "tool": "Siril 1.2.1",
+   "op": "median",
+   "read_seconds": null,
+   "total_seconds": 2.715402934998565
+  },
+  {
+   "tool": "Siril 1.2.1",
+   "op": "sigclip",
+   "read_seconds": null,
+   "total_seconds": 3.4435193949993845
+  }
+ ],
+ "ccd": {
+  "bias": [
+   {
+    "ref": "astropy sigma_clip",
+    "pixels": 16830464,
+    "same": 16830464
+   },
+   {
+    "ref": "astropy sigma_clip",
+    "pixels": 16830464,
+    "same": 16830464
+   },
+   {
+    "ref": "ccdproc Combiner.sigma_clipping + average_combine",
+    "pixels": 16830464,
+    "same": 16830464
+   }
+  ],
+  "dark": [
+   {
+    "ref": "astropy sigma_clip",
+    "pixels": 16830464,
+    "same": 16830464
+   },
+   {
+    "ref": "astropy sigma_clip",
+    "pixels": 16830464,
+    "same": 16830464
+   },
+   {
+    "ref": "ccdproc Combiner.sigma_clipping + average_combine",
+    "pixels": 16830464,
+    "same": 16830464
+   }
+  ],
+  "flat": [
+   {
+    "ref": "astropy sigma_clip",
+    "pixels": 16830464,
+    "same": 16830464
+   },
+   {
+    "ref": "astropy sigma_clip",
+    "pixels": 16830464,
+    "same": 16830464
+   },
+   {
+    "ref": "ccdproc Combiner.sigma_clipping + average_combine",
+    "pixels": 16830464,
+    "same": 16830464
+   }
+  ]
+ }
+}
