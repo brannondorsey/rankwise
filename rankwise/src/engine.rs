@@ -224,7 +224,10 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
     }
 }
 
-#[inline(always)]
+// On WebAssembly simd128 is a module-wide feature, so a call boundary loses nothing; it
+// keeps each function small enough for the engine's optimizing tier (see docs/wasm.md).
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW: bool>(job: &Job, u: Unit) {
     let n = job.n;
     let l = S::L;
@@ -437,7 +440,8 @@ unsafe fn norm<S: Vector>(x: S, s: S::E, o: S::E) -> S {
 }
 
 /// Copy (and convert) `cnt` pixels of every frame into the tile, `ts` elements per frame.
-#[inline(always)]
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 unsafe fn stage<S: Vector>(
     job: &Job,
     src: &[*const u8],
@@ -487,7 +491,8 @@ unsafe fn stage<S: Vector>(
 }
 
 /// min / max / range / argmin / argmax: one pass over the frames, no network.
-#[inline(always)]
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 #[allow(clippy::too_many_arguments)]
 unsafe fn streaming<S: Vector>(
     job: &Job,
@@ -618,7 +623,8 @@ fn lowest<E: Element>() -> E {
 }
 
 /// Dispatch the block to the operation's epilogue.
-#[inline(always)]
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk: &Blk<S>) {
     let n = job.n;
     let lanes = blk.lanes;
@@ -888,7 +894,8 @@ pub(crate) unsafe fn load_group<S: Vector, C: FVector>(src: *const S, k: usize, 
 
 /// scipy.stats.median_abs_deviation: median(|x - median(x)|) / scale, in the data's float
 /// dtype. The deviations of a sorted stack fall then rise, so a bitonic merger sorts them.
-#[inline(always)]
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 unsafe fn mad<S: crate::arch::SortVec, C: crate::arch::SortVec + FVector>(
     job: &Job,
     blk: &Blk<S>,
@@ -953,7 +960,8 @@ unsafe fn mad<S: crate::arch::SortVec, C: crate::arch::SortVec + FVector>(
 
 /// Which frame holds rank r in a stable argsort (NaN last): count values below the target,
 /// then find the right occurrence of the target among equal values, in frame order.
-#[inline(always)]
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 unsafe fn argrank<S: Vector>(
     job: &Job,
     blk: &Blk<S>,

@@ -21,8 +21,9 @@ when a slice is 30 values long. rankwise vectorizes *across* slices: register `k
 `k` of 16 neighbouring pixels (AVX-512), so every min/max instruction advances 16 sorts at
 once, and nothing ever branches on pixel values.
 
-It ships as a Rust crate, a C library with a header, and a Python package, and picks
-AVX-512, AVX2, NEON or a portable fallback at runtime.
+It ships as a Rust crate, a C library with a header, a Python package and a WebAssembly
+package for Node, Bun, Deno and browsers. Natively it picks AVX-512, AVX2, NEON or a portable
+fallback at runtime; in WebAssembly, the simd128 build or a portable one.
 
 ## Python
 
@@ -227,6 +228,34 @@ rw_status st = rw_clip_mean_f32(frames, 40, H * W, &clip, out, /*rejected*/ NULL
 [`examples/c`](examples/c) builds a complete stacker (`make -C examples/c`). Errors come back as
 `rw_status`; panics never cross the boundary.
 
+## JavaScript (WebAssembly)
+
+```js
+import { init } from "rankwise";                 // rankwise-wasm/js/rankwise.js until it is on npm
+
+const rw = await init();                         // simd128 build, or portable without WebAssembly SIMD
+const master = rw.median(frames);                // Float32Array[] → Float32Array, as np.median
+const [p10, p90] = rw.quantile(cube, [0.1, 0.9], { shape: [31, 721, 1440] });
+const { value, mask } = rw.sigmaClipMean(subs, { sigma: 3, mask: true });   // astropy's decisions
+```
+
+The same functions as the Python package, in camelCase, on TypedArrays: frame lists, or one array
+with `shape` and `axis`. Uint8Array and ImageData's Uint8ClampedArray are widened to uint16. Inputs
+stream through WebAssembly memory in cache-sized chunks; `rw.alloc` avoids even that copy.
+On one thread it is **10–14× faster than the fastest JavaScript** in Node and 5–8× faster in Bun, at
+about the speed of the native portable build ([numbers and design](docs/wasm.md)):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/bench_wasm_dark.png">
+  <img alt="rankwise in WebAssembly against JavaScript: median, sigma clipping, ensemble quantiles and nodata medians" src="docs/img/bench_wasm_light.png">
+</picture>
+
+Results are identical to NumPy, SciPy and astropy on Node, Bun, Deno and Chromium (5,239 checks).
+Examples: [stacking in Node](examples/js/node-stack.mjs), [an ensemble-statistics server on
+Bun](examples/js/bun-server.ts), [every core with worker threads](examples/js/node-parallel.mjs) and
+[stacking in the browser](examples/js/browser/) (serve the repository root, open
+`/examples/js/browser/`). API: [rankwise-wasm/README.md](rankwise-wasm/README.md).
+
 ## Building
 
 ```bash
@@ -235,6 +264,7 @@ cargo build --release -p rankwise-capi                     # C library
 pip install maturin && maturin build --release -m rankwise-py/Cargo.toml -o dist
 pip install --find-links dist rankwise                     # Python (abi3 wheel, Python >= 3.9)
 python -m pytest conformance -q                            # conformance suite
+rustup target add wasm32-unknown-unknown && node rankwise-wasm/scripts/build.mjs   # WebAssembly
 ```
 
 Rust 1.89 or later (AVX-512 intrinsics are stable from 1.89); no nightly features.

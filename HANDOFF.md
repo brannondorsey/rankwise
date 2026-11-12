@@ -54,9 +54,10 @@ original handoff (Brannon has it; its §4 facts are all folded into [docs/confor
 | `rankwise/tests/` | `networks.rs` (0-1 principle, n ≤ 20, exhaustive), `oracle.rs` (every ISA vs scalar oracle, bit for bit). |
 | `rankwise-capi/` | `rw_*` C ABI, `catch_unwind` everywhere, `include/rankwise.h` (cbindgen 0.29.4; CI diffs it). |
 | `rankwise-py/` | PyO3 0.30 abi3-py39 extension (`src/lib.rs`) + NumPy-style API (`python/rankwise/__init__.py`). |
+| `rankwise-wasm/` | WebAssembly: `src/lib.rs` (raw `rw_*` exports, f64 request stream, no wasm-bindgen), `js/rankwise.js` + `.d.ts` (loader, NumPy-style API, streaming), `scripts/build.mjs` (simd128 + portable into `dist/`), `test/` (NumPy fixtures, Node/Bun/Deno/Chromium runners), `bench/bench.mjs`. Design and numbers: [docs/wasm.md](docs/wasm.md). |
 | `conformance/` | pytest suite vs pinned NumPy 2.5.3, SciPy 1.18.1, astropy 8.0.2; Siril preset checks; C ABI vs Python. |
 | `bench/` | One-core benchmarks → `bench/results/*.json` → `figures.py` (charts) and `report.py` (`docs/benchmarks.md`). |
-| `examples/` | `c/stack.c`, `python/astro_demo.py` (README hero, comparison and rejection images). |
+| `examples/` | `c/stack.c`, `python/astro_demo.py` (README hero, comparison and rejection images), `js/` (Node stacking, Bun server, worker threads, browser page). |
 | `docs/` | `design.md` (architecture + provenance), `conformance.md`, `presets.md`, generated `benchmarks.md`, `diagrams.py` → SVGs. |
 
 ## 3. How to build, test and benchmark
@@ -74,6 +75,18 @@ python -m pytest conformance -q                           # 1,057 tests, ~1.5 mi
 
 pip install -r bench/requirements.txt                     # read its header: two packages need --no-deps
 bash bench/run_all.sh                                     # pins taskset -c 1, then charts + report
+```
+
+WebAssembly (`rustup target add wasm32-unknown-unknown wasm32-wasip1`; Node 18+, Bun, Deno):
+
+```bash
+node rankwise-wasm/scripts/build.mjs [--dev]              # dist/rankwise-{simd128,portable}.wasm (--dev skips LTO)
+python rankwise-wasm/test/make_fixtures.py                # needs conformance/requirements.txt
+node rankwise-wasm/test/api.test.mjs && node rankwise-wasm/test/conformance.test.mjs   # also bun / deno run -A
+NODE_PATH=$(npm root -g) node rankwise-wasm/test/browser.mjs                          # headless Chromium
+RUSTFLAGS="-C target-feature=+simd128" CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/rankwise-wasm/scripts/wasi-run.mjs" \
+  cargo test --release -p rankwise --target wasm32-wasip1  # oracle tests on simd128
+cd rankwise-wasm && npm install && taskset -c 1 node bench/bench.mjs --json ../bench/results/wasm_node.json
 ```
 
 NEON on an x86 box: `apt-get install qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross`,
@@ -98,6 +111,7 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 | 7 | **PixInsight winsorized preset** | Implemented from PCL's public docs (Sn·1.1926 start, cutoff 5); never run against PixInsight. | Check the PCL license, then validate on Brannon's PixInsight install or drop the preset from 0.1.0. |
 | 8 | **Legal** | Design log notes TI US9665542 (different method). | Brannon arranges review before 1.0. |
 | 9 | **Release** | `wheels.yml` builds manylinux x86-64/aarch64, macOS arm64/x86-64 and Windows wheels but does not publish. Names unregistered. | When Brannon registers names: add trusted publishing to `wheels.yml`, `cargo publish` the crate (capi stays unpublished or ships as release artifacts), tag `v0.1.0`, move the CHANGELOG entry out of "unreleased". |
+| 11 | **WebAssembly** | Done: simd128 backend, `rankwise-wasm` package, 5,239 identical checks on Node 22, Bun 1.4, Deno 2.9, Chromium 153; benchmarks in docs/wasm.md. Not done: Firefox, Safari, arm64 hosts; npm name unregistered (`package.json` is `private`). | Run `test/browser.mjs` against Firefox/WebKit; when Brannon registers the name, drop `private` and publish `dist/` + `js/`. The portable build is only as fast as plain JS; it is a fallback for engines without SIMD. |
 | 10 | Known differences | Signed-zero sign bit (x86 vs NEON min/max); `median(out=float64)` on f32 averages in f32; `trimmed_mean` more accurate than SciPy's f32; `nanarg*` all-NaN returns −1 (+ `strict=True`). All in [docs/conformance.md](docs/conformance.md#known-differences). | Leave unless a user needs it; −0 canonicalization would cost a blend per output. |
 
 ## 5. v0.2 backlog (from the scope doc; file as `v0.2` issues)
@@ -108,6 +122,8 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 * Linear-fit clipping and generalized ESD. These break v0.1's "kept is exactly
   `v_lo <= x <= v_hi`" rescan trick, so frame identity has to ride through the network.
 * R and Julia bindings (the C ABI is the base), xarray/dask helpers, and a Siril script.
+* A threaded WebAssembly build (`+atomics`, nightly `build-std`, cross-origin isolation in
+  browsers); today JS scales with one instance per worker (`examples/js/node-parallel.mjs`).
 
 ## 6. Things that cost time and aren't obvious
 
@@ -148,6 +164,12 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 * **Data sources that work from this VM:** Landsat via Planetary Computer (`pystac-client`,
   `planetary-computer`, `rasterio`); CCD frames from Zenodo 3245296; GEFS from dynamical.org.
   All cache under `bench/data/` (gitignored).
+* **WebAssembly tiering.** V8 runs wasm in its baseline compiler until a hot function is
+  optimized in the background, and a running call never switches over. One huge inlined
+  function per ISA kept calls 3–4× slow; on wasm the per-block helpers and networks are
+  `inline(never)` (`cfg_attr`, native unchanged). Check `node --no-liftoff` when a wasm
+  benchmark looks slow, and warm up before timing. Uint8 `out` arrays are boolean in the core;
+  the JS layer writes uint16 and narrows.
 * **Charts** use `bench/figures.py`'s `THEMES` (light/dark), Inter, and `headline()`; README
   images are `<picture>` pairs. Regenerate both themes when changing any chart.
 

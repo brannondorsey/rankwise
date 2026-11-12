@@ -15,11 +15,11 @@ and one `vmaxps`: it advances all 16 stacks at once and never branches on pixel 
 
 Lanes per register:
 
-| dtype | AVX-512 | AVX2 | NEON | portable |
-|---|---|---|---|---|
-| float32 | 16 | 8 | 4 | 8 |
-| float64 | 8 | 4 | 2 | 4 |
-| uint16 | 32 | 16 | 8 | 16 |
+| dtype | AVX-512 | AVX2 | NEON | WebAssembly simd128 | portable |
+|---|---|---|---|---|---|
+| float32 | 16 | 8 | 4 | 4 | 8 |
+| float64 | 8 | 4 | 2 | 2 | 4 |
+| uint16 | 32 | 16 | 8 | 8 | 16 |
 
 ## Pipeline per block of lanes
 
@@ -71,7 +71,7 @@ n ≤ 20: full sorts, pruned selections and the bitonic merger.
 
 * `simd/` defines a small `Vector` trait (load, store, min, max, add, sub, mul, compare,
   select, NaN/non-finite masks) with implementations for AVX-512 (F/BW/DQ/VL, opmask
-  registers), AVX2, NEON and a portable array fallback. Kernels are generic over it and
+  registers), AVX2, NEON, WebAssembly simd128 and a portable array fallback. Kernels are generic over it and
   `#[inline(always)]`; `arch.rs` instantiates them inside one `#[target_feature]` function
   per ISA and dtype, so every intrinsic inlines into code compiled for that ISA. No nightly.
 * The ISA is chosen per call: an explicit request, else `rankwise.set_isa()` /
@@ -81,9 +81,23 @@ n ≤ 20: full sorts, pruned selections and the bitonic merger.
 * **Determinism.** Results are identical across ISAs and thread counts: selections are
   exact; sums use four accumulators keyed by rank (`k % 4`), the same order on every ISA; no
   FMA anywhere. Signed zeros compare equal, but their sign bit can differ between ISAs
-  (x86 `minps` and NEON `fmin` order −0 and +0 differently).
+  (x86 `minps` and NEON `fmin` order −0 and +0 differently). The simd128 kernels use
+  `pmin`/`pmax` with swapped operands, which is `minps`/`maxps` exactly, so WebAssembly gives
+  x86's sign bits on every host, arm64 included.
+* **WebAssembly.** A module cannot detect features at run time, so simd128 is compiled in:
+  `rankwise-wasm` ships a `+simd128` build and a portable one, and the JS loader validates a
+  one-instruction SIMD module to pick between them. Without shared memory there are no
+  threads (`threads` is ignored); JS spreads work over one instance per worker instead. On
+  wasm the per-block helpers, epilogues and each unrolled network are `inline(never)`
+  instead of `inline(always)` (simd128 is module-wide, so no target features are lost): one
+  426 KB function per ISA kept V8 in its baseline compiler for seconds, and splitting it cut
+  the optimizing compile of the whole module from 2.3 s to 0.3 s and roughly halved first calls.
+  Native builds are unchanged. Unrolled networks go to 24 frames, as on NEON: 16, 24 and 32
+  measured within a few percent in V8, interpreted networks 1.4× slower. See
+  [wasm.md](wasm.md).
 * **Threads.** The core is single-threaded over a range of pixels; `threads=` splits rows
-  and pixel ranges across rayon's pool (Python wheel) or scoped threads (plain Rust).
+  and pixel ranges across rayon's pool (Python wheel) or scoped threads (plain Rust), and is
+  ignored on WebAssembly without shared memory.
 
 ## Rejection
 

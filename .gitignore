@@ -38,3 +38,8 @@ bench/data/
 *.npy
 !docs/**/*.npy
 examples/c/stack
+
+# WebAssembly package (dist/ above covers the built .wasm files)
+rankwise-wasm/node_modules/
+rankwise-wasm/test/fixtures/
+examples/js/node_modules/

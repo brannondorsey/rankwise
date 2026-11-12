@@ -28,7 +28,9 @@ impl fmt::Display for Error {
             Error::Param(s) => write!(f, "invalid parameter: {s}"),
             Error::DType(s) => write!(f, "unsupported dtype: {s}"),
             Error::UnsupportedIsa(s) => write!(f, "this CPU cannot run the {s} kernels"),
-            Error::UnknownIsa(s) => write!(f, "unknown ISA {s:?} (expected scalar, avx2, avx512, neon or auto)"),
+            Error::UnknownIsa(s) => {
+                write!(f, "unknown ISA {s:?} (expected scalar, avx2, avx512, neon, simd128 or auto)")
+            }
         }
     }
 }

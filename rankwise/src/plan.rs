@@ -377,7 +377,9 @@ pub(crate) fn execute(job: &Job) {
     if us.is_empty() {
         return;
     }
-    if job.threads <= 1 || us.len() == 1 {
+    // WebAssembly without shared memory has no threads: run on the calling thread (callers
+    // parallelize with one instance per Web Worker / worker_thread instead).
+    if job.threads <= 1 || us.len() == 1 || cfg!(all(target_family = "wasm", not(target_feature = "atomics"))) {
         for u in us {
             unsafe { arch::run(job, u) };
         }

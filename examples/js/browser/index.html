@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rankwise in the browser</title>
+<style>
+  :root {
+    --bg: #fcfcfb; --surface: #ffffff; --ink: #0b0b0b; --ink2: #52514e; --muted: #8a8984; --line: #e6e5e0;
+    --accent: #2a78d6; --accent-ink: #ffffff; --bar: #2a78d6; --bar2: #c3c2bb; --warn: #b4441a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1a19; --surface: #222220; --ink: #f0efec; --ink2: #c3c2b7; --muted: #8f8e88; --line: #2e2d2a;
+      --accent: #5598e7; --accent-ink: #0b0b0b; --bar: #5598e7; --bar2: #55544f; --warn: #e07a4f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1a19; --surface: #222220; --ink: #f0efec; --ink2: #c3c2b7; --muted: #8f8e88; --line: #2e2d2a;
+    --accent: #5598e7; --accent-ink: #0b0b0b; --bar: #5598e7; --bar2: #55544f; --warn: #e07a4f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Inter, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 28px 16px 48px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink2); margin: 0 0 20px; }
+  .status { font: 12.5px/1.4 ui-monospace, "JetBrains Mono", Menlo, monospace; color: var(--muted); margin-bottom: 18px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .view { background: #000; border-radius: 10px; overflow: hidden; position: relative; aspect-ratio: 1; }
+  .view canvas { width: 100%; height: 100%; display: block; image-rendering: auto; }
+  .tag { position: absolute; left: 10px; bottom: 10px; background: rgba(0,0,0,.6); color: #fff; font-size: 12.5px; padding: 3px 8px; border-radius: 6px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+  button { font: inherit; font-size: 13.5px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button:disabled { opacity: .5; cursor: default; }
+  label { font-size: 13px; color: var(--ink2); display: flex; justify-content: space-between; margin-top: 8px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .timing { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .timing h2 { font-size: 13px; margin: 0 0 8px; color: var(--ink2); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .row { display: grid; grid-template-columns: 1fr auto; font-size: 13px; margin: 6px 0 2px; }
+  .row span:last-child { font-variant-numeric: tabular-nums; color: var(--ink2); }
+  .bar { height: 8px; border-radius: 4px; background: var(--bar); min-width: 2px; }
+  .bar.js { background: var(--bar2); }
+  .note { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  .speedup { font-size: 22px; font-weight: 700; margin: 6px 0 0; }
+  .err { color: var(--warn); }
+  code { font: 12.5px ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>rankwise in the browser</h1>
+  <p class="sub">40 synthetic 30&nbsp;s subs with satellite trails, stacked per pixel in WebAssembly SIMD. Every pixel of every color channel is one slice of 40 values.</p>
+  <div class="status" id="status">loading…</div>
+  <div class="grid">
+    <div class="view"><canvas id="view" width="384" height="384"></canvas><div class="tag" id="tag"></div></div>
+    <div class="panel">
+      <div class="modes" id="modes">
+        <button data-mode="sub" aria-pressed="false">One sub</button>
+        <button data-mode="mean" aria-pressed="false">Mean</button>
+        <button data-mode="median" aria-pressed="false">Median</button>
+        <button data-mode="clip" aria-pressed="true">σ-clipped mean</button>
+        <button data-mode="rejected" aria-pressed="false" style="grid-column: span 2">What σ-clipping removed</button>
+      </div>
+      <label for="sigma"><span>σ</span><span id="sigma-out">3.0</span></label>
+      <input type="range" id="sigma" min="1.5" max="5" step="0.1" value="3">
+      <div class="timing">
+        <h2>This view, one thread</h2>
+        <div id="bars"></div>
+        <p class="speedup" id="speedup"></p>
+        <button id="compare" style="margin-top:8px;width:100%">Time plain JavaScript too</button>
+        <p class="note">Plain JavaScript gathers each pixel's 40 values and sorts them (<code>Float32Array.prototype.sort</code>), with astropy's iteration for σ-clipping. Both give the same result.</p>
+      </div>
+    </div>
+  </div>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

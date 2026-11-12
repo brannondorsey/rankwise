@@ -1,0 +1,43 @@
+
+## Median of 31 frames
+31 × 1024×1024 float32, like stacking registered subs (bench/astro.py)
+rankwise wasm simd128                     73.8 ms     8.4x  identical
+rankwise wasm simd128, zero-copy          50.0 ms    12.4x  identical
+rankwise wasm portable                  1222.2 ms     0.5x  identical
+JS quickselect (hand-written)            617.3 ms     1.0x  identical
+JS TypedArray.sort per pixel             902.8 ms     0.7x  identical
+d3-array median per pixel               3984.1 ms     0.2x  identical
+
+## Sigma-clipped mean of 31 frames
+31 × 1024×1024 float32, 3σ, 5 iterations, astropy's decisions
+rankwise wasm simd128                    180.0 ms     6.6x  same rejections, mean within 0.0e+0
+rankwise wasm simd128, zero-copy         194.6 ms     6.1x  same rejections, mean within 0.0e+0
+rankwise wasm portable                  1765.6 ms     0.7x  same rejections, mean within 0.0e+0
+JS sort + astropy iteration             1186.6 ms     1.0x  same rejections, mean within 0.0e+0
+
+## p10 / p50 / p90 of a 31-member ensemble
+31 × 721×1440 float32 (a 0.25° global grid, as bench/ensemble.py), q as a list: float64 like np.quantile
+rankwise wasm simd128                    158.3 ms     6.2x  identical
+rankwise wasm simd128, zero-copy         100.5 ms     9.8x  identical
+rankwise wasm portable                  1247.3 ms     0.8x  identical
+JS TypedArray.sort per cell              988.9 ms     1.0x  identical
+d3-array quantile per cell             10174.1 ms     0.1x  identical
+
+## Cloud-free median of 90 uint16 scenes
+90 × 512×512 uint16, 65% nodata (= 0), as bench/landsat.py
+rankwise wasm simd128                     73.8 ms     5.4x  identical
+rankwise wasm simd128, zero-copy          72.2 ms     5.6x  identical
+rankwise wasm portable                   413.2 ms     1.0x  identical
+JS filter + quickselect                  402.0 ms     1.0x  identical
+
+## Median by stack depth (32M values each)
+n=  4  simd128   107.2 ms  portable   484.6 ms  JS quickselect   778.5 ms  7.3x  identical
+n=  8  simd128    87.9 ms  portable   677.4 ms  JS quickselect  1098.1 ms  12.5x  identical
+n= 16  simd128   100.6 ms  portable   982.8 ms  JS quickselect  1268.8 ms  12.6x  identical
+n= 31  simd128    76.9 ms  portable  1311.6 ms  JS quickselect  1101.6 ms  14.3x  identical
+n= 64  simd128   102.8 ms  portable  1806.3 ms  JS quickselect  1355.9 ms  13.2x  identical
+n=127  simd128   128.3 ms  portable  2342.9 ms  JS quickselect   980.7 ms  7.6x  identical
+n=255  simd128   278.2 ms  portable  2769.8 ms  JS quickselect  1032.0 ms  3.7x  identical
+n=511  simd128   230.3 ms  portable  3238.0 ms  JS quickselect  1147.5 ms  5.0x  identical
+
+wrote ../bench/results/wasm_bun.json

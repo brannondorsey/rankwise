@@ -49,6 +49,58 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --features rankwise/ndarray -- -D warnings
 
+  wasm:
+    name: WebAssembly · Node, Bun, Deno, Chromium
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, wasm32-wasip1
+          components: clippy
+      - name: Clippy on wasm32 (portable and simd128)
+        run: |
+          cargo clippy -p rankwise -p rankwise-wasm --target wasm32-unknown-unknown -- -D warnings
+          RUSTFLAGS="-C target-feature=+simd128" cargo clippy -p rankwise -p rankwise-wasm --target wasm32-unknown-unknown --target-dir target/simd -- -D warnings
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - uses: oven-sh/setup-bun@v2
+      - uses: denoland/setup-deno@v2
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Oracle tests on wasm32 + simd128 (simd128 against the portable kernels, under Node's WASI)
+        run: cargo test --release -p rankwise --target wasm32-wasip1
+        env:
+          RUSTFLAGS: -C target-feature=+simd128
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: node ${{ github.workspace }}/rankwise-wasm/scripts/wasi-run.mjs
+      - name: Build both modules
+        run: node rankwise-wasm/scripts/build.mjs
+      - name: NumPy / SciPy / astropy references
+        run: |
+          pip install -r conformance/requirements.txt
+          python rankwise-wasm/test/make_fixtures.py
+      - name: Node
+        run: node rankwise-wasm/test/api.test.mjs && node rankwise-wasm/test/conformance.test.mjs
+      - name: Bun
+        run: bun rankwise-wasm/test/api.test.mjs && bun rankwise-wasm/test/conformance.test.mjs
+      - name: Deno
+        run: deno run -A rankwise-wasm/test/api.test.mjs && deno run -A rankwise-wasm/test/conformance.test.mjs
+      - name: Chromium
+        working-directory: rankwise-wasm
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+          node test/browser.mjs
+      - name: Examples
+        run: |
+          node examples/js/node-stack.mjs /tmp/stack
+          bun examples/js/bun-server.ts --selftest
+      - name: Benchmark smoke run
+        working-directory: rankwise-wasm
+        run: npm ci && node bench/bench.mjs --quick
+
   header:
     name: C header is up to date
     runs-on: ubuntu-latest

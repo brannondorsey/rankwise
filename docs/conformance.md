@@ -104,3 +104,20 @@ Matching NumPy bit for bit meant reproducing some behaviours that are easy to mi
   it agrees with SciPy to the float32 rounding of SciPy's own error, not bit for bit.
 * **`nanargmin`/`nanargmax` on all-NaN slices** return −1 and warn; NumPy raises
   (`strict=True` restores that).
+
+### WebAssembly and JavaScript
+
+The JS package runs every case of `rankwise-wasm/test/make_fixtures.py` (591 cases built
+from the same value families as this suite, against NumPy 2.5.3, SciPy 1.18.1 and astropy
+8.0.2) on both builds and every ISA each has, through streamed chunks, zero-copy WebAssembly
+arrays and caller-supplied outputs: 5,239 checks, all identical on Node 22, Bun 1.4, Deno 2.9
+and Chromium 153. The core's oracle tests also run on `wasm32-wasip1` with simd128. JS-only
+differences:
+
+* **Indices** (`argmin`, `argmedian`, ...) are Int32Array, not int64.
+* **`q` as a JS number** behaves like a Python float; JS cannot tell `1` from `1.0`, so NumPy's
+  Python-int rule (`q=1` keeps integer dtype under `linear`) is not reproduced.
+* **`nanquantile` on float32 with a list `q`** always returns float64; NumPy returns float32
+  when the first slice is all-NaN (an `apply_along_axis` artifact the Python package copies).
+* **No warnings** for all-NaN slices (NumPy's `RuntimeWarning`).
+* **Signed zeros** follow x86 on every host (see design.md).

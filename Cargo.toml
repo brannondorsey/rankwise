@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["rankwise", "rankwise-capi", "rankwise-py"]
+members = ["rankwise", "rankwise-capi", "rankwise-py", "rankwise-wasm"]
 default-members = ["rankwise", "rankwise-capi"]
 
 [workspace.package]

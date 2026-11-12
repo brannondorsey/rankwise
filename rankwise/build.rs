@@ -18,7 +18,11 @@ mod netgen {
 const MAX_UNROLL: usize = 32;
 
 fn emit(out: &mut String, name: &str, n: usize, net: &[(u16, u16)]) {
-    writeln!(out, "#[inline(always)]\n#[allow(unused_mut, clippy::all)]").unwrap();
+    // On WebAssembly each network stays its own function: simd128 is module-wide, and small
+    // functions reach the engine's optimizing tier sooner (see docs/wasm.md).
+    writeln!(out, "#[cfg_attr(not(target_family = \"wasm\"), inline(always))]").unwrap();
+    writeln!(out, "#[cfg_attr(target_family = \"wasm\", inline(never))]").unwrap();
+    writeln!(out, "#[allow(unused_mut, clippy::all)]").unwrap();
     writeln!(out, "pub(crate) unsafe fn {name}<V: crate::simd::Vector>(b: *mut V) {{").unwrap();
     let mut used = vec![false; n];
     for &(a, c) in net {

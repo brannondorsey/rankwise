@@ -13,6 +13,8 @@ pub mod avx2;
 pub mod avx512;
 #[cfg(target_arch = "aarch64")]
 pub mod neon;
+#[cfg(all(target_family = "wasm", target_feature = "simd128"))]
+pub mod wasm;
 
 /// A per-lane boolean.
 pub trait Mask: Copy {
@@ -163,6 +165,9 @@ pub enum Isa {
     Avx512 = 2,
     /// aarch64 Advanced SIMD: 4 f32 lanes.
     Neon = 3,
+    /// WebAssembly `simd128`: 4 f32 lanes. Compiled in, not detected: a wasm module built
+    /// with `+simd128` always has it (and does not load on engines without it).
+    Simd128 = 4,
 }
 
 impl Isa {
@@ -172,6 +177,7 @@ impl Isa {
             Isa::Avx2 => "avx2",
             Isa::Avx512 => "avx512",
             Isa::Neon => "neon",
+            Isa::Simd128 => "simd128",
         }
     }
 
@@ -181,6 +187,7 @@ impl Isa {
             "avx2" => Some(Isa::Avx2),
             "avx512" | "avx-512" => Some(Isa::Avx512),
             "neon" => Some(Isa::Neon),
+            "simd128" | "wasm" => Some(Isa::Simd128),
             _ => None,
         }
     }
@@ -192,6 +199,7 @@ impl Isa {
             Isa::Avx2 => 8,
             Isa::Avx512 => 16,
             Isa::Neon => 4,
+            Isa::Simd128 => 4,
         }
     }
 
@@ -210,6 +218,8 @@ impl Isa {
             }
             #[cfg(target_arch = "aarch64")]
             Isa::Neon => true,
+            #[cfg(all(target_family = "wasm", target_feature = "simd128"))]
+            Isa::Simd128 => true,
             #[allow(unreachable_patterns)]
             _ => false,
         }
@@ -217,7 +227,10 @@ impl Isa {
 
     /// Every ISA this CPU supports, fastest first.
     pub fn available() -> Vec<Isa> {
-        [Isa::Avx512, Isa::Neon, Isa::Avx2, Isa::Scalar].into_iter().filter(|i| i.is_supported()).collect()
+        [Isa::Avx512, Isa::Neon, Isa::Simd128, Isa::Avx2, Isa::Scalar]
+            .into_iter()
+            .filter(|i| i.is_supported())
+            .collect()
     }
 
     /// The fastest ISA this CPU supports, ignoring overrides.
@@ -272,7 +285,8 @@ pub fn resolve_isa(requested: Option<Isa>) -> crate::Result<Isa> {
             0 => Isa::Scalar,
             1 => Isa::Avx2,
             2 => Isa::Avx512,
-            _ => Isa::Neon,
+            3 => Isa::Neon,
+            _ => Isa::Simd128,
         };
         return pick(i);
     }
