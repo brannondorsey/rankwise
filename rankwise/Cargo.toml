@@ -25,5 +25,8 @@ rayon = { version = "1.10", optional = true }
 ndarray = { version = "0.17", optional = true }
 
 [dev-dependencies]
-proptest = "1.5"
 ndarray = "0.17"
+
+# proptest's process forking does not build for WebAssembly (the oracle tests run there too).
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+proptest = "1.5"

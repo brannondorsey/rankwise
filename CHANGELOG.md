@@ -23,6 +23,13 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
   (enum-valued arguments are validated: out-of-range values return `RW_ERR_PARAM`), and an
   abi3 Python wheel that releases the GIL and runs on NumPy 1.24 and later (bit-identity is
   checked against the pinned NumPy 2.5.3).
+* **WebAssembly.** A simd128 backend (4 f32 lanes, x86's `minps` semantics on every host) and
+  `rankwise-wasm`: simd128 and portable modules plus an ES module for Node, Bun, Deno and
+  browsers with the Python package's API on TypedArrays, chunked streaming, zero-copy arrays,
+  and TypeScript types. 10–14× faster than the fastest JavaScript on one thread in Node;
+  identical to NumPy, SciPy and astropy on 5,239 checks in Node, Bun, Deno and Chromium. On
+  wasm the per-block kernels are separate functions so engines optimize them quickly.
+  Examples for Node, Bun, worker threads and the browser.
 * **Verification.** 1,175-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
   astropy 8.0.2 on every ISA; exhaustive 0-1 principle tests; black-box checks against
   Siril 1.2.1; real-data checks on CCD calibration frames against astropy, ccdproc and Siril,

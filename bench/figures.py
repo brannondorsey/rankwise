@@ -4,6 +4,7 @@
 """
 
 import json
+import re
 from pathlib import Path
 
 import matplotlib
@@ -228,9 +229,64 @@ def stride(theme):
     fig.savefig(IMG / f"bench_stride_{theme}.png", dpi=200, facecolor=t["surface"])
     plt.close(fig)
 
+def wasm(theme):
+    """rankwise's WebAssembly build against JavaScript (rankwise-wasm/bench/bench.mjs)."""
+    t = THEMES[theme]
+    d = json.loads((RES / "wasm_node.json").read_text())
+    groups = [r for r in d["results"] if r["key"] != "depth"]
+    h = [len(g["rows"]) for g in groups]
+    fig, axes = plt.subplots(len(groups), 1, figsize=(9.2, 0.3 * sum(h) + 0.5 * len(groups) + 1.4),
+                             gridspec_kw=dict(height_ratios=h, hspace=0.5), facecolor=t["surface"])
+    best = []
+    for ax, g in zip(axes, groups):
+        style(ax, t)
+        rows = sorted(g["rows"], key=lambda r: r["ms"])
+        js = [r for r in rows if not r["tool"].startswith("rankwise")]
+        fastest_js = min(r["ms"] for r in js)
+        simd = next(r for r in rows if r["tool"] == "rankwise wasm simd128")
+        best.append(fastest_js / simd["ms"])
+        y = list(range(len(rows)))[::-1]
+
+        def col(r):
+            if not r["tool"].startswith("rankwise"):
+                return t["other"]
+            return t["rw"][0] if "simd128" in r["tool"] else t["rw"][2]
+
+        ax.barh(y, [r["ms"] for r in rows], color=[col(r) for r in rows], height=0.62)
+        vmax = max(r["ms"] for r in rows)
+        for yi, r in zip(y, rows):
+            is_rw = r["tool"].startswith("rankwise")
+            x = fastest_js / r["ms"]
+            lab = f"{r['ms']:.0f} ms" if r["ms"] >= 10 else f"{r['ms']:.1f} ms"
+            if is_rw and x >= 1:
+                lab += f"  ·  {x:.1f}× faster than JS" if x < 10 else f"  ·  {x:.0f}× faster than JS"
+            ax.text(r["ms"] + vmax * 0.012, yi, lab, va="center", fontsize=9.5,
+                    color=t["ink"] if is_rw else t["ink2"], fontweight="semibold" if "simd128" in r["tool"] else "normal")
+        names = [r["tool"].replace("rankwise wasm ", "rankwise · ") for r in rows]
+        ax.set_yticks(y)
+        ax.set_yticklabels(names)
+        for lab, r in zip(ax.get_yticklabels(), rows):
+            lab.set_color(t["ink"] if r["tool"].startswith("rankwise") else t["ink2"])
+            lab.set_fontweight("semibold" if "simd128" in r["tool"] else "normal")
+        ax.set_xlim(0, vmax * 1.5)
+        ax.set_xticks([])
+        ax.spines["bottom"].set_visible(False)
+        ax.xaxis.grid(False)
+        panel_title(fig, ax, f"{g['title']}  ·  {re.split(r'[,(]', g['detail'])[0].strip()}", t)
+    headline(fig, f"rankwise in WebAssembly: {min(best):.0f}–{max(best):.0f}× faster than the fastest JavaScript",
+             f"Milliseconds per call, one thread, {d['runtime']} on x86-64, lower is better · best of repeated runs "
+             "after a warm-up", t)
+    fig.text(0.015, 0.008, "Every result checked against rankwise's. Inputs are JS TypedArrays, copied in cache-sized "
+             "chunks; zero-copy: frames allocated in WebAssembly memory. portable: the build for engines without SIMD.",
+             fontsize=8.5, color=t["muted"], wrap=True)
+    fig.subplots_adjust(left=0.3, right=0.98, top=1 - 1.15 / fig.get_size_inches()[1], bottom=0.45 / fig.get_size_inches()[1])
+    fig.savefig(IMG / f"bench_wasm_{theme}.png", dpi=200, facecolor=t["surface"])
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     for th in THEMES:
-        for f in (astro, sweep, ensemble, stride):
+        for f in (astro, sweep, ensemble, stride, wasm):
             try:
                 f(th)
             except FileNotFoundError as e:

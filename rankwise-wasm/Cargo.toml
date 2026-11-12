@@ -1,0 +1,16 @@
+[package]
+name = "rankwise-wasm"
+description = "WebAssembly exports for rankwise (the npm package's kernels)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "rankwise_wasm"
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+rankwise = { path = "../rankwise" }

@@ -132,6 +132,38 @@ mod arm {
     }
 }
 
+#[cfg(all(target_family = "wasm", target_feature = "simd128"))]
+mod wasm {
+    use super::*;
+    use crate::simd::wasm::{F32x4, F64x2, U16x8};
+    pub(crate) struct Simd128Arch;
+    impl Arch for Simd128Arch {
+        type F32 = F32x4;
+        type F64 = F64x2;
+        type U16 = U16x8;
+    }
+    macro_rules! sv {
+        ($t:ty) => {
+            impl SortVec for $t {
+                #[inline(never)]
+                unsafe fn apply_net(b: *mut Self, plan: &NetPlan) {
+                    net::apply::<Self>(b, plan)
+                }
+            }
+        };
+    }
+    sv!(F32x4);
+    sv!(F64x2);
+    sv!(U16x8);
+    pub(crate) unsafe fn run(job: &Job, u: Unit) {
+        match job.sdt {
+            DType::F32 => engine::run_unit::<Simd128Arch, F32x4>(job, u),
+            DType::F64 => engine::run_unit::<Simd128Arch, F64x2>(job, u),
+            _ => engine::run_unit::<Simd128Arch, U16x8>(job, u),
+        }
+    }
+}
+
 /// Run one unit of work on the job's ISA.
 pub(crate) unsafe fn run(job: &Job, u: Unit) {
     match job.isa {
@@ -141,6 +173,8 @@ pub(crate) unsafe fn run(job: &Job, u: Unit) {
         Isa::Avx2 => x86::run_avx2(job, u),
         #[cfg(target_arch = "aarch64")]
         Isa::Neon => arm::run(job, u),
+        #[cfg(all(target_family = "wasm", target_feature = "simd128"))]
+        Isa::Simd128 => wasm::run(job, u),
         _ => scalar_impl::run(job, u),
     }
 }
@@ -176,6 +210,15 @@ pub(crate) fn unroll_for(isa: Isa, dt: DType) -> usize {
         #[cfg(target_arch = "aarch64")]
         Isa::Neon => {
             use crate::simd::neon::*;
+            match dt {
+                DType::F32 => F32x4::UNROLL,
+                DType::F64 => F64x2::UNROLL,
+                _ => U16x8::UNROLL,
+            }
+        }
+        #[cfg(all(target_family = "wasm", target_feature = "simd128"))]
+        Isa::Simd128 => {
+            use crate::simd::wasm::*;
             match dt {
                 DType::F32 => F32x4::UNROLL,
                 DType::F64 => F64x2::UNROLL,

@@ -253,7 +253,8 @@ unsafe fn mad_range<C: FVector + SortVec>(
 }
 
 /// astropy `sigma_clip` (fast path) on sorted lanes. Returns the final kept rank range.
-#[inline(always)]
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 #[allow(clippy::too_many_arguments)]
 unsafe fn sigma<C: FVector + SortVec>(
     cb: *const C,
@@ -374,7 +375,8 @@ fn sn(x: &[f64]) -> f64 {
 /// until |Δs| <= 5e-4 s; reject `c - x > low·s` / `x - c > high·s`; repeat while more than
 /// three values remain. PixInsight convention (PCL documentation): Sn-based start, first-pass
 /// cutoff, center updated to the winsorized mean, ratio tests `(c - x)/s > low`.
-#[inline(always)]
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 #[allow(clippy::too_many_arguments)]
 unsafe fn winsorized<C: FVector>(
     cb: *const C,
@@ -618,7 +620,8 @@ pub(crate) fn div_gt<E: Element>(a: E, b: E, s: E, t: E) -> bool {
 }
 
 /// Percentile clipping: one pass around the median.
-#[inline(always)]
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 unsafe fn percentile<C: FVector>(cb: *const C, n: usize, m: C, low: f64, high: f64) -> (C, C) {
     let zero = sp::<C>(0.0);
     let c = median_range(cb, n, zero, m);
@@ -643,7 +646,8 @@ unsafe fn load_raw_group<S: Vector, C: FVector>(raw: *const S, k: usize, g: usiz
 }
 
 /// Reject, combine and write one block.
-#[inline(always)]
+#[cfg_attr(not(target_family = "wasm"), inline(always))]
+#[cfg_attr(target_family = "wasm", inline(never))]
 pub(crate) unsafe fn clip_block<S: SortVec, C: FVector + SortVec>(
     job: &Job,
     plan: &ClipPlan,
