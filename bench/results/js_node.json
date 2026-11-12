@@ -1,0 +1,264 @@
+{
+ "runtime": "Node v22.23.4",
+ "native": {
+  "build": "linux-x64-gnu",
+  "isa": "avx512"
+ },
+ "quick": false,
+ "date": "2026-11-12T15:02:56.188Z",
+ "arch": "x64",
+ "results": [
+  {
+   "key": "median",
+   "title": "Median of 31 frames",
+   "detail": "31 × 1024×1024 float32, like stacking registered subs (bench/astro.py)",
+   "n": 31,
+   "npix": 1048576,
+   "rows": [
+    {
+     "tool": "rankwise native (avx512)",
+     "ms": 23.891839000000004,
+     "check": "identical",
+     "vsFastestJs": 34.95560751937095
+    },
+    {
+     "tool": "rankwise wasm simd128",
+     "ms": 106.34002299999997,
+     "check": "identical",
+     "vsFastestJs": 7.853616384867629
+    },
+    {
+     "tool": "rankwise wasm simd128, zero-copy",
+     "ms": 46.37480100000039,
+     "check": "identical",
+     "vsFastestJs": 18.008783412353473
+    },
+    {
+     "tool": "rankwise wasm portable",
+     "ms": 1336.0726130000003,
+     "check": "identical",
+     "vsFastestJs": 0.6250811062766692
+    },
+    {
+     "tool": "JS quickselect (hand-written)",
+     "ms": 835.1537470000003,
+     "check": "identical",
+     "vsFastestJs": 1
+    },
+    {
+     "tool": "JS TypedArray.sort per pixel",
+     "ms": 1292.7694260000007,
+     "check": "identical",
+     "vsFastestJs": 0.6460191045700053
+    },
+    {
+     "tool": "d3-array median per pixel",
+     "ms": 5547.474355999999,
+     "check": "identical",
+     "vsFastestJs": 0.15054666203129366
+    }
+   ]
+  },
+  {
+   "key": "clip",
+   "title": "Sigma-clipped mean of 31 frames",
+   "detail": "31 × 1024×1024 float32, 3σ, 5 iterations, astropy's decisions",
+   "n": 31,
+   "npix": 1048576,
+   "rows": [
+    {
+     "tool": "rankwise native (avx512)",
+     "ms": 93.3520239999998,
+     "check": "same rejections, mean within 0.0e+0",
+     "vsFastestJs": 19.577172745606457
+    },
+    {
+     "tool": "rankwise wasm simd128",
+     "ms": 190.66614699999627,
+     "check": "same rejections, mean within 0.0e+0",
+     "vsFastestJs": 9.58517664910925
+    },
+    {
+     "tool": "rankwise wasm simd128, zero-copy",
+     "ms": 140.87401099999988,
+     "check": "same rejections, mean within 0.0e+0",
+     "vsFastestJs": 12.97307208779622
+    },
+    {
+     "tool": "rankwise wasm portable",
+     "ms": 1736.0340540000034,
+     "check": "same rejections, mean within 0.0e+0",
+     "vsFastestJs": 1.0527262963471755
+    },
+    {
+     "tool": "JS sort + astropy iteration",
+     "ms": 1827.5686999999962,
+     "check": "same rejections, mean within 0.0e+0",
+     "vsFastestJs": 1
+    }
+   ]
+  },
+  {
+   "key": "quantiles",
+   "title": "p10 / p50 / p90 of a 31-member ensemble",
+   "detail": "31 × 721×1440 float32 (a 0.25° global grid, as bench/ensemble.py), q as a list: float64 like np.quantile",
+   "n": 31,
+   "npix": 1038240,
+   "rows": [
+    {
+     "tool": "rankwise native (avx512)",
+     "ms": 34.93775900000037,
+     "check": "identical",
+     "vsFastestJs": 37.30887742399239
+    },
+    {
+     "tool": "rankwise wasm simd128",
+     "ms": 129.5633749999979,
+     "check": "identical",
+     "vsFastestJs": 10.060625296307864
+    },
+    {
+     "tool": "rankwise wasm simd128, zero-copy",
+     "ms": 126.55985299999884,
+     "check": "identical",
+     "vsFastestJs": 10.29938433951889
+    },
+    {
+     "tool": "rankwise wasm portable",
+     "ms": 1428.3365259999991,
+     "check": "identical",
+     "vsFastestJs": 0.9125920567545589
+    },
+    {
+     "tool": "JS TypedArray.sort per cell",
+     "ms": 1303.4885680000007,
+     "check": "identical",
+     "vsFastestJs": 1
+    },
+    {
+     "tool": "d3-array quantile per cell",
+     "ms": 21081.777749,
+     "check": "identical",
+     "vsFastestJs": 0.061830106716774906
+    }
+   ]
+  },
+  {
+   "key": "nodata",
+   "title": "Cloud-free median of 90 uint16 scenes",
+   "detail": "90 × 512×512 uint16, 65% nodata (= 0), as bench/landsat.py",
+   "n": 90,
+   "npix": 262144,
+   "rows": [
+    {
+     "tool": "rankwise native (avx512)",
+     "ms": 25.133109000016702,
+     "check": "identical",
+     "vsFastestJs": 18.26924154109592
+    },
+    {
+     "tool": "rankwise wasm simd128",
+     "ms": 90.45676900001126,
+     "check": "identical",
+     "vsFastestJs": 5.076047310510723
+    },
+    {
+     "tool": "rankwise wasm simd128, zero-copy",
+     "ms": 88.45594499999424,
+     "check": "identical",
+     "vsFastestJs": 5.190864661499312
+    },
+    {
+     "tool": "rankwise wasm portable",
+     "ms": 504.2449530000158,
+     "check": "identical",
+     "vsFastestJs": 0.9105948136281743
+    },
+    {
+     "tool": "JS filter + quickselect",
+     "ms": 459.1628389999969,
+     "check": "identical",
+     "vsFastestJs": 1
+    }
+   ]
+  },
+  {
+   "key": "depth",
+   "title": "Median by stack depth",
+   "rows": [
+    {
+     "n": 4,
+     "npix": 8388608,
+     "native": 36.52745699998923,
+     "simd": 122.64460999998846,
+     "portable": 613.246793999977,
+     "jsSelect": 792.5931610000262,
+     "check": "identical, native identical"
+    },
+    {
+     "n": 8,
+     "npix": 4194304,
+     "native": 21.180649000016274,
+     "simd": 99.89821300000767,
+     "portable": 623.5914479999919,
+     "jsSelect": 909.861757000006,
+     "check": "identical, native identical"
+    },
+    {
+     "n": 16,
+     "npix": 2097152,
+     "native": 21.60092299999087,
+     "simd": 61.80757400000584,
+     "portable": 992.4873459999799,
+     "jsSelect": 1265.1269880000036,
+     "check": "identical, native identical"
+    },
+    {
+     "n": 31,
+     "npix": 1082368,
+     "native": 20.302366000018083,
+     "simd": 92.8067039999878,
+     "portable": 1334.69793699999,
+     "jsSelect": 1201.1241609999852,
+     "check": "identical, native identical"
+    },
+    {
+     "n": 64,
+     "npix": 524288,
+     "native": 44.59257300000172,
+     "simd": 132.68043999999645,
+     "portable": 1523.6928619999962,
+     "jsSelect": 1219.8149080000003,
+     "check": "identical, native identical"
+    },
+    {
+     "n": 127,
+     "npix": 264192,
+     "native": 34.38636900001438,
+     "simd": 189.31743500000448,
+     "portable": 2771.0416079999995,
+     "jsSelect": 1142.5832930000033,
+     "check": "identical, native identical"
+    },
+    {
+     "n": 255,
+     "npix": 131584,
+     "native": 64.55667900000117,
+     "simd": 143.12674599999445,
+     "portable": 2774.05077099998,
+     "jsSelect": 1006.9295799999963,
+     "check": "identical, native identical"
+    },
+    {
+     "n": 511,
+     "npix": 65664,
+     "native": 48.07930199999828,
+     "simd": 250.94731899999897,
+     "portable": 3335.664168999996,
+     "jsSelect": 887.555647000001,
+     "check": "identical, native identical"
+    }
+   ]
+  }
+ ]
+}

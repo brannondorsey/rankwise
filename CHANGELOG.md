@@ -21,13 +21,17 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
   however the frames are aligned.
 * **Bindings.** Rust crate (`ndarray` and `rayon` features), C ABI with a cbindgen header,
   and an abi3 Python wheel that releases the GIL.
-* **WebAssembly.** A simd128 backend (4 f32 lanes, x86's `minps` semantics on every host) and
-  `rankwise-wasm`: simd128 and portable modules plus an ES module for Node, Bun, Deno and
-  browsers with the Python package's API on TypedArrays, chunked streaming, zero-copy arrays,
-  and TypeScript types. 10–14× faster than the fastest JavaScript on one thread in Node;
-  identical to NumPy, SciPy and astropy on 5,239 checks in Node, Bun, Deno and Chromium. On
-  wasm the per-block kernels are separate functions so engines optimize them quickly.
-  Examples for Node, Bun, worker threads and the browser.
+* **JavaScript.** The `rankwise` npm package for Node, Bun, Deno and browsers: the Python
+  package's API on TypedArrays, with two backends behind it. Natively, a Node-API addon
+  (napi-rs) works on the caller's arrays in place, with AVX-512/AVX2/NEON and `threads`. It
+  ships as one optional dependency per platform with `os`/`cpu`/`libc`, so package managers
+  install only the matching one, and every region a call touches is bounds-checked.
+  Everywhere else, WebAssembly: a simd128 backend in the core (x86's `minps` semantics on every
+  host) and a portable build. The Node entry loads the addon and falls back to WebAssembly,
+  saying why; browsers resolve a WebAssembly-only entry. `rw.backend`, `RANKWISE_BACKEND` and
+  `init({ backend })` expose and override the choice. Identical to NumPy, SciPy and astropy on
+  every backend in Node, Bun, Deno and Chromium; the install flow is tested against a local npm
+  registry. Examples for Node, Bun, worker threads and the browser.
 * **Verification.** 1,057-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
   astropy 8.0.2 on every ISA; exhaustive 0-1 principle tests; black-box checks against
   Siril 1.2.1; real-data checks on CCD calibration frames against astropy, ccdproc and Siril,

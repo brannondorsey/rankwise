@@ -225,7 +225,7 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
 }
 
 // On WebAssembly simd128 is a module-wide feature, so a call boundary loses nothing; it
-// keeps each function small enough for the engine's optimizing tier (see docs/wasm.md).
+// keeps each function small enough for the engine's optimizing tier (see docs/javascript.md).
 #[cfg_attr(not(target_family = "wasm"), inline(always))]
 #[cfg_attr(target_family = "wasm", inline(never))]
 unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW: bool>(job: &Job, u: Unit) {

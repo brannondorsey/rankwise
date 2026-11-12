@@ -85,7 +85,7 @@ n ≤ 20: full sorts, pruned selections and the bitonic merger.
   `pmin`/`pmax` with swapped operands, which is `minps`/`maxps` exactly, so WebAssembly gives
   x86's sign bits on every host, arm64 included.
 * **WebAssembly.** A module cannot detect features at run time, so simd128 is compiled in:
-  `rankwise-wasm` ships a `+simd128` build and a portable one, and the JS loader validates a
+  `rankwise-js` ships a `+simd128` build and a portable one, and the JS loader validates a
   one-instruction SIMD module to pick between them. Without shared memory there are no
   threads (`threads` is ignored); JS spreads work over one instance per worker instead. On
   wasm the per-block helpers, epilogues and each unrolled network are `inline(never)`
@@ -94,7 +94,7 @@ n ≤ 20: full sorts, pruned selections and the bitonic merger.
   the optimizing compile of the whole module from 2.3 s to 0.3 s and roughly halved first calls.
   Native builds are unchanged. Unrolled networks go to 24 frames, as on NEON: 16, 24 and 32
   measured within a few percent in V8, interpreted networks 1.4× slower. See
-  [wasm.md](wasm.md).
+  [javascript.md](javascript.md).
 * **Threads.** The core is single-threaded over a range of pixels; `threads=` splits rows
   and pixel ranges across rayon's pool (Python wheel) or scoped threads (plain Rust), and is
   ignored on WebAssembly without shared memory.

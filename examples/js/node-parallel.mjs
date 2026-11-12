@@ -1,11 +1,12 @@
-// Use every core: one rankwise instance per worker thread, each reducing a strip of pixels
-// of frames held in SharedArrayBuffers (no copies between threads). WebAssembly has no
-// threads of its own here, so this is how a server spreads one large reduction.
+// Use every core, two ways. The native addon splits one call itself (`threads`); WebAssembly
+// has no threads, so there one instance per worker thread reduces a strip of pixels of frames
+// held in SharedArrayBuffers (no copies between threads). Workers also keep the event loop
+// free, with either backend.
 //
 //   node examples/js/node-parallel.mjs [workers]     # also runs under Bun
 import { availableParallelism } from "node:os";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
-import { init } from "../../rankwise-wasm/js/rankwise.js";
+import { init } from "../../rankwise-js/js/node.js"; // "rankwise" once installed
 
 if (isMainThread) {
   const workers = Number(process.argv[2] ?? availableParallelism());
@@ -39,6 +40,7 @@ if (isMainThread) {
     );
 
   const rw = await init();
+  console.log(`main thread: ${rw.backend} (${rw.isa})`);
   for (const op of ["median", "sigmaClipMean"]) {
     await run(op); // warm-up (the engine optimizes the kernels after the first calls)
     let best = Infinity;
@@ -56,9 +58,21 @@ if (isMainThread) {
     }
     const same = ref.every((v, i) => v === out[i]);
     console.log(
-      `${op.padEnd(14)} 31 × 2048²: 1 thread ${single.toFixed(0)} ms, ${workers} workers ${best.toFixed(0)} ms (${(single / best).toFixed(1)}x), ${same ? "identical" : "MISMATCH"}`,
+      `${op.padEnd(14)} 31 × 2048² (${rw.backend}): 1 thread ${single.toFixed(0)} ms, ${workers} workers ${best.toFixed(0)} ms (${(single / best).toFixed(1)}x), ${same ? "identical" : "MISMATCH"}`,
     );
     if (!same) process.exitCode = 1;
+    if (rw.backend === "native") {
+      let t = Infinity;
+      let r;
+      for (let i = 0; i < 3; i++) {
+        const t0 = performance.now();
+        r = rw[op](frames, { threads: workers });
+        t = Math.min(t, performance.now() - t0);
+      }
+      const ok = r.every((v, i) => v === ref[i]);
+      console.log(`${"".padEnd(14)} native { threads: ${workers} }: ${t.toFixed(0)} ms (${(single / t).toFixed(1)}x), ${ok ? "identical" : "MISMATCH"}`);
+      if (!ok) process.exitCode = 1;
+    }
   }
   for (const w of pool) await w.terminate();
 } else {

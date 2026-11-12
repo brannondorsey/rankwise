@@ -1,6 +1,6 @@
 // Stack the website's 40 synthetic astro subs with rankwise in WebAssembly.
 // Serve the repository root (python3 -m http.server) and open /examples/js/browser/.
-import { init } from "../../../rankwise-wasm/js/rankwise.js";
+import { init } from "../../../rankwise-js/js/rankwise.js";
 
 const $ = (s) => document.querySelector(s);
 const DATA = "../../../site/public/data/";

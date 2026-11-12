@@ -54,7 +54,7 @@ original handoff (Brannon has it; its §4 facts are all folded into [docs/confor
 | `rankwise/tests/` | `networks.rs` (0-1 principle, n ≤ 20, exhaustive), `oracle.rs` (every ISA vs scalar oracle, bit for bit). |
 | `rankwise-capi/` | `rw_*` C ABI, `catch_unwind` everywhere, `include/rankwise.h` (cbindgen 0.29.4; CI diffs it). |
 | `rankwise-py/` | PyO3 0.30 abi3-py39 extension (`src/lib.rs`) + NumPy-style API (`python/rankwise/__init__.py`). |
-| `rankwise-wasm/` | WebAssembly: `src/lib.rs` (raw `rw_*` exports, f64 request stream, no wasm-bindgen), `js/rankwise.js` + `.d.ts` (loader, NumPy-style API, streaming), `scripts/build.mjs` (simd128 + portable into `dist/`), `test/` (NumPy fixtures, Node/Bun/Deno/Chromium runners), `bench/bench.mjs`. Design and numbers: [docs/wasm.md](docs/wasm.md). |
+| `rankwise-js/` | The `rankwise` npm package, two backends behind one API. Rust: `src/request.rs` (the f64 request format both share), `src/wasm.rs` (raw `rw_*` exports, no wasm-bindgen), `src/node.rs` (napi-rs addon, `--features node`, bounds-checked segmented addresses). JS: `js/core.js` (NumPy-style API, engine-agnostic), `js/wasm.js` + `js/native.js` (engines), `js/node.js` (Node/Bun/Deno entry: addon first, WebAssembly fallback), `js/rankwise.js` (browser entry), `js/platforms.js` (addon platforms). `scripts/build.mjs` (`dist/*.wasm`, `--native` → `npm/<platform>/`), `scripts/pack.mjs` (release tarballs, injects `optionalDependencies`), `test/` (fixtures, API, conformance, install-from-registry, Chromium), `bench/bench.mjs`. Design and numbers: [docs/javascript.md](docs/javascript.md). |
 | `conformance/` | pytest suite vs pinned NumPy 2.5.3, SciPy 1.18.1, astropy 8.0.2; Siril preset checks; C ABI vs Python. |
 | `bench/` | One-core benchmarks → `bench/results/*.json` → `figures.py` (charts) and `report.py` (`docs/benchmarks.md`). |
 | `examples/` | `c/stack.c`, `python/astro_demo.py` (README hero, comparison and rejection images), `js/` (Node stacking, Bun server, worker threads, browser page). |
@@ -77,16 +77,17 @@ pip install -r bench/requirements.txt                     # read its header: two
 bash bench/run_all.sh                                     # pins taskset -c 1, then charts + report
 ```
 
-WebAssembly (`rustup target add wasm32-unknown-unknown wasm32-wasip1`; Node 18+, Bun, Deno):
+JavaScript (`rustup target add wasm32-unknown-unknown wasm32-wasip1`; Node 18+, Bun, Deno):
 
 ```bash
-node rankwise-wasm/scripts/build.mjs [--dev]              # dist/rankwise-{simd128,portable}.wasm (--dev skips LTO)
-python rankwise-wasm/test/make_fixtures.py                # needs conformance/requirements.txt
-node rankwise-wasm/test/api.test.mjs && node rankwise-wasm/test/conformance.test.mjs   # also bun / deno run -A
-NODE_PATH=$(npm root -g) node rankwise-wasm/test/browser.mjs                          # headless Chromium
-RUSTFLAGS="-C target-feature=+simd128" CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/rankwise-wasm/scripts/wasi-run.mjs" \
+node rankwise-js/scripts/build.mjs --all [--dev]        # dist/*.wasm + npm/<platform>/ addon (--dev skips LTO)
+node rankwise-js/test/package.test.mjs                  # pack, local registry, npm/bun install, run, bundle
+python rankwise-js/test/make_fixtures.py                # needs conformance/requirements.txt
+node rankwise-js/test/api.test.mjs && node rankwise-js/test/conformance.test.mjs   # also bun / deno run -A
+NODE_PATH=$(npm root -g) node rankwise-js/test/browser.mjs                          # headless Chromium
+RUSTFLAGS="-C target-feature=+simd128" CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/rankwise-js/scripts/wasi-run.mjs" \
   cargo test --release -p rankwise --target wasm32-wasip1  # oracle tests on simd128
-cd rankwise-wasm && npm install && taskset -c 1 node bench/bench.mjs --json ../bench/results/wasm_node.json
+cd rankwise-js && npm install && taskset -c 1 node bench/bench.mjs --json ../bench/results/js_node.json
 ```
 
 NEON on an x86 box: `apt-get install qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross`,
@@ -111,7 +112,7 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 | 7 | **PixInsight winsorized preset** | Implemented from PCL's public docs (Sn·1.1926 start, cutoff 5); never run against PixInsight. | Check the PCL license, then validate on Brannon's PixInsight install or drop the preset from 0.1.0. |
 | 8 | **Legal** | Design log notes TI US9665542 (different method). | Brannon arranges review before 1.0. |
 | 9 | **Release** | `wheels.yml` builds manylinux x86-64/aarch64, macOS arm64/x86-64 and Windows wheels but does not publish. Names unregistered. | When Brannon registers names: add trusted publishing to `wheels.yml`, `cargo publish` the crate (capi stays unpublished or ships as release artifacts), tag `v0.1.0`, move the CHANGELOG entry out of "unreleased". |
-| 11 | **WebAssembly** | Done: simd128 backend, `rankwise-wasm` package, 5,239 identical checks on Node 22, Bun 1.4, Deno 2.9, Chromium 153; benchmarks in docs/wasm.md. Not done: Firefox, Safari, arm64 hosts; npm name unregistered (`package.json` is `private`). | Run `test/browser.mjs` against Firefox/WebKit; when Brannon registers the name, drop `private` and publish `dist/` + `js/`. The portable build is only as fast as plain JS; it is a fallback for engines without SIMD. |
+| 11 | **JavaScript** | Done: simd128 backend; `rankwise-js` with a Node-API addon (preferred in Node/Bun/Deno) and WebAssembly (browsers, fallback); identical to NumPy on Node, Bun, Deno (native + wasm) and Chromium; install flow tested against a local registry; `npm.yml` builds all platform packages. Not done: Firefox, Safari; addon not run on macOS/Windows/arm64 except in CI; names unregistered (every `package.json` is `private`). | When Brannon registers `rankwise` and the `@rankwise` scope: drop `private` (main `package.json` and `platformManifest` in `scripts/build.mjs`), publish the `npm.yml` tarballs, platform packages first. Do **not** add `optionalDependencies` to the repo's `package.json` before the scope is registered (dependency confusion); `pack.mjs` injects them. musl and other platforms fall back to WebAssembly; add them to `js/platforms.js` + `npm.yml` if users ask. |
 | 10 | Known differences | Signed-zero sign bit (x86 vs NEON min/max); `median(out=float64)` on f32 averages in f32; `trimmed_mean` more accurate than SciPy's f32; `nanarg*` all-NaN returns −1 (+ `strict=True`). All in [docs/conformance.md](docs/conformance.md#known-differences). | Leave unless a user needs it; −0 canonicalization would cost a blend per output. |
 
 ## 5. v0.2 backlog (from the scope doc; file as `v0.2` issues)
@@ -164,6 +165,10 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 * **Data sources that work from this VM:** Landsat via Planetary Computer (`pystac-client`,
   `planetary-computer`, `rasterio`); CCD frames from Zenodo 3245296; GEFS from dynamical.org.
   All cache under `bench/data/` (gitignored).
+* **Native addon debug builds** overflow Node's 8 MB main-thread stack (unoptimized kernels);
+  `scripts/build.mjs` always builds release (`--dev` only drops LTO).
+* **The registry test serves from its own event loop**: installs there must be async
+  (`execFileSync` deadlocks).
 * **WebAssembly tiering.** V8 runs wasm in its baseline compiler until a hot function is
   optimized in the background, and a running call never switches over. One huge inlined
   function per ISA kept calls 3–4× slow; on wasm the per-block helpers and networks are

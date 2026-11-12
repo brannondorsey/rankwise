@@ -39,7 +39,9 @@ bench/data/
 !docs/**/*.npy
 examples/c/stack
 
-# WebAssembly package (dist/ above covers the built .wasm files)
-rankwise-wasm/node_modules/
-rankwise-wasm/test/fixtures/
+# JavaScript package build outputs (dist/ above covers the .wasm files)
+rankwise-js/node_modules/
+rankwise-js/test/fixtures/
 examples/js/node_modules/
+rankwise-js/npm/
+rankwise-js/release/

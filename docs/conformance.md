@@ -107,12 +107,13 @@ Matching NumPy bit for bit meant reproducing some behaviours that are easy to mi
 
 ### WebAssembly and JavaScript
 
-The JS package runs every case of `rankwise-wasm/test/make_fixtures.py` (591 cases built
-from the same value families as this suite, against NumPy 2.5.3, SciPy 1.18.1 and astropy
-8.0.2) on both builds and every ISA each has, through streamed chunks, zero-copy WebAssembly
-arrays and caller-supplied outputs: 5,239 checks, all identical on Node 22, Bun 1.4, Deno 2.9
-and Chromium 153. The core's oracle tests also run on `wasm32-wasip1` with simd128. JS-only
-differences:
+The JS package runs every case of `rankwise-js/test/make_fixtures.py` on every backend that
+loads: the Node-API addon (AVX-512, AVX2, scalar) and both WebAssembly builds. The 591 cases are
+built from the same value families as this suite, against NumPy 2.5.3, SciPy 1.18.1 and astropy
+8.0.2. Each backend runs them through in-place, zero-copy and caller-supplied outputs, plus
+streamed chunks for WebAssembly. That makes 8,154 checks, all identical, on each of Node 22,
+Bun 1.4 and Deno 2.9, and 5,239 (WebAssembly) in Chromium 153. The core's oracle tests also run
+on `wasm32-wasip1` with simd128. JS-only differences:
 
 * **Indices** (`argmin`, `argmedian`, ...) are Int32Array, not int64.
 * **`q` as a JS number** behaves like a Python float; JS cannot tell `1` from `1.0`, so NumPy's
@@ -120,4 +121,5 @@ differences:
 * **`nanquantile` on float32 with a list `q`** always returns float64; NumPy returns float32
   when the first slice is all-NaN (an `apply_along_axis` artifact the Python package copies).
 * **No warnings** for all-NaN slices (NumPy's `RuntimeWarning`).
-* **Signed zeros** follow x86 on every host (see design.md).
+* **Signed zeros**: WebAssembly follows x86 on every host; the native addon follows its ISA, as the
+  other libraries do (see design.md).
