@@ -21,7 +21,7 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
   however the frames are aligned.
 * **Bindings.** Rust crate (`ndarray` and `rayon` features), C ABI with a cbindgen header,
   and an abi3 Python wheel that releases the GIL.
-* **Verification.** 1,082-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
+* **Verification.** 1,092-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
   astropy 8.0.2 on every ISA; exhaustive 0-1 principle tests; black-box checks against
   Siril 1.2.1; real-data checks on CCD calibration frames against astropy, ccdproc and Siril,
   real Landsat scenes and real NOAA GEFS forecasts.

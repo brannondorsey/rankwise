@@ -58,6 +58,32 @@ def test_argselect_negative_ranks(isa):
         rw.argselect(x, -10, axis=0)
 
 
+def test_isa_override_reflects_set_isa():
+    assert rw.isa_override() is None
+    last = rw.available_isas()[-1]
+    rw.set_isa(last)
+    try:
+        assert rw.isa_override() == last
+        with rw.use_isa(None):
+            assert rw.isa_override() is None
+        assert rw.isa_override() == last
+    finally:
+        rw.set_isa(None)
+    assert rw.isa_override() is None
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.dtype(">f4"), np.dtype(">u2")])
+def test_argselect_frame_list_needing_a_copy(isa, dtype):
+    # uint8 is widened and big-endian swapped into a copy; argselect prepares it once for all ranks
+    x = make(7, 77, np.float32, "ties").astype(dtype)
+    frames = list(x)
+    order = np.argsort(x, axis=0, kind="stable").astype(np.intp)
+    identical(rw.argselect(frames, -1), order[-1])
+    identical(rw.argselect(frames, [0, -3, -7]), order[[0, -3, -7]])
+    with pytest.raises(ValueError):
+        rw.argselect(frames, -8)
+
+
 @pytest.mark.parametrize("method", ["median_sigma", "winsorized", "percentile"])
 def test_cenfunc_rejected_where_it_does_not_apply(method):
     with pytest.raises(ValueError, match="cenfunc"):

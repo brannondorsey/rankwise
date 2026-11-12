@@ -8,7 +8,7 @@ NumPy 2.5.3, SciPy 1.18.1 and astropy 8.0.2 (`conformance/requirements.txt`).
 ```bash
 pip install -r conformance/requirements.txt
 maturin build --release -m rankwise-py/Cargo.toml -o dist && pip install --find-links dist rankwise
-python -m pytest conformance -q          # 1,082 tests, about a minute
+python -m pytest conformance -q          # 1,092 tests, about a minute
 ```
 
 ## What is checked

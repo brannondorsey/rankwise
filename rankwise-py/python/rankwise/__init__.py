@@ -35,7 +35,7 @@ __all__ = [
     "argmin", "argmax", "nanargmin", "nanargmax", "argmedian", "nanargmedian", "argselect",
     "select_ranks", "trimmed_mean", "trim_mean", "iqr", "mad", "median_abs_deviation",
     "sigma_clip_mean", "clip_combine",
-    "available_isas", "set_isa", "current_isa", "use_isa", "describe", "network_size",
+    "available_isas", "set_isa", "current_isa", "isa_override", "use_isa", "describe", "network_size",
 ]
 
 _NATIVE = {np.dtype(np.float32): "float32", np.dtype(np.float64): "float64", np.dtype(np.uint16): "uint16"}
@@ -438,11 +438,13 @@ def _intp(s):
     return np.dtype(np.intp)
 
 
-def _arg(kind, a, axis, out, keepdims, *, omit, strict, nodata, threads, isa, extra=None):
+def _arg(kind, a, axis, out, keepdims, *, omit, strict, nodata, threads, isa, extra=None, s=None):
+    """``s``: an already prepared stack for ``a`` (argselect reuses one across ranks)."""
     op = {"kind": kind}
     if extra:
         op.update(extra)
-    s = _prep(a, axis)
+    if s is None:
+        s = _prep(a, axis)
     _check_nodata(s, nodata)
     work, final, copy = _prepare_out(out, s.shape, np.dtype(np.intp), keepdims, s.axis)
     _run(op, s, [work], _opts(omit=omit or nodata is not None, nodata=nodata, threads=threads, isa=isa))
@@ -492,12 +494,13 @@ def argselect(a, ranks, axis=None, *, threads=1, isa=None):
     r = np.asarray(ranks)
     if r.dtype.kind not in "iu":
         raise TypeError("ranks must be integers")
-    n = _prep(a, axis).n
+    s = _prep(a, axis)  # once: it copies frame lists that need widening, swapping or realigning
+    n = s.n
     flat = [int(k) + (n if k < 0 else 0) for k in r.ravel()]
     if any(k < 0 for k in flat):
         raise ValueError(f"rank out of range for {n} frames")
     res = [_arg("argrank", a, axis, None, False, omit=False, strict=False, nodata=None, threads=threads,
-                isa=isa, extra={"rank": k}) for k in flat]
+                isa=isa, extra={"rank": k}, s=s) for k in flat]
     if r.ndim == 0:
         return res[0]
     return np.stack([np.asarray(x) for x in res]).reshape(r.shape + np.shape(res[0]))
@@ -710,10 +713,15 @@ def set_isa(name: str | None):
     _rw.set_isa(name)
 
 
+def isa_override() -> str | None:
+    """The ISA forced with :func:`set_isa`, or ``None`` when detection (or ``RANKWISE_ISA``) decides."""
+    return _rw.isa_override()
+
+
 @contextlib.contextmanager
 def use_isa(name: str | None):
     """Context manager form of :func:`set_isa`; restores the previous setting on exit."""
-    prev = _rw.isa_override()
+    prev = isa_override()
     try:
         _rw.set_isa(name)
         yield
