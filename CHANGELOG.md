@@ -29,5 +29,5 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
 Differences from the prototype: NaN-safe everywhere (no panics, no `unwrap` on NaN),
 quantiles exact at fractional ranks, sigma-clip bounds in float64, no thread pool built per
 call (single-threaded calls start none; `threads=` runs on rayon's global pool in the Python
-wheel, scoped threads in Rust without `rayon` and in C), separate low/high reject counts,
-`rw_*` symbols.
+wheel, capped at its size, scoped threads in Rust without `rayon` and in C), separate low/high
+reject counts, `rw_*` symbols.

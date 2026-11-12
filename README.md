@@ -47,7 +47,8 @@ rw.sigma_clip_mean(frames, sigma=(3, 3), out=out)
 
 Every function follows NumPy's names and conventions (`axis`, `out`, `keepdims`, `method`,
 the `nan*` variants) and reduces **any axis** of a float32, float64 or uint16 array without
-copying it. Kernels run with the GIL released; `threads=` splits large calls.
+copying it. Kernels run with the GIL released; `threads=` splits large calls
+across at most that many workers, capped by the visible CPU count or `RAYON_NUM_THREADS`.
 
 <details>
 <summary><b>The full Python API</b></summary>

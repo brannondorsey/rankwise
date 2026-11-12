@@ -83,7 +83,9 @@ n ≤ 20: full sorts, pruned selections and the bitonic merger.
   FMA anywhere. Signed zeros compare equal, but their sign bit can differ between ISAs
   (x86 `minps` and NEON `fmin` order −0 and +0 differently).
 * **Threads.** The core is single-threaded over a range of pixels; `threads=` splits rows
-  and pixel ranges across rayon's pool (Python wheel) or scoped threads (plain Rust).
+  and pixel ranges across rayon's global pool (Python wheel; at most `min(threads, pool size)`
+  at once, the pool sized to the visible CPUs or `RAYON_NUM_THREADS`) or up to `threads`
+  scoped threads (plain Rust, C).
 
 ## Rejection
 
