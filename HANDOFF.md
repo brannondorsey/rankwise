@@ -14,7 +14,7 @@ original handoff (Brannon has it; its §4 facts are all folded into [docs/confor
    min/max/ptp, arg-variants, trimmed mean/IQR/MAD, five rejection algorithms with
    astropy/Siril/PixInsight presets, NaN and `nodata`, f32/f64/u16 (u8 widened), any axis or
    frame lists, n ≤ 512, AVX-512/AVX2/NEON/portable chosen at runtime. Rust crate, C ABI +
-   header, abi3 Python wheel. 1,057 conformance tests pass on every ISA.
+   header, abi3 Python wheel. 1,082 conformance tests pass on every ISA.
 2. **Speed (one core, AVX-512, vs the fastest alternative):** sigma clip 15×, median 21×
    (31 × 2048²); ≥ 5.8× at every depth 8–511; real GEFS quantiles 72×; real Landsat uint16
    nodata median 21×; end to end with FITS reads 8–10×. Targets were ≥ 5×.
@@ -70,7 +70,7 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets --features ran
 
 pip install -r conformance/requirements.txt
 maturin build --release -m rankwise-py/Cargo.toml -o dist && pip install --find-links dist rankwise
-python -m pytest conformance -q                           # 1,057 tests, ~1.5 min
+python -m pytest conformance -q                           # 1,082 tests, ~1.5 min
 
 pip install -r bench/requirements.txt                     # read its header: two packages need --no-deps
 bash bench/run_all.sh                                     # pins taskset -c 1, then charts + report

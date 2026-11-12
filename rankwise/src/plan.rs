@@ -383,20 +383,25 @@ pub(crate) fn execute(job: &Job) {
         }
         return;
     }
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let next = AtomicUsize::new(0);
+    let workers = job.threads.min(us.len());
+    // rayon's global pool, at most `threads` workers at once. (Building a ThreadPool here
+    // spawned and joined `threads` OS threads on every call.)
     #[cfg(feature = "rayon")]
-    {
-        use rayon::prelude::*;
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(job.threads).build();
-        match pool {
-            Ok(p) => p.install(|| us.par_iter().for_each(|&u| unsafe { arch::run(job, u) })),
-            Err(_) => us.iter().for_each(|&u| unsafe { arch::run(job, u) }),
+    rayon::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|_| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= us.len() {
+                    break;
+                }
+                unsafe { arch::run(job, us[i]) };
+            });
         }
-    }
+    });
     #[cfg(not(feature = "rayon"))]
     {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        let next = AtomicUsize::new(0);
-        let workers = job.threads.min(us.len());
         std::thread::scope(|s| {
             for _ in 0..workers {
                 s.spawn(|| loop {

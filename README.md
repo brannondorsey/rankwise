@@ -177,7 +177,7 @@ against 4.9 s for Bottleneck's float32 `nanmedian` (21×) and 21 s for NumPy
 ## Correctness
 
 "Identical" means the same dtype and the same values under IEEE equality, NaN equal to NaN.
-The conformance suite runs 1,057 tests on every ISA the CPU has, against pinned NumPy
+The conformance suite runs 1,082 tests on every ISA the CPU has, against pinned NumPy
 2.5.3, SciPy 1.18.1 and astropy 8.0.2: every stack depth from 1 to 17 plus 31–33, 63–65,
 127–129, 255, 256, 511 and 512; partial vectors; float32, float64 and uint16; every axis,
 frame lists, memory maps, negative and power-of-two strides; NaN from none to all-NaN slices,

@@ -490,8 +490,14 @@ def argselect(a, ranks, axis=None, *, threads=1, isa=None):
     """``np.argsort(a, axis, kind="stable")`` at the given ranks (NaN last): which frame
     holds each order statistic."""
     r = np.asarray(ranks)
+    if r.dtype.kind not in "iu":
+        raise TypeError("ranks must be integers")
+    n = _prep(a, axis).n
+    flat = [int(k) + (n if k < 0 else 0) for k in r.ravel()]
+    if any(k < 0 for k in flat):
+        raise ValueError(f"rank out of range for {n} frames")
     res = [_arg("argrank", a, axis, None, False, omit=False, strict=False, nodata=None, threads=threads,
-                isa=isa, extra={"rank": int(k)}) for k in r.ravel()]
+                isa=isa, extra={"rank": k}) for k in flat]
     if r.ndim == 0:
         return res[0]
     return np.stack([np.asarray(x) for x in res]).reshape(r.shape + np.shape(res[0]))
@@ -516,7 +522,8 @@ def select_ranks(a, ranks, axis=None, out=None, *, threads=1, isa=None):
 
 def trimmed_mean(a, proportiontocut, axis=0, *, threads=1, isa=None):
     """``scipy.stats.trim_mean``: cut ``int(proportiontocut * n)`` values from each end and
-    average the rest. Sums run in float64."""
+    average the rest. Sums run in float64. A slice containing NaN gives NaN, as SciPy's
+    default ``nan_policy="propagate"`` does."""
     return _simple({"kind": "trim_mean", "proportion": float(proportiontocut)}, a, axis, None, False,
                    _float_result, threads=threads, isa=isa)
 
@@ -606,6 +613,8 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
         hi_s = float(sigma_upper)
     if maxiters is not None and not np.isfinite(maxiters):
         maxiters = None
+    if maxiters == 0 and method in ("sigma", "mad"):
+        maxiters = None  # astropy's SigmaClip: `maxiters or np.inf`, so 0 iterates to convergence
     if preset not in (None, "astropy", "siril", "pixinsight"):
         raise ValueError(f"unknown preset {preset!r}")
     op = {"kind": "clip", "method": method, "low": lo_s, "high": hi_s, "cenfunc": cenfunc,
@@ -626,8 +635,9 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
     lo_arr = low if low is not None else (np.empty(s.shape, np.uint16) if want_counts else None)
     hi_arr = high if high is not None else (np.empty(s.shape, np.uint16) if want_counts else None)
     for name, arr in (("low", lo_arr), ("high", hi_arr)):
-        if arr is not None and (arr.shape != tuple(s.shape) or arr.dtype not in _OUT_OK):
-            raise ValueError(f"{name} must have shape {tuple(s.shape)} and an integer dtype")
+        if arr is not None and (not isinstance(arr, np.ndarray) or arr.shape != tuple(s.shape)
+                                or arr.dtype not in _OUT_OK or not arr.dtype.isnative or not arr.flags.writeable):
+            raise ValueError(f"{name} must be a writeable array of shape {tuple(s.shape)} and an integer dtype")
     mspec = None
     if mask is not None:
         if _is_frame_list(a):
@@ -637,6 +647,11 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
             for f in mframes:
                 if not isinstance(f, np.ndarray) or f.shape != tuple(s.shape) or f.dtype not in (np.bool_, np.uint8):
                     raise ValueError("mask frames must be bool arrays shaped like the frames")
+                if not f.flags.writeable:
+                    raise ValueError("mask frames must be writeable")
+            if any(f.strides != mframes[0].strides or f.dtype != mframes[0].dtype for f in mframes):
+                # every map frame is written with frame 0's dtype and strides
+                raise ValueError("mask frames must share one dtype and memory layout (e.g. all C-contiguous)")
             mspec = ([f.__array_interface__["data"][0] for f in mframes], _OUT_OK[mframes[0].dtype],
                      list(mframes[0].strides))
         else:
@@ -644,6 +659,8 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
                 raise ValueError(f"mask must be an array with the input's shape {np.shape(s.keep)}")
             if mask.dtype not in (np.bool_, np.uint8):
                 raise TypeError("mask must be bool or uint8")
+            if not mask.flags.writeable:
+                raise ValueError("mask must be writeable")
             base = mask.__array_interface__["data"][0]
             st = mask.strides[s.axis]
             mspec = ([base + k * st for k in range(s.n)], _OUT_OK[mask.dtype],
@@ -667,7 +684,8 @@ def sigma_clip_mean(a, axis=0, sigma=3.0, sigma_lower=None, sigma_upper=None, ma
     identical masks and kept counts (center, spread and bounds in float64; NaN and ±inf are
     masked first). The mean of the survivors is summed in float64.
 
-    ``sigma`` may be a ``(low, high)`` pair.
+    ``sigma`` may be a ``(low, high)`` pair. ``maxiters=0`` or ``None`` iterates until nothing
+    changes, as in astropy.
     """
     return clip_combine(a, "sigma", sigma, sigma_lower, sigma_upper, maxiters, axis=axis, cenfunc=cenfunc,
                         stdfunc=stdfunc, out=out, rejected=rejected, low=low, high=high, mask=mask,
@@ -694,8 +712,8 @@ def set_isa(name: str | None):
 
 @contextlib.contextmanager
 def use_isa(name: str | None):
-    """Context manager form of :func:`set_isa`."""
-    prev = None
+    """Context manager form of :func:`set_isa`; restores the previous setting on exit."""
+    prev = _rw.isa_override()
     try:
         _rw.set_isa(name)
         yield

@@ -35,7 +35,9 @@ pub enum rw_status {
 }
 
 /// Deepest stack v0.1 reduces.
-pub const RW_MAX_FRAMES: usize = rankwise::MAX_FRAMES;
+// A literal so cbindgen can emit it (it cannot evaluate `rankwise::MAX_FRAMES`).
+pub const RW_MAX_FRAMES: usize = 512;
+const _: () = assert!(RW_MAX_FRAMES == rankwise::MAX_FRAMES);
 
 /// Rejection algorithms.
 #[repr(C)]
