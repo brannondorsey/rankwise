@@ -778,9 +778,11 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
             for i in 0..S::L {
                 vals[i] = acc[i] / c;
             }
+            // scipy.stats.trim_mean propagates NaN (nan_policy="propagate"), even when the NaN
+            // would fall in the trimmed tail.
             if blk.any_missing || hi == lo {
                 for i in 0..lanes {
-                    if *hi > ms[i] || hi == lo {
+                    if ms[i] < n || hi == lo {
                         vals[i] = f64::NAN;
                     }
                 }

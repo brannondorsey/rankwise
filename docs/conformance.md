@@ -8,7 +8,7 @@ NumPy 2.5.3, SciPy 1.18.1 and astropy 8.0.2 (`conformance/requirements.txt`).
 ```bash
 pip install -r conformance/requirements.txt
 maturin build --release -m rankwise-py/Cargo.toml -o dist && pip install --find-links dist rankwise
-python -m pytest conformance -q          # 1,057 tests, about a minute
+python -m pytest conformance -q          # 1,092 tests, about a minute
 ```
 
 ## What is checked
@@ -87,7 +87,8 @@ Matching NumPy bit for bit meant reproducing some behaviours that are easy to mi
 * Center, spread and bounds in float64 (data converted), population std, `0.5 * (upper +
   lower)` medians, keep `bound_lo <= x <= bound_hi`.
 * Passes are cumulative, and stop when nothing changes, when nothing would be kept, or after
-  `maxiters` (`maxiters=0` still runs one pass, as astropy's C loop does).
+  `maxiters`. `maxiters=0` iterates until nothing changes, like `None`: astropy's `SigmaClip`
+  stores `maxiters or np.inf`. (In Rust and C, a cap of 0 still runs one pass.)
 * The final mask applies the *last* bounds to every finite value, so a value rejected early
   can come back. NaN and ±inf are masked before clipping.
 * The one difference: astropy sums in the order its partial sort leaves the buffer; rankwise

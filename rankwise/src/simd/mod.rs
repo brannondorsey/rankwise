@@ -253,6 +253,17 @@ pub fn set_isa_override(isa: Option<Isa>) -> crate::Result<()> {
     Ok(())
 }
 
+/// The ISA forced with [`set_isa_override`], if any (not `RANKWISE_ISA`).
+pub fn isa_override() -> Option<Isa> {
+    match OVERRIDE.load(Ordering::Relaxed) {
+        255 => None,
+        0 => Some(Isa::Scalar),
+        1 => Some(Isa::Avx2),
+        2 => Some(Isa::Avx512),
+        _ => Some(Isa::Neon),
+    }
+}
+
 /// The ISA a call will use: an explicit request, else [`set_isa_override`], else the
 /// `RANKWISE_ISA` environment variable, else the fastest supported ISA.
 pub fn resolve_isa(requested: Option<Isa>) -> crate::Result<Isa> {
@@ -266,14 +277,7 @@ pub fn resolve_isa(requested: Option<Isa>) -> crate::Result<Isa> {
     if let Some(i) = requested {
         return pick(i);
     }
-    let o = OVERRIDE.load(Ordering::Relaxed);
-    if o != 255 {
-        let i = match o {
-            0 => Isa::Scalar,
-            1 => Isa::Avx2,
-            2 => Isa::Avx512,
-            _ => Isa::Neon,
-        };
+    if let Some(i) = isa_override() {
         return pick(i);
     }
     if let Ok(s) = std::env::var("RANKWISE_ISA") {

@@ -60,6 +60,10 @@ fn parse_clip(d: &Bound<'_, PyDict>) -> PyResult<Clip> {
         (_, m) => return Err(PyValueError::new_err(format!("unknown rejection method {m:?}"))),
     };
     if let Some(s) = get::<String>(d, "cenfunc")? {
+        // Only sigma and MAD clipping take a center; the others are defined around the median.
+        if s != "median" && method != "sigma" && method != "mad" {
+            return Err(PyValueError::new_err(format!("cenfunc applies to method='sigma' or 'mad', not {method:?}")));
+        }
         c = c.center(match s.as_str() {
             "median" => Center::Median,
             "mean" => Center::Mean,
@@ -238,6 +242,12 @@ fn current_isa() -> PyResult<&'static str> {
     rankwise::resolve_isa(None).map(|i| i.name()).map_err(err)
 }
 
+/// The ISA forced with `set_isa`, or `None` (detection or `RANKWISE_ISA`).
+#[pyfunction]
+fn isa_override() -> Option<&'static str> {
+    rankwise::isa_override().map(|i| i.name())
+}
+
 #[pyfunction]
 #[pyo3(signature = (n, ranks=None))]
 fn network_size(n: usize, ranks: Option<Vec<usize>>) -> usize {
@@ -266,6 +276,7 @@ fn _rankwise(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(available_isas, m)?)?;
     m.add_function(wrap_pyfunction!(set_isa, m)?)?;
     m.add_function(wrap_pyfunction!(current_isa, m)?)?;
+    m.add_function(wrap_pyfunction!(isa_override, m)?)?;
     m.add_function(wrap_pyfunction!(network_size, m)?)?;
     m.add_function(wrap_pyfunction!(describe, m)?)?;
     m.add("__version__", rankwise::VERSION)?;

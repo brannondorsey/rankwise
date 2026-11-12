@@ -47,7 +47,8 @@ rw.sigma_clip_mean(frames, sigma=(3, 3), out=out)
 
 Every function follows NumPy's names and conventions (`axis`, `out`, `keepdims`, `method`,
 the `nan*` variants) and reduces **any axis** of a float32, float64 or uint16 array without
-copying it. Kernels run with the GIL released; `threads=` splits large calls.
+copying it. Kernels run with the GIL released; `threads=` splits large calls
+across at most that many workers, capped by the visible CPU count or `RAYON_NUM_THREADS`.
 
 <details>
 <summary><b>The full Python API</b></summary>
@@ -177,7 +178,7 @@ against 4.9 s for Bottleneck's float32 `nanmedian` (21×) and 21 s for NumPy
 ## Correctness
 
 "Identical" means the same dtype and the same values under IEEE equality, NaN equal to NaN.
-The conformance suite runs 1,057 tests on every ISA the CPU has, against pinned NumPy
+The conformance suite runs 1,092 tests on every ISA the CPU has, against pinned NumPy
 2.5.3, SciPy 1.18.1 and astropy 8.0.2: every stack depth from 1 to 17 plus 31–33, 63–65,
 127–129, 255, 256, 511 and 512; partial vectors; float32, float64 and uint16; every axis,
 frame lists, memory maps, negative and power-of-two strides; NaN from none to all-NaN slices,

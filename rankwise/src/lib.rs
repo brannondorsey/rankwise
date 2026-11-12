@@ -48,7 +48,7 @@ pub use error::{Error, Result};
 pub use frames::*;
 pub use layout::{c_strides, RawMask, RawOut, RawStack};
 pub use plan::{describe, natural_dtype, network_size, reduce_raw, Normalize, Options, Staging};
-pub use simd::{resolve_isa, set_isa_override, Isa};
+pub use simd::{isa_override, resolve_isa, set_isa_override, Isa};
 pub use spec::*;
 
 #[cfg(feature = "ndarray")]
