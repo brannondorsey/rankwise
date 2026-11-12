@@ -1,12 +1,12 @@
 // Stack 40 synthetic astro subs with satellite trails in Node (or Bun): sigma-clipped mean
 // plus the rejection map, written as PNGs with no dependencies.
 //
-//   node rankwise-wasm/scripts/build.mjs        # once: builds rankwise-wasm/dist/*.wasm
+//   node rankwise-js/scripts/build.mjs        # once: builds rankwise-js/dist/*.wasm
 //   node examples/js/node-stack.mjs [outdir]    # or: bun examples/js/node-stack.mjs
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
-import { init } from "../../rankwise-wasm/js/rankwise.js";
+import { init } from "../../rankwise-js/js/node.js"; // `import { init } from "rankwise"` once installed
 
 const W = 640;
 const H = 400;
@@ -64,7 +64,7 @@ const tMed = performance.now() - t2;
 
 let total = 0;
 for (const r of rejected) total += r;
-console.log(`rankwise ${rw.version} (${rw.build} build, ${rw.isa} kernels), loaded in ${tLoad.toFixed(0)} ms`);
+console.log(`rankwise ${rw.version}: ${rw.backend} backend (${rw.build}, ${rw.isa}), loaded in ${tLoad.toFixed(0)} ms`);
 console.log(`sigma-clipped mean of ${N} × ${W}×${H}: ${tClip.toFixed(1)} ms, ${total} values rejected (${((100 * total) / (N * W * H)).toFixed(2)}%)`);
 console.log(`median: ${tMed.toFixed(1)} ms`);
 

@@ -62,7 +62,7 @@ pub struct U16x8(pub v128);
 
 /// Unrolled networks keep every frame in a local, which engines map to 16 (x86-64) or 32
 /// (arm64) vector registers and spill beyond. 16, 24 and 32 measured within a few percent of
-/// each other in V8 on x86-64, interpreted networks 1.4x slower (see docs/wasm.md).
+/// each other in V8 on x86-64, interpreted networks 1.4x slower (see docs/javascript.md).
 const UNROLL: usize = 24;
 
 macro_rules! fvec {

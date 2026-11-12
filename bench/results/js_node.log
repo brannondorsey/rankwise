@@ -1,0 +1,47 @@
+
+## Median of 31 frames
+31 × 1024×1024 float32, like stacking registered subs (bench/astro.py)
+rankwise native (avx512)                  23.9 ms    35.0x  identical
+rankwise wasm simd128                    106.3 ms     7.9x  identical
+rankwise wasm simd128, zero-copy          46.4 ms    18.0x  identical
+rankwise wasm portable                  1336.1 ms     0.6x  identical
+JS quickselect (hand-written)            835.2 ms     1.0x  identical
+JS TypedArray.sort per pixel            1292.8 ms     0.6x  identical
+d3-array median per pixel               5547.5 ms     0.2x  identical
+
+## Sigma-clipped mean of 31 frames
+31 × 1024×1024 float32, 3σ, 5 iterations, astropy's decisions
+rankwise native (avx512)                  93.4 ms    19.6x  same rejections, mean within 0.0e+0
+rankwise wasm simd128                    190.7 ms     9.6x  same rejections, mean within 0.0e+0
+rankwise wasm simd128, zero-copy         140.9 ms    13.0x  same rejections, mean within 0.0e+0
+rankwise wasm portable                  1736.0 ms     1.1x  same rejections, mean within 0.0e+0
+JS sort + astropy iteration             1827.6 ms     1.0x  same rejections, mean within 0.0e+0
+
+## p10 / p50 / p90 of a 31-member ensemble
+31 × 721×1440 float32 (a 0.25° global grid, as bench/ensemble.py), q as a list: float64 like np.quantile
+rankwise native (avx512)                  34.9 ms    37.3x  identical
+rankwise wasm simd128                    129.6 ms    10.1x  identical
+rankwise wasm simd128, zero-copy         126.6 ms    10.3x  identical
+rankwise wasm portable                  1428.3 ms     0.9x  identical
+JS TypedArray.sort per cell             1303.5 ms     1.0x  identical
+d3-array quantile per cell             21081.8 ms     0.1x  identical
+
+## Cloud-free median of 90 uint16 scenes
+90 × 512×512 uint16, 65% nodata (= 0), as bench/landsat.py
+rankwise native (avx512)                  25.1 ms    18.3x  identical
+rankwise wasm simd128                     90.5 ms     5.1x  identical
+rankwise wasm simd128, zero-copy          88.5 ms     5.2x  identical
+rankwise wasm portable                   504.2 ms     0.9x  identical
+JS filter + quickselect                  459.2 ms     1.0x  identical
+
+## Median by stack depth (32M values each)
+n=  4  native   36.5 ms  simd128   122.6 ms  portable   613.2 ms  JS quickselect   792.6 ms  6.5x  identical, native identical
+n=  8  native   21.2 ms  simd128    99.9 ms  portable   623.6 ms  JS quickselect   909.9 ms  9.1x  identical, native identical
+n= 16  native   21.6 ms  simd128    61.8 ms  portable   992.5 ms  JS quickselect  1265.1 ms  20.5x  identical, native identical
+n= 31  native   20.3 ms  simd128    92.8 ms  portable  1334.7 ms  JS quickselect  1201.1 ms  12.9x  identical, native identical
+n= 64  native   44.6 ms  simd128   132.7 ms  portable  1523.7 ms  JS quickselect  1219.8 ms  9.2x  identical, native identical
+n=127  native   34.4 ms  simd128   189.3 ms  portable  2771.0 ms  JS quickselect  1142.6 ms  6.0x  identical, native identical
+n=255  native   64.6 ms  simd128   143.1 ms  portable  2774.1 ms  JS quickselect  1006.9 ms  7.0x  identical, native identical
+n=511  native   48.1 ms  simd128   250.9 ms  portable  3335.7 ms  JS quickselect   887.6 ms  3.5x  identical, native identical
+
+wrote ../bench/results/js_node.json

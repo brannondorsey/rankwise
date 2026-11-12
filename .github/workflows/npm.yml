@@ -1,0 +1,68 @@
+name: npm
+
+# Builds every npm package of a release: one Node-API addon package per platform (an
+# optional dependency of `rankwise` with os/cpu/libc set, so package managers install only
+# the matching one) and `rankwise` itself (both WebAssembly modules and the JS). Publishing
+# is intentionally not wired up until the package name and the @rankwise scope are reserved.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  addon:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # glibc 2.35 baseline; musl and other targets fall back to WebAssembly
+          - { os: ubuntu-22.04, platform: linux-x64-gnu }
+          - { os: ubuntu-22.04-arm, platform: linux-arm64-gnu }
+          - { os: macos-15, platform: darwin-arm64 }
+          - { os: macos-15-intel, platform: darwin-x64 }
+          - { os: windows-latest, platform: win32-x64-msvc }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - run: node rankwise-js/scripts/build.mjs --native
+      - name: The addon loads and is chosen
+        shell: bash
+        run: |
+          node --input-type=module -e "
+            import { init } from './rankwise-js/js/node.js';
+            const rw = await init({ backend: 'native' });
+            if (rw.build !== '${{ matrix.platform }}') throw new Error(rw.build);
+            console.log(rw.backend, rw.build, rw.isa, rw.median([Float32Array.of(1), Float32Array.of(3), Float32Array.of(2)]));"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: addon-${{ matrix.platform }}
+          path: rankwise-js/npm/${{ matrix.platform }}/
+
+  pack:
+    needs: addon
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - run: node rankwise-js/scripts/build.mjs
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: addon-*
+          path: artifacts
+      - name: Every platform's addon into rankwise-js/npm/
+        run: for d in artifacts/addon-*; do mkdir -p "rankwise-js/npm/${d#artifacts/addon-}" && cp -r "$d"/. "rankwise-js/npm/${d#artifacts/addon-}/"; done
+      - run: node rankwise-js/scripts/pack.mjs --out release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-packages
+          path: release/*.tgz

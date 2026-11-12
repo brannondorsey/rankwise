@@ -1,7 +1,7 @@
 // An ensemble-statistics HTTP service on Bun: POST a stack of float32 members, get back
 // quantiles (or a median / sigma-clipped mean) as raw float32 or JSON.
 //
-//   node rankwise-wasm/scripts/build.mjs              # once
+//   node rankwise-js/scripts/build.mjs              # once
 //   bun examples/js/bun-server.ts                     # serves on :8787
 //   bun examples/js/bun-server.ts --selftest          # starts, posts a 31-member grid, checks, exits
 //
@@ -10,7 +10,7 @@
 //
 // The body is `members` float32 frames back to back (little-endian); the response is one
 // float32 array per statistic, back to back, with the layout in the X-Rankwise-* headers.
-import { init, RankwiseError } from "../../rankwise-wasm/js/rankwise.js";
+import { init, RankwiseError } from "../../rankwise-js/js/node.js"; // "rankwise" once installed: native addon, else WebAssembly
 
 const rw = await init();
 const port = Number(process.env.PORT ?? 8787);
@@ -28,7 +28,7 @@ function reply(arrays: Float32Array[], names: string[], ms: number, json: boolea
     "X-Rankwise-Outputs": names.join(","),
     "X-Rankwise-Cells": String(arrays[0].length),
     "X-Rankwise-Ms": ms.toFixed(2),
-    "X-Rankwise-Build": `${rw.build}/${rw.isa}`,
+    "X-Rankwise-Backend": `${rw.backend}/${rw.build}/${rw.isa}`,
   };
   if (json) return Response.json(Object.fromEntries(names.map((n, j) => [n, Array.from(arrays[j])])), { headers });
   const out = new Float32Array(arrays.length * arrays[0].length);
@@ -41,7 +41,7 @@ const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
     if (req.method === "GET" && url.pathname === "/") {
-      return Response.json({ rankwise: rw.version, build: rw.build, isa: rw.isa, endpoints: ["/quantile", "/median", "/sigma-clip"] });
+      return Response.json({ rankwise: rw.version, backend: rw.backend, build: rw.build, isa: rw.isa, endpoints: ["/quantile", "/median", "/sigma-clip"] });
     }
     if (req.method !== "POST") return new Response("POST a float32 stack", { status: 405 });
     try {
@@ -66,7 +66,7 @@ const server = Bun.serve({
     }
   },
 });
-console.log(`rankwise ${rw.version} (${rw.build}) serving on http://localhost:${server.port}`);
+console.log(`rankwise ${rw.version} (${rw.backend}: ${rw.build}, ${rw.isa}) serving on http://localhost:${server.port}`);
 
 if (process.argv.includes("--selftest")) {
   const members = 31;
