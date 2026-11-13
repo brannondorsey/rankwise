@@ -73,7 +73,9 @@ pub enum rw_combine {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct rw_clip {
-    pub method: rw_rejection,
+    /// An `rw_rejection` value. (Integer fields, not enums, so that an out-of-range value from
+    /// C is reported as `RW_ERR_PARAM` instead of being undefined behaviour in Rust.)
+    pub method: i32,
     pub low: f32,
     pub high: f32,
     /// Maximum passes; negative = until nothing changes.
@@ -82,7 +84,8 @@ pub struct rw_clip {
     pub center_mean: i32,
     /// 0 = float64 center/spread/bounds (astropy-identical), 1 = float32.
     pub fast_f32: i32,
-    pub combine: rw_combine,
+    /// An `rw_combine` value (ignored by `RW_REJECT_MEDIAN_SIGMA`, which averages).
+    pub combine: i32,
 }
 
 /// Optional per-frame normalization (`x * scale[k] + offset[k]`) and weights. Any pointer may
@@ -258,38 +261,56 @@ pub extern "C" fn rw_status_string(s: rw_status) -> *const c_char {
 #[no_mangle]
 pub extern "C" fn rw_clip_sigma(low: f32, high: f32, maxiters: i32) -> rw_clip {
     rw_clip {
-        method: rw_rejection::RW_REJECT_SIGMA,
+        method: rw_rejection::RW_REJECT_SIGMA as i32,
         low,
         high,
         maxiters,
         center_mean: 0,
         fast_f32: 0,
-        combine: rw_combine::RW_COMBINE_MEAN,
+        combine: rw_combine::RW_COMBINE_MEAN as i32,
     }
 }
 
 /// MAD clipping (sigma = 1.482602218505602 × MAD).
 #[no_mangle]
 pub extern "C" fn rw_clip_mad(low: f32, high: f32, maxiters: i32) -> rw_clip {
-    rw_clip { method: rw_rejection::RW_REJECT_MAD, ..rw_clip_sigma(low, high, maxiters) }
+    rw_clip { method: rw_rejection::RW_REJECT_MAD as i32, ..rw_clip_sigma(low, high, maxiters) }
 }
 
 /// Winsorized sigma clipping.
 #[no_mangle]
 pub extern "C" fn rw_clip_winsorized(low: f32, high: f32, maxiters: i32) -> rw_clip {
-    rw_clip { method: rw_rejection::RW_REJECT_WINSORIZED, ..rw_clip_sigma(low, high, maxiters) }
+    rw_clip { method: rw_rejection::RW_REJECT_WINSORIZED as i32, ..rw_clip_sigma(low, high, maxiters) }
 }
 
 /// Percentile clipping (`low`/`high` are fractions of the median).
 #[no_mangle]
 pub extern "C" fn rw_clip_percentile(low: f32, high: f32) -> rw_clip {
-    rw_clip { method: rw_rejection::RW_REJECT_PERCENTILE, ..rw_clip_sigma(low, high, -1) }
+    rw_clip { method: rw_rejection::RW_REJECT_PERCENTILE as i32, ..rw_clip_sigma(low, high, -1) }
 }
 
-fn to_clip(c: &rw_clip) -> Clip {
+/// `None` when `method` or `combine` is not one of the enum's values.
+fn to_clip(c: &rw_clip) -> Option<Clip> {
+    const R: [rw_rejection; 8] = [
+        rw_rejection::RW_REJECT_NONE,
+        rw_rejection::RW_REJECT_SIGMA,
+        rw_rejection::RW_REJECT_MAD,
+        rw_rejection::RW_REJECT_MEDIAN_SIGMA,
+        rw_rejection::RW_REJECT_WINSORIZED,
+        rw_rejection::RW_REJECT_PERCENTILE,
+        rw_rejection::RW_REJECT_WINSORIZED_PIXINSIGHT,
+        rw_rejection::RW_REJECT_SIGMA_SIRIL,
+    ];
+    let method = *R.iter().find(|&&r| r as i32 == c.method)?;
+    let combine = match c.combine {
+        0 => Combine::Mean,
+        1 => Combine::Median,
+        2 => Combine::Sum,
+        _ => return None,
+    };
     let (lo, hi) = (c.low as f64, c.high as f64);
     let it = if c.maxiters < 0 { None } else { Some(c.maxiters as u32) };
-    let mut k = match c.method {
+    let mut k = match method {
         rw_rejection::RW_REJECT_NONE => Clip::none(),
         rw_rejection::RW_REJECT_SIGMA => Clip::sigma(lo, hi).max_iters(it),
         rw_rejection::RW_REJECT_MAD => Clip::mad(lo, hi).max_iters(it),
@@ -305,15 +326,11 @@ fn to_clip(c: &rw_clip) -> Clip {
     if c.fast_f32 != 0 {
         k = k.precision(Precision::F32);
     }
-    if c.method != rw_rejection::RW_REJECT_MEDIAN_SIGMA {
-        k = k.combine(match c.combine {
-            rw_combine::RW_COMBINE_MEAN => Combine::Mean,
-            rw_combine::RW_COMBINE_MEDIAN => Combine::Median,
-            rw_combine::RW_COMBINE_SUM => Combine::Sum,
-        });
+    if method != rw_rejection::RW_REJECT_MEDIAN_SIGMA {
+        k = k.combine(combine);
     }
     let _ = Spread::Std;
-    k
+    Some(k)
 }
 
 // ------------------------------------------------------------------ medians & quantiles
@@ -391,13 +408,14 @@ pub unsafe extern "C" fn rw_median_u16(
     })
 }
 
-fn method(m: rw_quantile_method) -> QuantileMethod {
-    QuantileMethod::ALL[m as usize]
+/// `None` when `m` is not an `rw_quantile_method` value.
+fn method(m: i32) -> Option<QuantileMethod> {
+    usize::try_from(m).ok().and_then(|i| QuantileMethod::ALL.get(i).copied())
 }
 
 /// Quantiles of float32 frames into float32 outputs, with NumPy's arithmetic for a Python
 /// float `q` (interpolation in float32): `np.quantile(stack, q, axis=0, method=...)`.
-/// `outs` holds `nq` pointers of `npix` floats.
+/// `outs` holds `nq` pointers of `npix` floats; `m` is an `rw_quantile_method` value.
 #[no_mangle]
 pub unsafe extern "C" fn rw_quantile_f32(
     frames: *const *const f32,
@@ -405,7 +423,7 @@ pub unsafe extern "C" fn rw_quantile_f32(
     npix: usize,
     q: *const f64,
     nq: usize,
-    m: rw_quantile_method,
+    m: i32,
     outs: *const *mut f32,
 ) -> rw_status {
     guarded(|| {
@@ -417,14 +435,16 @@ pub unsafe extern "C" fn rw_quantile_f32(
         if os.iter().any(|p| p.is_null()) {
             return rw_status::RW_ERR_NULL;
         }
-        let op = Op::Quantile(QuantileSpec { method: method(m), form: QForm::Weak, ..QuantileSpec::new(qs) });
+        let Some(m) = method(m) else { return rw_status::RW_ERR_PARAM };
+        let op = Op::Quantile(QuantileSpec { method: m, form: QForm::Weak, ..QuantileSpec::new(qs) });
         let o: Vec<(*mut u8, DType)> = os.iter().map(|&p| (p as *mut u8, DType::F32)).collect();
         run(DType::F32, frames as _, n, npix, &op, &o, None, &opts(NanPolicy::Propagate, None))
     })
 }
 
 /// Quantiles of float32 frames into float64 outputs, as `np.quantile(stack, [q...], axis=0)`
-/// with a list of `q` (interpolation in float64). `nan_omit` != 0 gives `np.nanquantile`.
+/// with a list of `q` (interpolation in float64). `nan_omit` != 0 gives `np.nanquantile`;
+/// `m` is an `rw_quantile_method` value.
 #[no_mangle]
 pub unsafe extern "C" fn rw_quantile_f32_f64(
     frames: *const *const f32,
@@ -432,7 +452,7 @@ pub unsafe extern "C" fn rw_quantile_f32_f64(
     npix: usize,
     q: *const f64,
     nq: usize,
-    m: rw_quantile_method,
+    m: i32,
     nan_omit: i32,
     outs: *const *mut f64,
 ) -> rw_status {
@@ -445,7 +465,8 @@ pub unsafe extern "C" fn rw_quantile_f32_f64(
         if os.iter().any(|p| p.is_null()) {
             return rw_status::RW_ERR_NULL;
         }
-        let op = Op::Quantile(QuantileSpec { method: method(m), form: QForm::F64, ..QuantileSpec::new(qs) });
+        let Some(m) = method(m) else { return rw_status::RW_ERR_PARAM };
+        let op = Op::Quantile(QuantileSpec { method: m, form: QForm::F64, ..QuantileSpec::new(qs) });
         let o: Vec<(*mut u8, DType)> = os.iter().map(|&p| (p as *mut u8, DType::F64)).collect();
         let nan = if nan_omit != 0 { NanPolicy::Omit } else { NanPolicy::Propagate };
         run(DType::F32, frames as _, n, npix, &op, &o, None, &opts(nan, None))
@@ -649,7 +670,7 @@ pub unsafe extern "C" fn rw_clip_combine_f32(
         if n == 0 || n > RW_MAX_FRAMES {
             return rw_status::RW_ERR_DEPTH;
         }
-        let c = to_clip(&*clip);
+        let Some(c) = to_clip(&*clip) else { return rw_status::RW_ERR_PARAM };
         let mut o = opts(NanPolicy::Propagate, None);
         if !params.is_null() {
             let p = &*params;
@@ -681,5 +702,63 @@ mod tests {
         assert_eq!(rej[0], 1);
         let s = unsafe { rw_median_f32(ptrs.as_ptr(), 0, 33, out.as_mut_ptr()) };
         assert_eq!(s, rw_status::RW_ERR_DEPTH);
+    }
+
+    /// Values C can put in the enum-valued fields and parameters are checked, not trusted
+    /// (an out-of-range `rw_clip.method` used to crash).
+    #[test]
+    fn out_of_range_enum_values_are_param_errors() {
+        let frames: Vec<Vec<f32>> = (0..5).map(|k| vec![k as f32; 33]).collect();
+        let ptrs: Vec<*const f32> = frames.iter().map(|f| f.as_ptr()).collect();
+        let mut out = vec![0f32; 33];
+        let null = core::ptr::null_mut();
+        for (method, combine) in [(42, 0), (-1, 0), (8, 0), (1, 3), (1, -1)] {
+            let c = rw_clip { method, combine, ..rw_clip_sigma(3.0, 3.0, 5) };
+            let s = unsafe {
+                rw_clip_combine_f32(
+                    ptrs.as_ptr(),
+                    5,
+                    33,
+                    &c,
+                    core::ptr::null(),
+                    out.as_mut_ptr(),
+                    null,
+                    null,
+                    core::ptr::null(),
+                )
+            };
+            assert_eq!(s, rw_status::RW_ERR_PARAM, "method {method} combine {combine}");
+        }
+        let q = [0.5f64];
+        let mut o64 = vec![0f64; 33];
+        let o32p = [out.as_mut_ptr()];
+        let o64p = [o64.as_mut_ptr()];
+        for m in [13, -1, 99] {
+            let s = unsafe { rw_quantile_f32(ptrs.as_ptr(), 5, 33, q.as_ptr(), 1, m, o32p.as_ptr()) };
+            assert_eq!(s, rw_status::RW_ERR_PARAM);
+            let s = unsafe { rw_quantile_f32_f64(ptrs.as_ptr(), 5, 33, q.as_ptr(), 1, m, 0, o64p.as_ptr()) };
+            assert_eq!(s, rw_status::RW_ERR_PARAM);
+        }
+        let s = unsafe {
+            rw_quantile_f32(ptrs.as_ptr(), 5, 33, q.as_ptr(), 1, rw_quantile_method::RW_Q_NEAREST as i32, o32p.as_ptr())
+        };
+        assert_eq!(s, rw_status::RW_OK);
+        assert_eq!(out[0], 2.0);
+    }
+
+    /// Median sigma clipping averages the replaced stack; weights are refused, not misapplied.
+    #[test]
+    fn median_sigma_refuses_weights() {
+        let frames: Vec<Vec<f32>> = (0..9).map(|k| vec![if k == 4 { 1000.0 } else { k as f32 }; 33]).collect();
+        let ptrs: Vec<*const f32> = frames.iter().map(|f| f.as_ptr()).collect();
+        let mut out = vec![0f32; 33];
+        let w = [1.0f64; 9];
+        let params = rw_frame_params { scale: core::ptr::null(), offset: core::ptr::null(), weights: w.as_ptr() };
+        let c = rw_clip { method: rw_rejection::RW_REJECT_MEDIAN_SIGMA as i32, ..rw_clip_sigma(3.0, 3.0, 5) };
+        let null = core::ptr::null_mut();
+        let s = unsafe {
+            rw_clip_combine_f32(ptrs.as_ptr(), 9, 33, &c, &params, out.as_mut_ptr(), null, null, core::ptr::null())
+        };
+        assert_eq!(s, rw_status::RW_ERR_PARAM);
     }
 }

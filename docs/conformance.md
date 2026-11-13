@@ -8,7 +8,7 @@ NumPy 2.5.3, SciPy 1.18.1 and astropy 8.0.2 (`conformance/requirements.txt`).
 ```bash
 pip install -r conformance/requirements.txt
 maturin build --release -m rankwise-py/Cargo.toml -o dist && pip install --find-links dist rankwise
-python -m pytest conformance -q          # 1,092 tests, about a minute
+python -m pytest conformance -q          # 1,175 tests, about a minute
 ```
 
 ## What is checked
@@ -22,7 +22,7 @@ python -m pytest conformance -q          # 1,092 tests, about a minute
 | `argmedian`, `argselect` | `np.argsort(a, axis, kind="stable")` at the rank(s) | identical | ✅ |
 | `select_ranks` | `np.sort(a, axis)[ranks]` | identical | ✅ |
 | `iqr`, `mad` | `scipy.stats.iqr`, `scipy.stats.median_abs_deviation` | identical (propagate and omit) | ✅ |
-| `trimmed_mean` | `scipy.stats.trim_mean` | within 1 ulp of an exact float64 reference | ✅ |
+| `trimmed_mean` | `scipy.stats.trim_mean` (propagate and omit) | within 1 ulp of an exact float64 reference | ✅ |
 | `sigma_clip_mean` (std and mad_std, median and mean center) | `astropy.stats.sigma_clip(..., axis=...)` | identical masks and kept counts; mean within 1 ulp of float64 | ✅ |
 | Siril presets | `siril-cli` 1.2.1 | identical reject maps where definitions allow | see [presets](presets.md) |
 | C ABI | the Python package on the same data | identical | ✅ |
@@ -101,7 +101,9 @@ Matching NumPy bit for bit meant reproducing some behaviours that are easy to mi
 * **Signed zeros**: equal under `==`; the sign bit can differ from NumPy and between ISAs.
 * **`median(..., out=float64)` on float32 data**: NumPy averages in float64; rankwise averages
   in float32 and casts. Pass a float32 `out` (or none) for identical results.
-* **`trimmed_mean`** is more accurate than SciPy's float32 summation (it sums in float64), so
-  it agrees with SciPy to the float32 rounding of SciPy's own error, not bit for bit.
+* **`trimmed_mean`** sums the kept values in sorted order in float64; SciPy sums them in the
+  order `np.partition` leaves them, in the data's dtype. For float32 rankwise is more accurate
+  (it agrees with SciPy to the float32 rounding of SciPy's own error); for float64 the two can
+  differ in the last bit. Neither is bit for bit.
 * **`nanargmin`/`nanargmax` on all-NaN slices** return −1 and warn; NumPy raises
   (`strict=True` restores that).
