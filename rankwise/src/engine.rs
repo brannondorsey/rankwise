@@ -222,9 +222,6 @@ pub(crate) struct Blk<'a, S: Vector> {
 /// Process one unit of work: one row, pixels `p0..p1`.
 #[inline(always)]
 pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, u: Unit) {
-    if job.rolling.is_some() {
-        return crate::rolling::run_unit::<A, S>(job, u);
-    }
     // Skewed reads get their own instantiation: a runtime branch in the block loop cost the
     // direct path 6%.
     if job.skew && !job.staged && !job.kern.streaming() {
