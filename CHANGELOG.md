@@ -8,8 +8,6 @@
   weights, its errors), 40–70× faster. Frame indices ride through the network as a payload, so
   ties sort stably on every ISA. Rust: `Op::WeightedQuantile`, `reduce_raw_weighted`,
   `weighted_quantile_frames`; C: `rw_weighted_quantile_f32`.
-* **Fix:** `quantile` (list of `q`) and `select_ranks` on 1-D input returned uninitialized
-  values: the outputs were written into temporary NumPy scalars.
 
 ## 0.1.0 (unreleased)
 
@@ -20,8 +18,8 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
   register-resident up to 32 frames, hybrid beyond; up to 512 frames.
 * **Statistics.** `select_ranks`; median and the 13 NumPy quantile methods, with NumPy's
   arithmetic for every form of `q` and for `out=`; min/max/ptp; argmin/argmax/argmedian and
-  `argselect`; trimmed mean, IQR and MAD with SciPy's definitions; NaN-aware variants for
-  floats and `nodata` for uint16.
+  `argselect`; trimmed mean, IQR and MAD with SciPy's definitions (`nan_policy` and
+  `keepdims` included); NaN-aware variants for floats and `nodata` for uint16.
 * **Rejection.** Sigma, MAD, median-sigma, winsorized and percentile clipping with low/high
   reject counts and an optional rejection map; astropy-identical decisions by default;
   Siril and PixInsight presets; per-frame normalization and weights in the same pass.
@@ -30,9 +28,11 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
   in-cache tile; 8–47 frames that start in the same cache set (power-of-two frame strides)
   read skewed, a few cache lines apart per group of 8; full blocks start vector-aligned
   however the frames are aligned.
-* **Bindings.** Rust crate (`ndarray` and `rayon` features), C ABI with a cbindgen header,
-  and an abi3 Python wheel that releases the GIL.
-* **Verification.** 1,092-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
+* **Bindings.** Rust crate (`ndarray` and `rayon` features), C ABI with a cbindgen header
+  (enum-valued arguments are validated: out-of-range values return `RW_ERR_PARAM`), and an
+  abi3 Python wheel that releases the GIL and runs on NumPy 1.24 and later (bit-identity is
+  checked against the pinned NumPy 2.5.3).
+* **Verification.** 1,175-test conformance suite against NumPy 2.5.3, SciPy 1.18.1 and
   astropy 8.0.2 on every ISA; exhaustive 0-1 principle tests; black-box checks against
   Siril 1.2.1; real-data checks on CCD calibration frames against astropy, ccdproc and Siril,
   real Landsat scenes and real NOAA GEFS forecasts.

@@ -77,7 +77,9 @@ typedef enum {
 
 // A rejection setup. Build one with `rw_clip_sigma` and friends, then adjust fields.
 typedef struct {
-  rw_rejection method;
+  // An `rw_rejection` value. (Integer fields, not enums, so that an out-of-range value from
+  // C is reported as `RW_ERR_PARAM` instead of being undefined behaviour in Rust.)
+  int32_t method;
   float low;
   float high;
   // Maximum passes; negative = until nothing changes.
@@ -86,7 +88,8 @@ typedef struct {
   int32_t center_mean;
   // 0 = float64 center/spread/bounds (astropy-identical), 1 = float32.
   int32_t fast_f32;
-  rw_combine combine;
+  // An `rw_combine` value (ignored by `RW_REJECT_MEDIAN_SIGMA`, which averages).
+  int32_t combine;
 } rw_clip;
 
 // Optional per-frame normalization (`x * scale[k] + offset[k]`) and weights. Any pointer may
@@ -144,23 +147,24 @@ rw_status rw_median_u16(const uint16_t *const *frames,
 
 // Quantiles of float32 frames into float32 outputs, with NumPy's arithmetic for a Python
 // float `q` (interpolation in float32): `np.quantile(stack, q, axis=0, method=...)`.
-// `outs` holds `nq` pointers of `npix` floats.
+// `outs` holds `nq` pointers of `npix` floats; `m` is an `rw_quantile_method` value.
 rw_status rw_quantile_f32(const float *const *frames,
                           size_t n,
                           size_t npix,
                           const double *q,
                           size_t nq,
-                          rw_quantile_method m,
+                          int32_t m,
                           float *const *outs);
 
 // Quantiles of float32 frames into float64 outputs, as `np.quantile(stack, [q...], axis=0)`
-// with a list of `q` (interpolation in float64). `nan_omit` != 0 gives `np.nanquantile`.
+// with a list of `q` (interpolation in float64). `nan_omit` != 0 gives `np.nanquantile`;
+// `m` is an `rw_quantile_method` value.
 rw_status rw_quantile_f32_f64(const float *const *frames,
                               size_t n,
                               size_t npix,
                               const double *q,
                               size_t nq,
-                              rw_quantile_method m,
+                              int32_t m,
                               int32_t nan_omit,
                               double *const *outs);
 
