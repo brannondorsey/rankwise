@@ -116,16 +116,21 @@ window stays fully sorted, every static epilogue (median, all quantile methods w
 counts, ranks, IQR, MAD, rejection) runs on it unchanged; when `step` makes sliding cost more
 than a sort, each window is sorted from scratch with the full network.
 
-Frames past either end and missing values (NaN, `nodata`; ±inf for rejection) enter as +inf
-and are not counted, so they sit at the top of the window like the missing values of the `nan*`
-reductions; outputs with fewer than `min_count` valid values are overwritten with the fill.
-This is xarray's `rolling` (NaN padding, `nan*` reductions, `min_periods`) by construction.
-Pixels go in tiles: each frame that enters is copied, the tile's run of pixels, into a ring of
-`w + 1` frames, so the frame axis streams sequentially whatever the input layout (xarray's
-`apply_ufunc` puts it innermost), and the windows of all the tile's blocks advance together.
+Frames past either end and missing values (NaN, `nodata`; ±inf too for rejection) enter as
++inf and are not counted, so they sit at the top of the window like the missing values of the
+`nan*` reductions. Outputs with fewer than `min_count` non-NaN values (xarray's count, ±inf
+included even for rejection) are overwritten with NaN (`nodata` in integer outputs). This is
+xarray's `rolling` (NaN padding, `nan*` reductions, `min_periods`) by construction; uint8 and
+uint16 data sort as float32, as xarray promotes them when it pads. Pixels go in tiles: each
+frame that enters is copied, the tile's run of pixels, into a ring of `w + 1` frames, and the
+windows of all the tile's blocks advance together. With the frame axis innermost (xarray's
+`apply_ufunc` layout) that copy reads one value per pixel, about 1.6× slower than frames
+outermost. Threads split pixels, not time, so long series over few pixels run on one thread.
 
 Grouped reductions need nothing new in the kernel: a group is a stack of frame pointers.
-`reduce_groups_raw` plans every group and runs all their units on one set of workers.
+`reduce_groups_raw` plans every group and runs all their units on one set of workers; the
+Python `groupby_reduce` calls the named function on each group's frames (views), so each group
+gets exactly that function's semantics.
 
 ## Memory layout, deep stacks and the power-of-two stride
 

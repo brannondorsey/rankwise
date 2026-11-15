@@ -86,11 +86,8 @@ fn reference(st: &[Vec<f32>], roll: &Rolling, op: &Op, isa: Isa) -> Vec<Vec<f64>
         let a = roll.start + (t * roll.step) as isize;
         let idx: Vec<usize> =
             (a..a + roll.window as isize).filter(|&f| f >= 0 && (f as usize) < st.len()).map(|f| f as usize).collect();
-        // rejection treats ±inf as missing too
-        let clip = matches!(op, Op::Clip(_));
-        let valid: Vec<usize> = (0..npix)
-            .map(|p| idx.iter().filter(|&&k| if clip { st[k][p].is_finite() } else { !st[k][p].is_nan() }).count())
-            .collect();
+        // min_count counts non-NaN values (±inf too, even for rejection), as xarray does
+        let valid: Vec<usize> = (0..npix).map(|p| idx.iter().filter(|&&k| !st[k][p].is_nan()).count()).collect();
         if idx.is_empty() {
             for j in 0..nout {
                 for p in 0..npix {

@@ -5,14 +5,14 @@
 * **Moving windows.** `rolling(a, window, func=...)` with xarray's `rolling` semantics (trailing
   or centered windows, `min_count` as `min_periods`, `step`): frames past either end and NaN are
   skipped, so results equal `np.nanmedian` (and friends) over the NaN-padded
-  `sliding_window_view`, value and dtype. Median, quantiles (13 methods), min, max, ptp, ranks,
+  `sliding_window_view`, value and dtype (uint8/uint16 promoted to float32, as xarray does). Median, quantiles (13 methods), min, max, ptp, ranks,
   IQR, MAD and every rejection method. Each lane keeps its window sorted and moves it with one
   branch-free delete-and-insert pass instead of a sort. Rust: `Rolling`, `reduce_rolling_raw`,
   `rolling_frames`; C: `rw_rolling_median_f32`, `rw_rolling_quantile_f32`.
 * **Grouped reductions.** `groupby_reduce(a, labels, func=...)` runs any reduction on each
-  group of frames (views, no copies) and returns `(result, groups)`; arg-variants report
-  indices along the original axis. Rust: `reduce_groups_raw` and `group_frames` run all groups
-  on one set of workers; C: `rw_group_median_f32`.
+  group of frames (views, no copies; one call per group) and returns `(result, groups)`;
+  arg-variants report indices along the original axis. Rust: `reduce_groups_raw` and
+  `group_frames` run all groups on one set of workers; C: `rw_group_median_f32`.
 * **Fix:** `mad` of a slice whose median is infinite (so a deviation is `inf − inf`, NaN) could
   give inf; SciPy gives NaN.
 

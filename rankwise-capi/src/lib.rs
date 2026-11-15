@@ -602,6 +602,10 @@ pub unsafe extern "C" fn rw_group_median_f32(
         if labels.is_null() || out.is_null() {
             return rw_status::RW_ERR_NULL;
         }
+        // every group needs a frame: check before allocating ngroups lists
+        if ngroups == 0 || ngroups > n {
+            return rw_status::RW_ERR_DEPTH;
+        }
         let lab = std::slice::from_raw_parts(labels, n);
         let mut groups = vec![Vec::new(); ngroups];
         for (k, &g) in lab.iter().enumerate() {
@@ -894,6 +898,9 @@ mod tests {
         assert_eq!(s, rw_status::RW_OK);
         assert_eq!(g, vec![3.0, 3.0, 3.0, 2.0, 2.0, 2.0]);
         let s = unsafe { rw_group_median_f32(ptrs.as_ptr(), 6, 3, labels.as_ptr(), 3, 0, g.as_mut_ptr()) };
+        assert_eq!(s, rw_status::RW_ERR_DEPTH);
+        // an absurd group count is refused before anything is allocated
+        let s = unsafe { rw_group_median_f32(ptrs.as_ptr(), 6, 3, labels.as_ptr(), 1 << 40, 0, g.as_mut_ptr()) };
         assert_eq!(s, rw_status::RW_ERR_DEPTH);
     }
 

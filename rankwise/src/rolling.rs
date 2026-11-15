@@ -124,6 +124,10 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
     let ring_e = ring.as_mut_ptr() as *mut S::E;
     let mut win: Vec<S> = vec![S::splat(S::E::MAX); nb_max * w];
     let mut cnt_v: Vec<S> = vec![S::splat(S::E::ZERO); nb_max];
+    // Values that count toward min_count: the non-NaN ones, as xarray counts them. Only
+    // rejection (which also treats ±inf as missing) needs a count of its own.
+    let nonfinite = job.missing == crate::engine::Missing::NonFinite;
+    let mut gcnt_v: Vec<S> = vec![S::splat(S::E::ZERO); if nonfinite { nb_max } else { 0 }];
     let mut scratch_v: Vec<u8> = vec![0u8; 3 * w * 64 + 64];
     let scratch = {
         let p = scratch_v.as_mut_ptr();
@@ -142,6 +146,7 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
     // Re-sorting a window costs about 3 operations per comparator; moving it by one frame
     // about 6 per rank.
     let resort = roll.step * 6 * w > 3 * job.net_full.comparators() + 2 * w;
+    // NaN in float outputs; nodata (or 0) in integer ones
     let fill = fill_value(job);
     // outputs that carry values (a clip's reject counts stay as computed)
     let value_outs = if matches!(job.kern, Kern::Clip(_)) { 1 } else { job.outs.len() };
@@ -151,7 +156,7 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
         ($f:expr, $b:expr) => {{
             let f: isize = $f;
             if f < 0 || f >= nf {
-                (big, S::mask_none())
+                (big, S::mask_none(), S::mask_none())
             } else {
                 let f = f as usize;
                 let mut x = S::load(ring_e.add((f % (w + 1)) * ts + $b * l));
@@ -159,7 +164,8 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
                     x = norm::<S>(x, *s.get_unchecked(f), *o.get_unchecked(f));
                 }
                 let mm = miss_mask(x, job.missing);
-                (S::select(mm, big, x), mm.not())
+                let counted = if nonfinite { x.nan_mask().not() } else { mm.not() };
+                (S::select(mm, big, x), mm.not(), counted)
             }
         }};
     }
@@ -191,14 +197,18 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
                 }
                 for b in 0..nb {
                     let wb = win.as_mut_ptr().add(b * w);
-                    let mut m = zero;
+                    let (mut m, mut g) = (zero, zero);
                     for k in 0..w {
-                        let (x, ok) = value!(first + k as isize, b);
+                        let (x, ok, counted) = value!(first + k as isize, b);
                         *wb.add(k) = x;
                         m = S::select(ok, m.add(one), m);
+                        g = S::select(counted, g.add(one), g);
                     }
                     S::apply_net(wb, &job.net_full);
                     *cnt_v.as_mut_ptr().add(b) = m;
+                    if nonfinite {
+                        *gcnt_v.as_mut_ptr().add(b) = g;
+                    }
                 }
             } else {
                 // slide: delete the frame that leaves, insert the one that enters
@@ -207,8 +217,8 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
                     need!(fin);
                     let fout = lo + d;
                     for b in 0..nb {
-                        let (xi, oki) = value!(fin, b);
-                        let (xo, oko) = value!(fout, b);
+                        let (xi, oki, gi) = value!(fin, b);
+                        let (xo, oko, go) = value!(fout, b);
                         let wb = win.as_mut_ptr().add(b * w);
                         // e[j] = min(max(d[j-1], xi), d[j]) with d the window without xo:
                         // d[j] = s[j] if s[j] < xo else s[j + 1]
@@ -226,6 +236,13 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
                         m = S::select(oki, m.add(one), m);
                         m = S::select(oko, m.sub(one), m);
                         *c = m;
+                        if nonfinite {
+                            let c = gcnt_v.as_mut_ptr().add(b);
+                            let mut g = *c;
+                            g = S::select(gi, g.add(one), g);
+                            g = S::select(go, g.sub(one), g);
+                            *c = g;
+                        }
                     }
                 }
             }
@@ -257,10 +274,12 @@ pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job
                 } else {
                     epilogue::<A, S>(job, &blk);
                 }
-                let gated = m.lt(mcv).bits() & if lanes >= 64 { u64::MAX } else { (1u64 << lanes) - 1 };
+                let g = if nonfinite { *gcnt_v.as_ptr().add(b) } else { m };
+                let gated = g.lt(mcv).bits() & if lanes >= 64 { u64::MAX } else { (1u64 << lanes) - 1 };
                 if gated != 0 {
                     for o in outs.iter().take(value_outs) {
-                        put_lanes(o, p, fill, gated, lanes);
+                        let v = if o.dtype.is_float() { f64::NAN } else { fill };
+                        put_lanes(o, p, v, gated, lanes);
                     }
                 }
             }
@@ -312,7 +331,7 @@ unsafe fn window_minmax<S: Vector>(job: &Job, blk: &Blk<S>) {
     };
     let mut vals = [0f64; MAXL];
     lanes_f64(r, &mut vals);
-    let f = fill_value(job);
+    let f = if blk.outs[0].dtype.is_float() { f64::NAN } else { fill_value(job) };
     for i in 0..blk.lanes {
         if ms[i] == 0 {
             vals[i] = f;

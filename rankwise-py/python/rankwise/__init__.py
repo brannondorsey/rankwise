@@ -735,12 +735,19 @@ _ROLLING = ("median", "quantile", "percentile", "min", "max", "ptp", "select_ran
             "sigma_clip_mean", "clip_combine")
 
 
-def _rolling_spec(func, s: _Stack, nodata, kw):
+class _AsDtype:
+    """A stand-in stack for dtype rules: ``dtype`` is the data's dtype after promotion."""
+
+    def __init__(self, dtype):
+        self.dtype = dtype
+
+
+def _rolling_spec(func, s, nodata, kw):
     """(op, output dtype, leading output shape) of a moving-window ``func``, with the dtype
-    the NaN-skipping NumPy function gives."""
+    the NaN-skipping NumPy function gives on the (promoted) data ``s.dtype``."""
     float_dt = np.dtype(np.float32) if s.dtype == "float32" else np.dtype(np.float64)
-    # integer outputs need a fill value for short windows: nodata, else float64 (as xarray)
-    value_dt = np.dtype(s.dtype) if (s.dtype != "uint16" or nodata is not None) else np.dtype(np.float64)
+    # with nodata, integer outputs keep the input dtype and get nodata as the fill
+    value_dt = np.dtype(s.dtype)
 
     def take(*names):
         out = {k: kw.pop(k) for k in names if k in kw}
@@ -766,8 +773,6 @@ def _rolling_spec(func, s: _Stack, nodata, kw):
                              else "Quantiles must be in the range [0, 1]")
         form = _q_form(q, qa, method, weak, func == "percentile")
         dt = _q_dtype(s, form, method)
-        if dt.kind != "f" and nodata is None:
-            dt = np.dtype(np.float64)
         op = {"kind": "quantile", "q": [float(x) for x in flat], "method": method, "form": form,
               "out_rounding": "cast_once"}
         return op, dt, qa.shape
@@ -823,7 +828,9 @@ def rolling(a, window, axis=0, *, func="median", min_count=None, center=False, s
     sorted with missing values last), ``"iqr"`` (``rng=``, ``scale=``), ``"mad"``
     (``scale=``), ``"sigma_clip_mean"`` / ``"clip_combine"`` (their rejection arguments). The
     window stays sorted as it moves, so each step costs a pass over the window rather than a
-    sort. Integer input gives float64 for value outputs unless ``nodata`` supplies the fill.
+    sort. uint8/uint16 input is promoted to float32 as xarray pads it (exact; results then
+    follow float32 rules), unless ``nodata`` marks its missing values: then value outputs keep
+    the input dtype with ``nodata`` as the fill, as in the other rankwise functions.
     """
     s = _prep(a, axis)
     _check_nodata(s, nodata)
@@ -838,7 +845,10 @@ def rolling(a, window, axis=0, *, func="median", min_count=None, center=False, s
         raise ValueError(f"min_count must be in 1..{window}, got {min_count}")
     kw = dict(kwargs)
     ranks = kw.get("ranks")
-    op, dt, lead = _rolling_spec(func, s, nodata, kw)
+    # xarray pads 1- and 2-byte integers with NaN as float32; rankwise sorts them as float32
+    # (an identity normalization, exact for 16-bit values) instead of copying the input
+    promote = s.dtype == "uint16" and nodata is None
+    op, dt, lead = _rolling_spec(func, _AsDtype("float32") if promote else s, nodata, kw)
     if op["kind"] == "select":
         r = np.asarray(ranks)
         flat = [int(k) + (window if k < 0 else 0) for k in r.ravel()]
@@ -857,7 +867,9 @@ def rolling(a, window, axis=0, *, func="median", min_count=None, center=False, s
     outs, tstr = [], []
     for j in range(nout):
         oj = r2[j]
-        w0 = oj[(slice(None),) * ax + (0,)] if count else oj
+        # window 0's output, a view even for 1-D input (oj[0] would be a scalar copy, and the
+        # kernel would write every window from that temporary's address)
+        w0 = oj[(slice(None),) * ax + (0, Ellipsis)] if count else oj
         outs.append(_out_entry(w0, len(s.shape)))
         tstr.append(oj.strides[ax])
     if op["kind"] == "clip":
@@ -865,7 +877,8 @@ def rolling(a, window, axis=0, *, func="median", min_count=None, center=False, s
         tstr += [0, 0]
     if count:
         _rw.rolling(op, s.dtype, s.frames, list(s.shape), list(s.strides), outs, tstr,
-                    _opts(omit=True, nodata=nodata, threads=threads, isa=isa), window, start, step, count, min_count)
+                    _opts(omit=True, nodata=nodata, threads=threads, isa=isa, offset=[0.0] * s.n if promote else None),
+                    window, start, step, count, min_count)
     if not lead:
         res = res.reshape(tuple(full))
     if res.dtype != dt:
@@ -873,7 +886,7 @@ def rolling(a, window, axis=0, *, func="median", min_count=None, center=False, s
     return _cast_value_back(res, s, res.dtype.kind != "f")
 
 
-_ARGS = ("argmin", "argmax", "nanargmin", "nanargmax", "argmedian", "nanargmedian")
+_ARGS = ("argmin", "argmax", "nanargmin", "nanargmax", "argmedian", "nanargmedian", "argselect")
 
 
 def groupby_reduce(a, by, axis=0, *, func="median", **kwargs):
@@ -887,10 +900,19 @@ def groupby_reduce(a, by, axis=0, *, func="median", **kwargs):
 
     Groups are views of ``a`` (no copies); each runs as one call with the GIL released.
     """
-    fn = globals()[func] if isinstance(func, str) else func
-    name = func if isinstance(func, str) else getattr(func, "__name__", "")
-    if isinstance(func, str) and (func not in __all__ or func in _SKIP_GROUP):
-        raise ValueError(f"{func!r} is not a rankwise reduction")
+    reductions = {n: globals()[n] for n in __all__ if n not in _SKIP_GROUP}
+    if isinstance(func, str):
+        if func not in reductions:
+            raise ValueError(f"{func!r} is not a rankwise reduction")
+        name, fn = func, reductions[func]
+    else:
+        # a frame list means axis 0 only to rankwise's functions
+        name = next((n for n, f in reductions.items() if f is func), None)
+        if name is None:
+            raise TypeError("func must be a rankwise reduction (a name or the function)")
+        fn = func
+    if "out" in kwargs:
+        raise TypeError("groupby_reduce allocates its result; out= is not supported")
     labels = np.asarray(by)
     if _is_frame_list(a):
         if axis not in (None, 0):
