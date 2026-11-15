@@ -103,7 +103,8 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 ## 5. v0.2 backlog (from the scope doc; file as `v0.2` issues)
 
 * Rolling windows and grouped reductions.
-* Weighted median and quantiles.
+* ~~Weighted median and quantiles.~~ Done: NumPy's `weights=` (`method="inverted_cdf"`),
+  frame indices carried through the network (`wquant.rs`).
 * More than 512 frames (`MAX_FRAMES` in `lib.rs`; the hybrid network and tile sizes assume it).
 * Linear-fit clipping and generalized ESD. These break v0.1's "kept is exactly
   `v_lo <= x <= v_hi`" rescan trick, so frame identity has to ride through the network.

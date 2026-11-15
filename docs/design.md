@@ -98,12 +98,30 @@ finite value, exactly as `astropy.stats.sigma_clip(..., axis=...)` builds its ma
 
 Weighted means and the rejection map re-scan the unsorted block, still in L1: because every
 v0.1 rejection decides by value, "kept" is exactly `v_lo <= x <= v_hi`, so frame identity
-never has to ride through the network.
+does not have to ride through the network (weighted quantiles, below, need it to).
 
 Precision: center, spread and bounds run in float64 by default, as astropy's C code does.
 `precision="f32"` runs them in float32: about 15% faster on this machine, and decisions can
 differ from astropy where a value sits within rounding of a bound (1 pixel in 4.2 M in the
 benchmark).
+
+## Weighted quantiles
+
+NumPy's weighted quantile (`method="inverted_cdf"`) needs, per pixel, the weights in sorted
+order, so here frame identity does ride through the network (`wquant.rs`): every value carries
+its frame index in a second register of the same type, and each compare-exchange orders
+`(value, index)` pairs, one compare for "less", one for "equal", one on the indices and four
+blends. Keys are then unique, so any correct network gives one order: a stable sort, the same
+on every ISA, whichever network the ISA runs. Missing values of a `nan*` call carry index
+`k + n`, which sorts them after every valid value (a real +inf included) and gives them no
+weight.
+
+Per lane the epilogue then sums the weights in that order one by one in float64 (the lanes'
+add chains side by side, rank-major), and for each `q` finds the first rank whose
+`cumsum / total`, cast to `q`'s dtype, reaches `q`. A division per rank would dominate, so
+the search counts the sums below `q · total · (1 − 2⁻²⁰)` with vector compares (none of those
+can round up to `q`) and divides only from there, usually once. A weight map (one weight per
+value) is staged through the tile with the data, as float64, so it adds no streams.
 
 ## Memory layout, deep stacks and the power-of-two stride
 

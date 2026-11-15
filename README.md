@@ -40,6 +40,8 @@ lo, hi = rw.quantile(stack, [0.1, 0.9], axis=0)             # identical to np.qu
 trim = rw.trimmed_mean(stack, 0.1, axis=0)                  # scipy.stats.trim_mean
 spread = rw.iqr(stack, axis=0)                              # scipy.stats.iqr
 k = rw.select_ranks(stack, [0, 3, 36], axis=0)              # any ranks, one pass
+wmed = rw.weighted_median(stack, quality, axis=0)           # = np.quantile(..., 0.5, weights=quality,
+                                                            #   method="inverted_cdf")
 
 frames = [np.load(f, mmap_mode="r") for f in sorted(paths)] # frames in separate buffers work too
 rw.sigma_clip_mean(frames, sigma=(3, 3), out=out)
@@ -57,6 +59,7 @@ across at most that many workers, capped by the visible CPU count or `RAYON_NUM_
 |---|---|
 | `median`, `nanmedian` | `np.median`, `np.nanmedian` |
 | `quantile`, `nanquantile`, `percentile`, `nanpercentile` (13 methods) | NumPy, including how `q` is passed and `out=` |
+| `weights=` on those (`method="inverted_cdf"`), `weighted_median` | NumPy's weighted quantiles: one weight per frame or per value |
 | `min`, `max`, `nanmin`, `nanmax`, `ptp` | NumPy |
 | `argmin`, `argmax`, `nanargmin`, `nanargmax` | NumPy (first occurrence) |
 | `argmedian`, `nanargmedian`, `argselect` | `np.argsort(kind="stable")` at the rank: which frame supplied the value |
@@ -243,8 +246,7 @@ Rust 1.89 or later (AVX-512 intrinsics are stable from 1.89); no nightly feature
 ## Scope of v0.1
 
 Up to 512 frames per call (stream row strips for more pixels); float32, float64 and uint16
-(uint8 widened). Not yet: rolling windows and grouped reductions, weighted quantiles, stacks
-deeper than 512, linear-fit clipping and generalized ESD, R and Julia bindings. rankwise is a
+(uint8 widened). Not yet: rolling windows and grouped reductions, stacks deeper than 512, linear-fit clipping and generalized ESD, R and Julia bindings. rankwise is a
 kernel, not a stacker: no I/O, registration or calibration.
 
 ## License

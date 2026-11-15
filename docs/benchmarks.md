@@ -150,3 +150,22 @@ A contiguous stack of 2^k-byte frames puts every frame's current cache line in t
 | 47 | skewed | 30.0 | 25.0 | 1.20× | 91.8 | 89.6 | 1.02× |
 | 63 | staged | 46.5 | 38.5 | 1.21× | 132.2 | 125.3 | 1.06× |
 
+## Weighted quantiles: p10 / p50 / p90 with `weights=`
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="img/bench_weighted_dark.png"><img alt="Weighted quantile benchmark" src="img/bench_weighted_light.png"></picture>
+
+| Case | Tool | Seconds | ns / pixel | Identical to NumPy |
+|---|---|---|---|---|
+| 31 × 512 × 512, per frame | rankwise · AVX-512 | 0.0207 | 79.1 | yes |
+| 31 × 512 × 512, per frame | rankwise · AVX2 | 0.0292 | 111.4 | yes |
+| 31 × 512 × 512, per frame | rankwise · scalar | 0.281 | 1072.9 | yes |
+| 31 × 512 × 512, per frame | NumPy 2.5 (weights=) | 1.53 | 5820.6 | yes |
+| 31 × 512 × 512, per frame | rankwise unweighted | 0.00328 | 12.5 | — |
+| 31 × 256 × 256, per value | rankwise · AVX-512 | 0.00797 | 121.6 | yes |
+| 31 × 256 × 256, per value | rankwise · AVX2 | 0.011 | 168.2 | yes |
+| 31 × 256 × 256, per value | rankwise · scalar | 0.0734 | 1120.1 | yes |
+| 31 × 256 × 256, per value | NumPy 2.5 (weights=) | 0.36 | 5499.4 | yes |
+| 31 × 256 × 256, per value | rankwise unweighted | 0.00087 | 13.3 | — |
+
+`method="inverted_cdf"` (the only weighted method NumPy has), float32 data, float64 weights. "rankwise unweighted" is the same call without weights, for scale.
+

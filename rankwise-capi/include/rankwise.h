@@ -164,6 +164,23 @@ rw_status rw_quantile_f32_f64(const float *const *frames,
                               int32_t nan_omit,
                               double *const *outs);
 
+// Weighted quantiles of float32 frames into float32 outputs:
+// `np.quantile(stack, [q...], axis=0, method="inverted_cdf", weights=w)` (`np.nanquantile`
+// when `nan_omit` != 0). The weighted median is `q = 0.5`.
+//
+// Give exactly one of `weights` (`n` doubles, one per frame) and `weight_frames` (`n`
+// pointers to `npix` floats, one weight per value). Weights must be non-negative; a pixel
+// whose weights total zero, inf or NaN returns `RW_ERR_PARAM` after every output is written.
+rw_status rw_weighted_quantile_f32(const float *const *frames,
+                                   size_t n,
+                                   size_t npix,
+                                   const double *weights,
+                                   const float *const *weight_frames,
+                                   const double *q,
+                                   size_t nq,
+                                   int32_t nan_omit,
+                                   float *const *outs);
+
 // `np.sort(stack, axis=0)[ranks]` for float32 frames, one output per rank (NaN sorts last).
 rw_status rw_select_ranks_f32(const float *const *frames,
                               size_t n,

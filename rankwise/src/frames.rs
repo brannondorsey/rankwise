@@ -2,7 +2,7 @@
 
 use crate::layout::{RawMask, RawOut, RawStack};
 use crate::plan::{reduce_raw, Options};
-use crate::spec::{Clip, DType, NanPolicy, Op, QForm, QuantileSpec};
+use crate::spec::{Clip, DType, NanPolicy, Op, QForm, QuantileSpec, WeightedQuantileSpec};
 use crate::{Error, Result};
 
 /// Input element types: `f32`, `f64`, `u16`.
@@ -142,6 +142,42 @@ pub fn quantile_frames(frames: &[&[f32]], q: &[f64], outs: &mut [&mut [f64]]) ->
     let op = Op::Quantile(QuantileSpec { form: QForm::F64, ..QuantileSpec::new(q.to_vec()) });
     let mut o: Vec<Out> = outs.iter_mut().map(|s| Out::F64(s)).collect();
     reduce_frames(frames, &op, &mut o, None, &Options::default())
+}
+
+/// `np.quantile(stack, q, axis=0, method="inverted_cdf", weights=weights)` with `q` a list of
+/// floats and one weight per frame: each output is the first value (in a stable sort) whose
+/// cumulative weight reaches `q` of the total. Outputs are in the input dtype.
+///
+/// ```
+/// let frames: Vec<Vec<f32>> = (0..4).map(|k| vec![k as f32; 3]).collect();
+/// let views: Vec<&[f32]> = frames.iter().map(|f| f.as_slice()).collect();
+/// let mut out = vec![0f32; 3];
+/// // frame 3 carries most of the weight
+/// rankwise::weighted_quantile_frames(&views, &[1.0, 1.0, 1.0, 5.0], &[0.5], &mut [&mut out]).unwrap();
+/// assert_eq!(out[0], 3.0);
+/// ```
+pub fn weighted_quantile_frames<T: Sample>(
+    frames: &[&[T]],
+    weights: &[f64],
+    q: &[f64],
+    outs: &mut [&mut [T]],
+) -> Result<()>
+where
+    for<'a> Out<'a>: From<&'a mut [T]>,
+{
+    let op = Op::WeightedQuantile(WeightedQuantileSpec::new(q.to_vec()));
+    let opts = Options { weights: Some(weights.to_vec()), ..Options::default() };
+    let mut o: Vec<Out> = outs.iter_mut().map(|s| Out::from(&mut **s)).collect();
+    reduce_frames(frames, &op, &mut o, None, &opts)
+}
+
+/// The weighted median with one weight per frame: the first value whose cumulative weight
+/// reaches half the total, `np.quantile(stack, 0.5, axis=0, method="inverted_cdf", weights=w)`.
+pub fn weighted_median_frames<T: Sample>(frames: &[&[T]], weights: &[f64], out: &mut [T]) -> Result<()>
+where
+    for<'a> Out<'a>: From<&'a mut [T]>,
+{
+    weighted_quantile_frames(frames, weights, &[0.5], &mut [out])
 }
 
 /// `np.sort(stack, axis=0)[ranks]` in one pass, keeping only the comparators those ranks need.
