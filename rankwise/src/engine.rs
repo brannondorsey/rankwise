@@ -34,7 +34,7 @@ pub(crate) enum Kern {
     Quantile { tabs: Vec<Vec<QIdx>>, lerp: Lerp, omit: bool },
     Iqr { tlo: Vec<(usize, usize, f64)>, thi: Vec<(usize, usize, f64)>, sp: ScipyLinear, scale: f64, omit: bool },
     Mad { scale: f64, omit: bool },
-    TrimMean { lo: usize, hi: usize },
+    TrimMean { lo: usize, hi: usize, p: f64, omit: bool },
     MinMax { which: u8, omit: bool },
     Arg { max: bool, omit: bool },
     ArgRank { rank: ArgRank, omit: bool },
@@ -56,8 +56,11 @@ impl Kern {
     /// than the fixed-rank one.
     pub fn per_lane_ranks(&self) -> bool {
         match self {
-            Kern::Select { .. } | Kern::TrimMean { .. } => false,
-            Kern::Median { omit } | Kern::Quantile { omit, .. } | Kern::Iqr { omit, .. } => *omit,
+            Kern::Select { .. } => false,
+            Kern::Median { omit }
+            | Kern::Quantile { omit, .. }
+            | Kern::Iqr { omit, .. }
+            | Kern::TrimMean { omit, .. } => *omit,
             Kern::Mad { .. } => true,
             Kern::ArgRank { rank, omit } => *omit || matches!(rank, ArgRank::Median),
             Kern::Clip(_) => true,
@@ -765,7 +768,26 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
             }
             put(&blk.outs[0], blk.p, &vals, lanes);
         }
-        Kern::TrimMean { lo, hi } => {
+        Kern::TrimMean { p, omit, .. } if *omit && blk.any_missing => {
+            // scipy.stats.trim_mean(..., nan_policy="omit"): each lane trims int(p * m) of its
+            // m valid values from each end (sorted first; missing values sort last).
+            for i in 0..lanes {
+                let m = ms[i];
+                let l = (p * m as f64) as usize;
+                let h = m.saturating_sub(l);
+                vals[i] = if h > l {
+                    let mut acc = 0f64;
+                    for k in l..h {
+                        acc += at(blk.buf, k, i).to_f64();
+                    }
+                    acc / (h - l) as f64
+                } else {
+                    f64::NAN
+                };
+            }
+            put(&blk.outs[0], blk.p, &vals, lanes);
+        }
+        Kern::TrimMean { lo, hi, .. } => {
             let mut acc = [0f64; MAXL];
             let mut tmp = [0f64; MAXL];
             for k in *lo..*hi {
@@ -779,7 +801,8 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
                 vals[i] = acc[i] / c;
             }
             // scipy.stats.trim_mean propagates NaN (nan_policy="propagate"), even when the NaN
-            // would fall in the trimmed tail.
+            // would fall in the trimmed tail. (Under omit, blocks with missing values take the
+            // per-lane arm above.)
             if blk.any_missing || hi == lo {
                 for i in 0..lanes {
                     if ms[i] < n || hi == lo {

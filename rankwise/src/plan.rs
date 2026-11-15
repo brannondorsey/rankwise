@@ -8,7 +8,7 @@ use crate::net;
 use crate::netgen;
 use crate::quantile::{quantile_index, Lerp, QIdx, ScipyLinear};
 use crate::simd::{resolve_isa, Isa};
-use crate::spec::{ArgRank, Combine, DType, NanPolicy, Op, Precision};
+use crate::spec::{ArgRank, Combine, DType, NanPolicy, Op, Precision, Rejection};
 use crate::{Error, Result, MAX_FRAMES};
 
 /// Stacks at least this deep read through the staging tile: more concurrent frame streams
@@ -235,7 +235,7 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
             }
             let hi = n - lo;
             fast_needed = Some((lo..hi).collect());
-            Kern::TrimMean { lo, hi }
+            Kern::TrimMean { lo, hi, p: *p, omit }
         }
         Op::Min => Kern::MinMax { which: 0, omit },
         Op::Max => Kern::MinMax { which: 1, omit },
@@ -256,6 +256,16 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
         }
         Op::Clip(c) => {
             c.validate()?;
+            if matches!(c.rejection, Rejection::MedianSigma { .. }) {
+                // Its result is the mean of the stack with rejected values replaced by the
+                // median; neither another combine nor weights is implemented for that stack.
+                if c.combine != Combine::Mean {
+                    return Err(Error::Param("median sigma clipping combines with the mean only".into()));
+                }
+                if opts.weights.is_some() {
+                    return Err(Error::Param("weights are not supported with median sigma clipping".into()));
+                }
+            }
             if c.precision == Precision::F32 && sdt != DType::F32 {
                 return Err(Error::Param("f32 precision needs float32 input".into()));
             }

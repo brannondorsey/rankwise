@@ -508,7 +508,7 @@ pub enum Op {
     ArgMax,
     /// Which frame supplied an order statistic (`np.argsort(kind="stable")` at that rank).
     ArgRank(ArgRank),
-    /// `scipy.stats.trim_mean(a, proportion)`.
+    /// `scipy.stats.trim_mean(a, proportion)`; [`NanPolicy::Omit`] gives `nan_policy="omit"`.
     TrimMean(f64),
     /// `scipy.stats.iqr(a, rng=(lo, hi), scale=scale)`; `lo`/`hi` in percent.
     Iqr { lo: f64, hi: f64, scale: f64 },

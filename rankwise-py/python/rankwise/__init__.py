@@ -45,6 +45,7 @@ _OUT_OK = {
     np.dtype(np.uint8): "uint8",
 }
 _ALL_NAN = "All-NaN slice encountered"
+_AxisError = getattr(np, "exceptions", np).AxisError  # np.exceptions is NumPy 1.25+
 
 
 # --------------------------------------------------------------------------- plumbing
@@ -84,7 +85,7 @@ def _prep(a, axis) -> _Stack:
     s = _Stack()
     if _is_frame_list(a):
         if axis not in (None, 0):
-            raise np.exceptions.AxisError(f"a list of frames is reduced along axis 0, got axis={axis}")
+            raise _AxisError(f"a list of frames is reduced along axis 0, got axis={axis}")
         frames = [np.asarray(f) for f in a]
         shape, dt = frames[0].shape, frames[0].dtype
         for i, f in enumerate(frames):
@@ -121,7 +122,7 @@ def _prep(a, axis) -> _Stack:
         axis = axis[0]
     axis = operator.index(axis)
     if not -arr.ndim <= axis < arr.ndim:
-        raise np.exceptions.AxisError(axis, arr.ndim)
+        raise _AxisError(axis, arr.ndim)
     axis %= arr.ndim
     s.orig_dtype = arr.dtype
     arr = _native(arr)
@@ -266,11 +267,19 @@ def nanmedian(a, axis=None, out=None, overwrite_input=False, keepdims=False, *, 
     """``np.nanmedian`` along one axis: NaN is ignored; an all-NaN slice gives NaN and a
     ``RuntimeWarning``."""
     if isinstance(a, np.ndarray) and a.ndim == 1 and out is None and not keepdims and a.dtype.kind == "f":
-        # NumPy's 1-D path compresses out the NaNs and takes a plain median
+        # NumPy's 1-D path compresses out the NaNs and takes a plain median. Validate what
+        # the general path would (axis, nodata, dtype) before taking it.
+        if axis is not None:
+            ax = axis[0] if isinstance(axis, (tuple, list)) and len(axis) == 1 else axis
+            if not -1 <= operator.index(ax) < 1:
+                raise _AxisError(ax, 1)
+        if nodata is not None:
+            raise TypeError("nodata applies to integer input; float data marks missing values with NaN")
+        a = _native(a)
         x = a[~np.isnan(a)]
         if x.size == 0:
             warnings.warn(_ALL_NAN, RuntimeWarning, stacklevel=2)
-            return _native(a).dtype.type(np.nan) if a.dtype in _NATIVE else np.float64(np.nan)
+            return a.dtype.type(np.nan)
         return median(x, threads=threads, isa=isa)
     return _simple({"kind": "median"}, a, axis, out, keepdims, _float_result,
                    omit=True, nodata=nodata, threads=threads, isa=isa, warn_nan=True)
@@ -284,6 +293,7 @@ _METHODS = {
     "hazen", "weibull", "linear", "median_unbiased", "normal_unbiased", "lower", "higher",
     "midpoint", "nearest",
 }
+_INT_INDEX = {"weibull", "averaged_inverted_cdf", "interpolated_inverted_cdf"}
 
 
 def _q_form(q, qa: np.ndarray, method: str, weak: bool, percent: bool):
@@ -316,8 +326,8 @@ def _quantile_impl(a, q, axis, out, method, keepdims, *, omit, percent, nodata, 
         raise ValueError(f"{method!r} is not a valid method. Use one of: {sorted(_METHODS)}")
     weak = type(q) in (int, float)
     if percent:
-        qa = np.true_divide(q, 100, out=...)
-        qa = np.asanyarray(qa)
+        # np.percentile's `true_divide(q, 100, out=...)`; out=... needs NumPy 2.3
+        qa = np.asanyarray(np.true_divide(q, 100))
     else:
         qa = np.asanyarray(q)
     if qa.dtype.kind == "c":
@@ -345,13 +355,22 @@ def _quantile_impl(a, q, axis, out, method, keepdims, *, omit, percent, nodata, 
     if out is not None and not copy:
         op["out_dtype"] = _OUT_OK[work.dtype]
     work2 = work.reshape((flat.size,) + tuple(s.shape))
-    outs = [work2[j] for j in range(flat.size)]
-    _run(op, s, outs, _opts(omit=omit or nodata is not None, nodata=nodata, threads=threads, isa=isa))
+    # work2[j, ...] is a view even for 1-D input (work2[j] would be a scalar copy, and the
+    # kernel would write into a temporary)
+    outs = [work2[j, ...] for j in range(flat.size)]
+    if flat.size:
+        _run(op, s, outs, _opts(omit=omit or nodata is not None, nodata=nodata, threads=threads, isa=isa))
     if omit and work.dtype.kind == "f" and np.isnan(work).any():
         warnings.warn(_ALL_NAN, RuntimeWarning, stacklevel=3)
     res = _finish(work, final, copy, keepdims, s.axis, lead_len=qa.ndim, out_given=out is not None)
     if out is None and (method in _DISCRETE or (form == "weak_int" and method == "linear")):
         res = _cast_value_back(res, s, True)
+    elif out is None and qa.dtype.kind in "iub" and not weak and method in _INT_INDEX:
+        # integer q: these methods' virtual index stays integer (int64 for bool
+        # q) and NumPy's lerp returns its result type with the data; q is 0 or 1, so the
+        # values are order statistics either way
+        rt = np.result_type(s.orig_dtype, np.int64 if qa.dtype.kind == "b" else qa.dtype)
+        res = res.astype(rt) if isinstance(res, np.ndarray) else rt.type(res)
     return res
 
 
@@ -497,7 +516,7 @@ def argselect(a, ranks, axis=None, *, threads=1, isa=None):
     s = _prep(a, axis)  # once: it copies frame lists that need widening, swapping or realigning
     n = s.n
     flat = [int(k) + (n if k < 0 else 0) for k in r.ravel()]
-    if any(k < 0 for k in flat):
+    if any(not 0 <= k < n for k in flat):
         raise ValueError(f"rank out of range for {n} frames")
     res = [_arg("argrank", a, axis, None, False, omit=False, strict=False, nodata=None, threads=threads,
                 isa=isa, extra={"rank": k}, s=s) for k in flat]
@@ -510,25 +529,31 @@ def select_ranks(a, ranks, axis=None, out=None, *, threads=1, isa=None):
     """``np.sort(a, axis)[ranks]`` in one pass. The network keeps only the comparators the
     requested ranks need. NaN sorts last."""
     r = np.asarray(ranks)
-    if r.dtype.kind not in "iu":
+    if r.dtype.kind not in "iu" and r.size:  # [] arrives as float64
         raise TypeError("ranks must be integers")
     s = _prep(a, axis)
     flat = [int(k) + (s.n if k < 0 else 0) for k in r.ravel()]
+    if any(not 0 <= k < s.n for k in flat):
+        raise ValueError(f"rank out of range for {s.n} frames")
     work, final, copy = _prepare_out(out, s.shape, np.dtype(s.dtype), False, s.axis, lead=r.shape)
     w2 = work.reshape((len(flat),) + tuple(s.shape))
-    _run({"kind": "select", "ranks": flat}, s, [w2[j] for j in range(len(flat))], _opts(threads=threads, isa=isa))
+    if flat:  # w2[j, ...]: a view even for 1-D input
+        _run({"kind": "select", "ranks": flat}, s, [w2[j, ...] for j in range(len(flat))],
+             _opts(threads=threads, isa=isa))
     res = _finish(work, final, copy, False, s.axis, lead_len=r.ndim, out_given=out is not None)
     return res if out is not None else _cast_value_back(res, s, True)
 
 
 # --------------------------------------------------------------------------- scipy-style
 
-def trimmed_mean(a, proportiontocut, axis=0, *, threads=1, isa=None):
+def trimmed_mean(a, proportiontocut, axis=0, *, nan_policy="propagate", keepdims=False, threads=1, isa=None):
     """``scipy.stats.trim_mean``: cut ``int(proportiontocut * n)`` values from each end and
-    average the rest. Sums run in float64. A slice containing NaN gives NaN, as SciPy's
-    default ``nan_policy="propagate"`` does."""
-    return _simple({"kind": "trim_mean", "proportion": float(proportiontocut)}, a, axis, None, False,
-                   _float_result, threads=threads, isa=isa)
+    average the rest. Sums run in float64. With the default ``nan_policy="propagate"`` a
+    slice containing NaN gives NaN; ``"omit"`` trims ``int(proportiontocut * m)`` of the
+    ``m`` valid values (an all-NaN slice gives NaN); ``"raise"`` raises on NaN."""
+    omit = _nan_policy(a, nan_policy)
+    return _simple({"kind": "trim_mean", "proportion": float(proportiontocut)}, a, axis, None, keepdims,
+                   _float_result, omit=omit, threads=threads, isa=isa)
 
 
 trim_mean = trimmed_mean
@@ -560,7 +585,8 @@ def iqr(x, axis=None, rng=(25, 75), scale=1.0, nan_policy="propagate", interpola
                    keepdims, _float_result, omit=omit, threads=threads, isa=isa)
 
 
-def median_abs_deviation(x, axis=0, center=None, scale=1.0, nan_policy="propagate", *, threads=1, isa=None):
+def median_abs_deviation(x, axis=0, center=None, scale=1.0, nan_policy="propagate", *, keepdims=False, threads=1,
+                         isa=None):
     """``scipy.stats.median_abs_deviation`` with the default median center, identical
     results. ``scale="normal"`` divides by 0.6744897501960817."""
     if center is not None:
@@ -570,7 +596,7 @@ def median_abs_deviation(x, axis=0, center=None, scale=1.0, nan_policy="propagat
             raise ValueError(f"{scale} is not a valid scale value.")
         scale = 0.6744897501960817
     omit = _nan_policy(x, nan_policy)
-    return _simple({"kind": "mad", "scale": float(scale)}, x, axis, None, False, _float_result,
+    return _simple({"kind": "mad", "scale": float(scale)}, x, axis, None, keepdims, _float_result,
                    omit=omit, threads=threads, isa=isa)
 
 
