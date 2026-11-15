@@ -1,0 +1,564 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-15"
+ },
+ "versions": {
+  "numpy": "2.5.3",
+  "bottleneck": "1.6.0",
+  "astropy": "8.0.2",
+  "rankwise": "0.1.0"
+ },
+ "rows": [
+  {
+   "n": 256,
+   "npix": 262144,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.07192738400044618,
+   "ns_per_value": 1.0718015432424275,
+   "identical": true
+  },
+  {
+   "n": 256,
+   "npix": 262144,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.13328388099944277,
+   "ns_per_value": 1.9860845953143056,
+   "identical": true
+  },
+  {
+   "n": 256,
+   "npix": 262144,
+   "tool": "rankwise \u00b7 scalar",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.25218417099858925,
+   "ns_per_value": 3.7578369825868196,
+   "identical": true
+  },
+  {
+   "n": 256,
+   "npix": 262144,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 2.0428037400015455,
+   "ns_per_value": 30.440147817157886,
+   "identical": true
+  },
+  {
+   "n": 256,
+   "npix": 262144,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.331246972000372,
+   "ns_per_value": 19.83712571859914,
+   "identical": true
+  },
+  {
+   "n": 511,
+   "npix": 131328,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.12540737299968896,
+   "ns_per_value": 1.8687226085763688,
+   "identical": true
+  },
+  {
+   "n": 511,
+   "npix": 131328,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.16099579699948663,
+   "ns_per_value": 2.399033474207759,
+   "identical": true
+  },
+  {
+   "n": 511,
+   "npix": 131328,
+   "tool": "rankwise \u00b7 scalar",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.2569016779998492,
+   "ns_per_value": 3.8281479180710942,
+   "identical": true
+  },
+  {
+   "n": 511,
+   "npix": 131328,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.3919214050001756,
+   "ns_per_value": 20.741324346947795,
+   "identical": true
+  },
+  {
+   "n": 511,
+   "npix": 131328,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.0460212919988408,
+   "ns_per_value": 15.586991343924774,
+   "identical": true
+  },
+  {
+   "n": 512,
+   "npix": 131072,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.09824889700030326,
+   "ns_per_value": 1.4640226513192542,
+   "identical": true
+  },
+  {
+   "n": 512,
+   "npix": 131072,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.18313760399905732,
+   "ns_per_value": 2.7289629578449923,
+   "identical": true
+  },
+  {
+   "n": 512,
+   "npix": 131072,
+   "tool": "rankwise \u00b7 scalar",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.2723285769989161,
+   "ns_per_value": 4.058012023552002,
+   "identical": true
+  },
+  {
+   "n": 512,
+   "npix": 131072,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.8466552499994577,
+   "ns_per_value": 27.517307549706963,
+   "identical": true
+  },
+  {
+   "n": 512,
+   "npix": 131072,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.279856306999136,
+   "ns_per_value": 19.071345135556697,
+   "identical": true
+  },
+  {
+   "n": 513,
+   "npix": 130816,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.104004568000164,
+   "ns_per_value": 1.5497947446647085,
+   "identical": true
+  },
+  {
+   "n": 513,
+   "npix": 130816,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.1897132159992907,
+   "ns_per_value": 2.826957996197607,
+   "identical": true
+  },
+  {
+   "n": 513,
+   "npix": 130816,
+   "tool": "rankwise \u00b7 scalar",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.2922594259998732,
+   "ns_per_value": 4.355021430333843,
+   "identical": true
+  },
+  {
+   "n": 513,
+   "npix": 130816,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.325155263999477,
+   "ns_per_value": 19.74642752237503,
+   "identical": true
+  },
+  {
+   "n": 513,
+   "npix": 130816,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 0.9362610789994505,
+   "ns_per_value": 13.951430478180244,
+   "identical": true
+  },
+  {
+   "n": 513,
+   "npix": 130816,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "sigclip",
+   "family": "rankwise",
+   "seconds": 0.2181400420013233,
+   "ns_per_value": 3.250552328567496,
+   "identical": true
+  },
+  {
+   "n": 513,
+   "npix": 130816,
+   "tool": "astropy 8.0 (scaled)",
+   "op": "sigclip",
+   "family": "competitor",
+   "seconds": 3.015178814358592,
+   "ns_per_value": 44.92983693475793,
+   "identical": null
+  },
+  {
+   "n": 1000,
+   "npix": 67108,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.18281836599999224,
+   "ns_per_value": 2.7242410144839995,
+   "identical": true
+  },
+  {
+   "n": 1000,
+   "npix": 67108,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.18317682899942156,
+   "ns_per_value": 2.7295825981912967,
+   "identical": true
+  },
+  {
+   "n": 1000,
+   "npix": 67108,
+   "tool": "rankwise \u00b7 scalar",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.3505880079992494,
+   "ns_per_value": 5.22423567978854,
+   "identical": true
+  },
+  {
+   "n": 1000,
+   "npix": 67108,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.1443569749990274,
+   "ns_per_value": 17.05246729151558,
+   "identical": true
+  },
+  {
+   "n": 1000,
+   "npix": 67108,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.0038018870000087,
+   "ns_per_value": 14.958006303272466,
+   "identical": true
+  },
+  {
+   "n": 1024,
+   "npix": 65536,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.14619544700144615,
+   "ns_per_value": 2.178481921575161,
+   "identical": true
+  },
+  {
+   "n": 1024,
+   "npix": 65536,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.1930707520004944,
+   "ns_per_value": 2.8769783973767518,
+   "identical": true
+  },
+  {
+   "n": 1024,
+   "npix": 65536,
+   "tool": "rankwise \u00b7 scalar",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.31965985499846283,
+   "ns_per_value": 4.7633030265340635,
+   "identical": true
+  },
+  {
+   "n": 1024,
+   "npix": 65536,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 2.0507405619991914,
+   "ns_per_value": 30.558415681111686,
+   "identical": true
+  },
+  {
+   "n": 1024,
+   "npix": 65536,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.2198216169999796,
+   "ns_per_value": 18.176758542656593,
+   "identical": true
+  },
+  {
+   "n": 2048,
+   "npix": 32768,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.1833865999997215,
+   "ns_per_value": 2.7326732873875126,
+   "identical": true
+  },
+  {
+   "n": 2048,
+   "npix": 32768,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.34540465700047207,
+   "ns_per_value": 5.146930471069695,
+   "identical": true
+  },
+  {
+   "n": 2048,
+   "npix": 32768,
+   "tool": "rankwise \u00b7 scalar",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.4969764519992168,
+   "ns_per_value": 7.405526220786822,
+   "identical": true
+  },
+  {
+   "n": 2048,
+   "npix": 32768,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.9807557490003092,
+   "ns_per_value": 29.515560701494056,
+   "identical": true
+  },
+  {
+   "n": 2048,
+   "npix": 32768,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.3824046350000572,
+   "ns_per_value": 20.599434301257986,
+   "identical": true
+  },
+  {
+   "n": 2048,
+   "npix": 32768,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "sigclip",
+   "family": "rankwise",
+   "seconds": 0.3148695889994997,
+   "ns_per_value": 4.6919225007221055,
+   "identical": true
+  },
+  {
+   "n": 2048,
+   "npix": 32768,
+   "tool": "astropy 8.0 (scaled)",
+   "op": "sigclip",
+   "family": "competitor",
+   "seconds": 3.7448241520032752,
+   "ns_per_value": 55.802228331614664,
+   "identical": null
+  },
+  {
+   "n": 4096,
+   "npix": 16384,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.2231321500003105,
+   "ns_per_value": 3.3249281346844213,
+   "identical": true
+  },
+  {
+   "n": 4096,
+   "npix": 16384,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.4414278710009967,
+   "ns_per_value": 6.57778786124284,
+   "identical": true
+  },
+  {
+   "n": 4096,
+   "npix": 16384,
+   "tool": "rankwise \u00b7 scalar",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.5831379199989897,
+   "ns_per_value": 8.689432144149984,
+   "identical": true
+  },
+  {
+   "n": 4096,
+   "npix": 16384,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 2.350841972998751,
+   "ns_per_value": 35.03027518091724,
+   "identical": true
+  },
+  {
+   "n": 4096,
+   "npix": 16384,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.3603388819992688,
+   "ns_per_value": 20.27062895892961,
+   "identical": true
+  },
+  {
+   "n": 8192,
+   "npix": 8192,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.29923391600095783,
+   "ns_per_value": 4.458932816996542,
+   "identical": true
+  },
+  {
+   "n": 8192,
+   "npix": 8192,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.5640506820000155,
+   "ns_per_value": 8.405010133981936,
+   "identical": true
+  },
+  {
+   "n": 8192,
+   "npix": 8192,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 2.1138376250000874,
+   "ns_per_value": 31.498635187746398,
+   "identical": true
+  },
+  {
+   "n": 8192,
+   "npix": 8192,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.381791861000238,
+   "ns_per_value": 20.59030325711128,
+   "identical": true
+  },
+  {
+   "n": 8192,
+   "npix": 8192,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "sigclip",
+   "family": "rankwise",
+   "seconds": 0.5818008059995918,
+   "ns_per_value": 8.669507592910406,
+   "identical": true
+  },
+  {
+   "n": 8192,
+   "npix": 8192,
+   "tool": "astropy 8.0 (scaled)",
+   "op": "sigclip",
+   "family": "competitor",
+   "seconds": 3.454682873998536,
+   "ns_per_value": 51.47878637907707,
+   "identical": null
+  },
+  {
+   "n": 16384,
+   "npix": 4096,
+   "tool": "rankwise \u00b7 AVX-512",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.4909132100001443,
+   "ns_per_value": 7.3151768744013355,
+   "identical": true
+  },
+  {
+   "n": 16384,
+   "npix": 4096,
+   "tool": "rankwise \u00b7 AVX2",
+   "op": "median",
+   "family": "rankwise",
+   "seconds": 0.7612118240012933,
+   "ns_per_value": 11.342940092106064,
+   "identical": true
+  },
+  {
+   "n": 16384,
+   "npix": 4096,
+   "tool": "NumPy 2.5",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 2.3149082489999273,
+   "ns_per_value": 34.49482096731555,
+   "identical": true
+  },
+  {
+   "n": 16384,
+   "npix": 4096,
+   "tool": "bottleneck 1.6.0",
+   "op": "median",
+   "family": "competitor",
+   "seconds": 1.402850483000293,
+   "ns_per_value": 20.904101178054407,
+   "identical": true
+  }
+ ]
+}

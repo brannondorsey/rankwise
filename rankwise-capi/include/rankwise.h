@@ -10,8 +10,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-// Deepest stack v0.1 reduces.
-#define RW_MAX_FRAMES 512
+// Deepest stack rankwise reduces.
+#define RW_MAX_FRAMES 65535
 
 // Result of every call.
 typedef enum {

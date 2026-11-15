@@ -84,8 +84,8 @@ def test_one_d_and_errors():
     identical(rw.median(np.array([3.0, 1.0, 2.0], np.float32)), np.median(np.array([3.0, 1.0, 2.0], np.float32)))
     with pytest.raises(TypeError, match="axis"):
         rw.median(np.zeros((3, 3), np.float32))
-    with pytest.raises(ValueError, match="out of range|512"):
-        rw.median(np.zeros((513, 2), np.float32), axis=0)
+    with pytest.raises(ValueError, match="out of range|65535"):
+        rw.median(np.zeros((rw.MAX_FRAMES + 1, 2), np.float32), axis=0)
     with pytest.raises(TypeError):
         rw.median(np.zeros((3, 2), np.int64), axis=0)
 

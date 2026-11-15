@@ -34,9 +34,9 @@ pub enum rw_status {
     RW_ERR_INTERNAL = 7,
 }
 
-/// Deepest stack v0.1 reduces.
+/// Deepest stack rankwise reduces.
 // A literal so cbindgen can emit it (it cannot evaluate `rankwise::MAX_FRAMES`).
-pub const RW_MAX_FRAMES: usize = 512;
+pub const RW_MAX_FRAMES: usize = 65535;
 const _: () = assert!(RW_MAX_FRAMES == rankwise::MAX_FRAMES);
 
 /// Rejection algorithms.
@@ -244,7 +244,7 @@ pub extern "C" fn rw_set_threads(threads: u32) {
 pub extern "C" fn rw_status_string(s: rw_status) -> *const c_char {
     (match s {
         rw_status::RW_OK => c"ok",
-        rw_status::RW_ERR_DEPTH => c"stack depth out of range (1..=512 frames)",
+        rw_status::RW_ERR_DEPTH => c"stack depth out of range (1..=65535 frames)",
         rw_status::RW_ERR_SHAPE => c"sizes disagree",
         rw_status::RW_ERR_PARAM => c"parameter out of range",
         rw_status::RW_ERR_DTYPE => c"unsupported dtype",

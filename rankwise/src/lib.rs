@@ -54,8 +54,9 @@ pub use spec::*;
 #[cfg(feature = "ndarray")]
 pub use nd::{Reduce, Reduction};
 
-/// Deepest stack v0.1 reduces.
-pub const MAX_FRAMES: usize = 512;
+/// Deepest stack rankwise reduces: frame indices and per-pixel counts fit 16 bits (uint16
+/// lanes carry them as values).
+pub const MAX_FRAMES: usize = 65535;
 
 /// Library version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

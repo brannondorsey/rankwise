@@ -104,7 +104,8 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 
 * Rolling windows and grouped reductions.
 * Weighted median and quantiles.
-* More than 512 frames (`MAX_FRAMES` in `lib.rs`; the hybrid network and tile sizes assume it).
+* ~~More than 512 frames.~~ Done: up to 65,535 with the blocked bitonic network (`net.rs`,
+  `NetPlan::Deep`).
 * Linear-fit clipping and generalized ESD. These break v0.1's "kept is exactly
   `v_lo <= x <= v_hi`" rescan trick, so frame identity has to ride through the network.
 * R and Julia bindings (the C ABI is the base), xarray/dask helpers, and a Siril script.

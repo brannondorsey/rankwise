@@ -2,7 +2,7 @@
 
 use crate::arch;
 use crate::clip::ClipPlan;
-use crate::engine::{Job, Kern, Missing, Unit};
+use crate::engine::{Job, Kern, Missing, QTab, Unit};
 use crate::layout::{collapse, RawMask, RawOut, RawStack};
 use crate::net;
 use crate::netgen;
@@ -50,7 +50,7 @@ pub enum Staging {
     /// Always through a tile.
     Always,
     /// Skewed reads (frame groups read a few cache lines apart), except where the layout
-    /// needs a tile.
+    /// needs a tile or the stack is deep (96+ frames: the read-ahead ring grows as n²).
     Skew,
 }
 
@@ -103,8 +103,8 @@ pub fn natural_dtype(op: &Op, input: DType) -> DType {
     }
 }
 
-fn needed_union(tab: &[QIdx], n: usize, out: &mut Vec<usize>) {
-    match tab[n] {
+fn needed_union(ix: QIdx, out: &mut Vec<usize>) {
+    match ix {
         QIdx::Take(i) => out.push(i),
         QIdx::Lerp { i0, i1, .. } => {
             out.push(i0);
@@ -173,7 +173,8 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
         }
     }
     let unroll = arch::unroll_for(isa, sdt);
-    let full_sort = || net::plan(n, None, unroll);
+    let vec_bytes = arch::lanes_for(isa, sdt) * sdt.size();
+    let full_sort = || net::plan(n, None, unroll, vec_bytes);
     let mut fast_needed: Option<Vec<usize>> = None;
 
     let kern = match op {
@@ -195,11 +196,21 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
             if q.q.iter().any(|x| !(*x >= 0.0 && *x <= 1.0)) {
                 return Err(Error::Param("Quantiles must be in the range [0, 1]".into()));
             }
-            let tabs: Vec<Vec<QIdx>> =
-                q.q.iter().map(|&qq| (0..=n).map(|m| quantile_index(q.method, q.form, m, qq)).collect()).collect();
+            // per-count tables up to 2^18 entries (8 MiB) in all
+            let small = q.q.len() * (n + 1) <= 1 << 18;
+            let tabs: Vec<QTab> =
+                q.q.iter()
+                    .map(|&qq| QTab {
+                        q: qq,
+                        method: q.method,
+                        form: q.form,
+                        all: quantile_index(q.method, q.form, n, qq),
+                        by_count: small.then(|| (0..=n).map(|m| quantile_index(q.method, q.form, m, qq)).collect()),
+                    })
+                    .collect();
             let mut need = Vec::new();
             for t in &tabs {
-                needed_union(t, n, &mut need);
+                needed_union(t.all, &mut need);
             }
             fast_needed = Some(need);
             let lerp = Lerp::new(sdt_for_lerp(in_dtype, sdt), q.form, q.out_dtype, q.out_rounding);
@@ -296,7 +307,7 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
 
     let net_full = full_sort();
     let net_fast = match &fast_needed {
-        Some(r) => net::plan(n, Some(r), unroll),
+        Some(r) => net::plan(n, Some(r), unroll, vec_bytes),
         None => net_full.clone(),
     };
     let net_bitonic = net::bitonic_plan(n);
@@ -309,7 +320,9 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
     let share = if n >= SKEW_SHARE { set_share(stack.frames) } else { 0 };
     let staged = match opts.staging {
         Staging::Always => true,
-        Staging::Never | Staging::Skew => need_stage,
+        Staging::Never => need_stage,
+        // the skew ring holds about n/8 blocks of every frame: n² memory past shallow stacks
+        Staging::Skew => need_stage || n >= DEEP_STAGE,
         Staging::Auto => need_stage || n >= DEEP_STAGE || (n >= CONFLICT_STAGE && share >= 16),
     };
     let skew = !staged
@@ -468,7 +481,9 @@ pub fn describe(stack: &RawStack, op: &Op, opts: &Options) -> Result<String> {
     ))
 }
 
-/// Comparators in the network rankwise runs for ranks `needed` of `n` values.
+/// Comparators in Batcher's network for `n` values pruned to ranks `needed`: the network
+/// rankwise runs on every ISA except AVX-512 past 768 frames, which runs a deep network
+/// with about 10% more comparators ([`describe`] reports the network a call runs).
 pub fn network_size(n: usize, needed: Option<&[usize]>) -> usize {
     match needed {
         None => netgen::batcher(n).len(),

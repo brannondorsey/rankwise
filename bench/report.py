@@ -174,6 +174,16 @@ def main():
                            f"{r['pow2_median'] / r['padded_median']:.2f}× | {r['pow2_sigclip']:.1f} | "
                            f"{r['padded_sigclip']:.1f} | {r['pow2_sigclip'] / r['padded_sigclip']:.2f}× |")
         out.append("")
+    dp = load("deep")
+    if dp:
+        out += ["## Deep stacks: 256 to 16,384 frames", "", picture("bench_deep", "Deep-stack benchmark"), "",
+                "| Frames | Op | Tool | Seconds | ns / value | Identical |", "|---|---|---|---|---|---|"]
+        for r in dp["rows"]:
+            ident = "—" if r["identical"] is None else ("yes" if r["identical"] else "no")
+            out.append(f"| {r['n']} | {r['op']} | {r['tool']} | {fmt_s(r['seconds'])} | {r['ns_per_value']:.2f} | {ident} |")
+        out += ["", "About 256 MiB of float32 per depth. On AVX-512 the blocked bitonic network takes over past 768 "
+                "frames; AVX2 keeps the hybrid network. astropy's sigma_clip is timed on 4096 pixels and scaled; "
+                "\"identical\" for clipping compares kept counts with astropy's mask.", ""]
     (ROOT / "docs" / "benchmarks.md").write_text("\n".join(out) + "\n")
     print("wrote docs/benchmarks.md")
 
