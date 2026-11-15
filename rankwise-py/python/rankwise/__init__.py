@@ -34,7 +34,7 @@ __all__ = [
     "min", "max", "amin", "amax", "nanmin", "nanmax", "ptp",
     "argmin", "argmax", "nanargmin", "nanargmax", "argmedian", "nanargmedian", "argselect",
     "select_ranks", "trimmed_mean", "trim_mean", "iqr", "mad", "median_abs_deviation",
-    "sigma_clip_mean", "clip_combine",
+    "sigma_clip_mean", "clip_combine", "rolling", "groupby_reduce",
     "available_isas", "set_isa", "current_isa", "isa_override", "use_isa", "describe", "network_size",
 ]
 
@@ -583,6 +583,36 @@ _SIRIL = {"sigma": "sigma", "mad": "mad", "median_sigma": "median_sigma", "winso
           "percentile": "percentile"}
 
 
+def _clip_op(method, sigma, sigma_lower, sigma_upper, maxiters, cenfunc, stdfunc, combine, preset, precision,
+             mask_infinite):
+    if np.ndim(sigma) == 1:
+        lo_s, hi_s = (float(x) for x in sigma)
+    else:
+        lo_s = hi_s = float(sigma)
+    if sigma_lower is not None:
+        lo_s = float(sigma_lower)
+    if sigma_upper is not None:
+        hi_s = float(sigma_upper)
+    if maxiters is not None and not np.isfinite(maxiters):
+        maxiters = None
+    if maxiters == 0 and method in ("sigma", "mad"):
+        maxiters = None  # astropy's SigmaClip: `maxiters or np.inf`, so 0 iterates to convergence
+    if preset not in (None, "astropy", "siril", "pixinsight"):
+        raise ValueError(f"unknown preset {preset!r}")
+    op = {"kind": "clip", "method": method, "low": lo_s, "high": hi_s, "cenfunc": cenfunc,
+          "combine": combine, "precision": "f64" if precision is None else precision,
+          "mask_infinite": bool(mask_infinite)}
+    if stdfunc is not None:
+        op["stdfunc"] = stdfunc
+    if maxiters is not None:
+        op["maxiters"] = int(maxiters)
+    if preset in ("siril", "pixinsight"):
+        op["preset"] = preset
+        if preset == "siril" or maxiters == 5:
+            op.pop("maxiters", None)  # both tools iterate until nothing changes
+    return op
+
+
 def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=None, maxiters=5, *, axis=0,
                  cenfunc="median", stdfunc=None, combine="mean", preset=None, out=None, rejected=None,
                  low=None, high=None, mask=None, weights=None, scale=None, offset=None, precision=None,
@@ -606,32 +636,9 @@ def clip_combine(a, method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=Non
     ``weights`` give a weighted mean. ``rejected``, ``low`` and ``high`` receive per-pixel
     reject counts; ``mask`` (same shape as the input, bool) receives the rejection map.
     """
-    if np.ndim(sigma) == 1:
-        lo_s, hi_s = (float(x) for x in sigma)
-    else:
-        lo_s = hi_s = float(sigma)
-    if sigma_lower is not None:
-        lo_s = float(sigma_lower)
-    if sigma_upper is not None:
-        hi_s = float(sigma_upper)
-    if maxiters is not None and not np.isfinite(maxiters):
-        maxiters = None
-    if maxiters == 0 and method in ("sigma", "mad"):
-        maxiters = None  # astropy's SigmaClip: `maxiters or np.inf`, so 0 iterates to convergence
-    if preset not in (None, "astropy", "siril", "pixinsight"):
-        raise ValueError(f"unknown preset {preset!r}")
-    op = {"kind": "clip", "method": method, "low": lo_s, "high": hi_s, "cenfunc": cenfunc,
-          "combine": combine, "precision": precision, "mask_infinite": bool(mask_infinite)}
-    if stdfunc is not None:
-        op["stdfunc"] = stdfunc
-    if maxiters is not None:
-        op["maxiters"] = int(maxiters)
-    if preset in ("siril", "pixinsight"):
-        op["preset"] = preset
-        if preset == "siril" or maxiters == 5:
-            op.pop("maxiters", None)  # both tools iterate until nothing changes
+    op = _clip_op(method, sigma, sigma_lower, sigma_upper, maxiters, cenfunc, stdfunc, combine, preset, precision,
+                  mask_infinite)
     s = _prep(a, axis)
-    op["precision"] = "f64" if precision is None else precision
     dt = np.dtype(np.float64) if s.dtype == "float64" else np.dtype(np.float32)
     work, final, copy = _prepare_out(out, s.shape, dt, False, s.axis)
     want_counts = return_counts or rejected is not None
@@ -694,6 +701,206 @@ def sigma_clip_mean(a, axis=0, sigma=3.0, sigma_lower=None, sigma_upper=None, ma
                         stdfunc=stdfunc, out=out, rejected=rejected, low=low, high=high, mask=mask,
                         weights=weights, scale=scale, offset=offset, precision=precision,
                         return_counts=return_counts, threads=threads, isa=isa)
+
+
+# --------------------------------------------------------------------------- windows and groups
+
+_ROLLING = ("median", "quantile", "percentile", "min", "max", "ptp", "select_ranks", "iqr", "mad",
+            "sigma_clip_mean", "clip_combine")
+
+
+def _rolling_spec(func, s: _Stack, nodata, kw):
+    """(op, output dtype, leading output shape) of a moving-window ``func``, with the dtype
+    the NaN-skipping NumPy function gives."""
+    float_dt = np.dtype(np.float32) if s.dtype == "float32" else np.dtype(np.float64)
+    # integer outputs need a fill value for short windows: nodata, else float64 (as xarray)
+    value_dt = np.dtype(s.dtype) if (s.dtype != "uint16" or nodata is not None) else np.dtype(np.float64)
+
+    def take(*names):
+        out = {k: kw.pop(k) for k in names if k in kw}
+        if kw:
+            raise TypeError(f"rolling {func!r} got unexpected arguments {sorted(kw)}")
+        return out
+
+    if func == "median":
+        take()
+        return {"kind": "median"}, float_dt, ()
+    if func in ("quantile", "percentile"):
+        o = take("q", "method")
+        if "q" not in o:
+            raise TypeError(f"rolling {func!r} needs q")
+        q, method = o["q"], o.get("method", "linear")
+        if method not in _METHODS:
+            raise ValueError(f"{method!r} is not a valid method. Use one of: {sorted(_METHODS)}")
+        weak = type(q) in (int, float)
+        qa = np.asanyarray(np.true_divide(q, 100, out=...)) if func == "percentile" else np.asanyarray(q)
+        flat = qa.astype(np.float64, copy=False).ravel()
+        if not ((flat >= 0) & (flat <= 1)).all():
+            raise ValueError("Percentiles must be in the range [0, 100]" if func == "percentile"
+                             else "Quantiles must be in the range [0, 1]")
+        form = _q_form(q, qa, method, weak, func == "percentile")
+        dt = _q_dtype(s, form, method)
+        if dt.kind != "f" and nodata is None:
+            dt = np.dtype(np.float64)
+        op = {"kind": "quantile", "q": [float(x) for x in flat], "method": method, "form": form,
+              "out_rounding": "cast_once"}
+        return op, dt, qa.shape
+    if func in ("min", "max", "ptp"):
+        take()
+        return {"kind": {"ptp": "range"}.get(func, func)}, value_dt, ()
+    if func == "select_ranks":
+        r = np.asarray(take("ranks").get("ranks"))
+        if r.dtype.kind not in "iu":
+            raise TypeError("ranks must be integers")
+        return {"kind": "select", "ranks": []}, value_dt, r.shape  # ranks filled in by the caller
+    if func == "iqr":
+        o = take("rng", "scale")
+        rng = o.get("rng", (25, 75))
+        scale = o.get("scale", 1.0)
+        if isinstance(scale, str):
+            if scale.lower() != "normal":
+                raise ValueError(f"{scale} not a valid scale for `iqr`")
+            scale = 1.3489795003921636
+        return {"kind": "iqr", "lo": float(rng[0]), "hi": float(rng[1]), "scale": float(scale)}, float_dt, ()
+    if func == "mad":
+        scale = take("scale").get("scale", 1.0)
+        if isinstance(scale, str):
+            if scale.lower() != "normal":
+                raise ValueError(f"{scale} is not a valid scale value.")
+            scale = 0.6744897501960817
+        return {"kind": "mad", "scale": float(scale)}, float_dt, ()
+    if func in ("sigma_clip_mean", "clip_combine"):
+        d = dict(method="sigma", sigma=3.0, sigma_lower=None, sigma_upper=None, maxiters=5, cenfunc="median",
+                 stdfunc="std" if func == "sigma_clip_mean" else None, combine="mean", preset=None, precision=None,
+                 mask_infinite=True)
+        for k in list(kw):
+            if k not in d or (func == "sigma_clip_mean" and k in ("method", "combine", "preset")):
+                raise TypeError(f"rolling {func!r} got unexpected argument {k!r}")
+            d[k] = kw.pop(k)
+        return _clip_op(**d), np.dtype(np.float64) if s.dtype == "float64" else np.dtype(np.float32), ()
+    raise ValueError(f"rolling supports {', '.join(_ROLLING)}; got {func!r}")
+
+
+def rolling(a, window, axis=0, *, func="median", min_count=None, center=False, step=1, nodata=None, threads=1,
+            isa=None, **kwargs):
+    """Moving-window reduction along ``axis``, with xarray's ``rolling`` semantics.
+
+    Output ``t`` reduces the ``window`` frames ending at ``t`` (``center=True``: starting at
+    ``t - window // 2``), one output per frame (every ``step``-th with ``step``). Frames past
+    either end and NaN (or ``nodata``) are skipped, as ``np.nanmedian`` and friends skip NaN;
+    an output with fewer than ``min_count`` valid values (default ``window``) is NaN. This is
+    ``xr.DataArray.rolling(dim=window, center=center, min_periods=min_count).median()`` (and
+    ``np.nanmedian`` over ``sliding_window_view`` of the NaN-padded array) value for value.
+
+    ``func``: ``"median"``, ``"quantile"`` / ``"percentile"`` (``q=``, ``method=``),
+    ``"min"``, ``"max"``, ``"ptp"``, ``"select_ranks"`` (``ranks=``, ranks of the window
+    sorted with missing values last), ``"iqr"`` (``rng=``, ``scale=``), ``"mad"``
+    (``scale=``), ``"sigma_clip_mean"`` / ``"clip_combine"`` (their rejection arguments). The
+    window stays sorted as it moves, so each step costs a pass over the window rather than a
+    sort. Integer input gives float64 for value outputs unless ``nodata`` supplies the fill.
+    """
+    s = _prep(a, axis)
+    _check_nodata(s, nodata)
+    window = operator.index(window)
+    step = operator.index(step)
+    if not 1 <= window <= MAX_FRAMES:
+        raise ValueError(f"window must be in 1..{MAX_FRAMES}, got {window}")
+    if step < 1:
+        raise ValueError("step must be at least 1")
+    min_count = window if min_count is None else operator.index(min_count)
+    if not 1 <= min_count <= window:
+        raise ValueError(f"min_count must be in 1..{window}, got {min_count}")
+    kw = dict(kwargs)
+    ranks = kw.get("ranks")
+    op, dt, lead = _rolling_spec(func, s, nodata, kw)
+    if op["kind"] == "select":
+        r = np.asarray(ranks)
+        flat = [int(k) + (window if k < 0 else 0) for k in r.ravel()]
+        if any(not 0 <= k < window for k in flat):
+            raise ValueError(f"rank out of range for a window of {window}")
+        op["ranks"] = flat
+    nout = int(np.prod(lead)) if lead else 1
+    start = -(window // 2) if center else 1 - window
+    count = -(-s.n // step)
+    is_list = isinstance(s.keep, list)
+    ax = 0 if is_list else s.axis
+    full = list(s.shape)
+    full.insert(ax, count)
+    res = np.empty(tuple(lead) + tuple(full), dtype=dt)
+    r2 = res.reshape((nout,) + tuple(full))
+    outs, tstr = [], []
+    for j in range(nout):
+        oj = r2[j]
+        w0 = oj[(slice(None),) * ax + (0,)] if count else oj
+        outs.append(_out_entry(w0, len(s.shape)))
+        tstr.append(oj.strides[ax])
+    if op["kind"] == "clip":
+        outs += [_out_entry(None, len(s.shape))] * 2
+        tstr += [0, 0]
+    if count:
+        _rw.rolling(op, s.dtype, s.frames, list(s.shape), list(s.strides), outs, tstr,
+                    _opts(omit=True, nodata=nodata, threads=threads, isa=isa), window, start, step, count, min_count)
+    if not lead:
+        res = res.reshape(tuple(full))
+    if res.dtype != dt:
+        res = res.astype(dt)
+    return _cast_value_back(res, s, res.dtype.kind != "f")
+
+
+_ARGS = ("argmin", "argmax", "nanargmin", "nanargmax", "argmedian", "nanargmedian")
+
+
+def groupby_reduce(a, by, axis=0, *, func="median", **kwargs):
+    """Reduce each group of frames along ``axis``: frames with equal labels in ``by`` form a
+    group. Returns ``(result, groups)``: ``groups`` holds the sorted unique labels, and
+    ``result`` has ``axis`` replaced by one entry per group (quantiles add their leading
+    dimensions first, as in NumPy). ``func`` is any rankwise reduction (``"median"``,
+    ``"nanquantile"``, ``"sigma_clip_mean"``, ...) or the function itself; ``kwargs`` go to
+    it. Each group is the named function's result on that group's frames, bit for bit;
+    arg-variants (``"argmax"``, ...) report indices along the original axis.
+
+    Groups are views of ``a`` (no copies); each runs as one call with the GIL released.
+    """
+    fn = globals()[func] if isinstance(func, str) else func
+    name = func if isinstance(func, str) else getattr(func, "__name__", "")
+    if isinstance(func, str) and (func not in __all__ or func in _SKIP_GROUP):
+        raise ValueError(f"{func!r} is not a rankwise reduction")
+    labels = np.asarray(by)
+    if _is_frame_list(a):
+        if axis not in (None, 0):
+            raise np.exceptions.AxisError(f"a list of frames is reduced along axis 0, got axis={axis}")
+        frames = list(a)
+        axis = 0
+    else:
+        arr = np.asarray(a)
+        if arr.ndim == 0:
+            raise ValueError("cannot reduce a 0-d array")
+        axis = operator.index(axis)
+        if not -arr.ndim <= axis < arr.ndim:
+            raise np.exceptions.AxisError(axis, arr.ndim)
+        axis %= arr.ndim
+        idx = [slice(None)] * arr.ndim
+        frames = []
+        for k in range(arr.shape[axis]):
+            idx[axis] = k
+            frames.append(arr[tuple(idx)])
+    if labels.shape != (len(frames),):
+        raise ValueError(f"by must have one label per frame ({len(frames)}), got shape {labels.shape}")
+    groups, inverse = np.unique(labels, return_inverse=True)
+    members = [np.flatnonzero(inverse == g) for g in range(len(groups))]
+    results = []
+    for m in members:
+        r = np.asarray(fn([frames[k] for k in m], **kwargs))
+        if name in _ARGS:
+            r = np.where(r >= 0, m[np.clip(r, 0, None)], r)
+        results.append(r)
+    lead = results[0].ndim - frames[0].ndim if results else 0
+    res = np.stack(results, axis=lead + axis) if results else np.empty((0,))
+    return res, groups
+
+
+_SKIP_GROUP = {"available_isas", "set_isa", "current_isa", "isa_override", "use_isa", "describe", "network_size",
+               "rolling", "groupby_reduce"}
 
 
 # --------------------------------------------------------------------------- dispatch helpers

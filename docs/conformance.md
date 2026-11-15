@@ -18,6 +18,8 @@ python -m pytest conformance -q          # 1,092 tests, about a minute
 | `median`, `nanmedian` | `np.median`, `np.nanmedian` | identical | ✅ |
 | `quantile`, `nanquantile`, `percentile`, `nanpercentile`, all 13 methods | the same NumPy call, same form of `q`, same `out` | identical | ✅ |
 | `min`, `max`, `nanmin`, `nanmax`, `ptp` | NumPy | identical | ✅ |
+| `rolling(func=...)`: median, quantile/percentile, min, max, ptp, select_ranks, iqr, mad, clipping | xarray 2026.9 `rolling(...)` (NumPy path) and the `nan*` function over the NaN-padded `sliding_window_view`, windows under `min_periods` NaN | identical | ✅ |
+| `groupby_reduce(func=...)` | the named function on each group's frames | identical | ✅ |
 | `argmin`, `argmax`, `nanargmin`, `nanargmax` | NumPy (first occurrence; first NaN wins) | identical; all-NaN gives −1 + warning (`strict=True` raises) | ✅ |
 | `argmedian`, `argselect` | `np.argsort(a, axis, kind="stable")` at the rank(s) | identical | ✅ |
 | `select_ranks` | `np.sort(a, axis)[ranks]` | identical | ✅ |
@@ -98,7 +100,13 @@ Matching NumPy bit for bit meant reproducing some behaviours that are easy to mi
 
 ## Known differences
 
-* **Signed zeros**: equal under `==`; the sign bit can differ from NumPy and between ISAs.
+* **Signed zeros**: equal under `==`; the sign bit can differ from NumPy and between ISAs. A
+  moving window that drops a zero may drop the other sign's zero (`-0 == +0`), so a zero
+  result's sign can also differ from the same window reduced on its own.
+* **`rolling(func="quantile")` dtype**: `np.nanquantile` over windows takes its result dtype
+  from the first window, so an all-NaN first window of float32 data with a list `q` makes
+  NumPy return float32 (rounding the rest); rankwise always returns the dtype the other windows
+  give.
 * **`median(..., out=float64)` on float32 data**: NumPy averages in float64; rankwise averages
   in float32 and casts. Pass a float32 `out` (or none) for identical results.
 * **`trimmed_mean`** is more accurate than SciPy's float32 summation (it sums in float64), so

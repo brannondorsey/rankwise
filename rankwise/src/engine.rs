@@ -90,6 +90,10 @@ pub(crate) struct Job {
     pub skew: bool,
     pub isa: Isa,
     pub threads: usize,
+    /// Moving windows (`n` is then the window; `frames` holds every frame of the stack).
+    pub rolling: Option<crate::rolling::Rolling>,
+    /// Byte stride between consecutive windows' outputs, per output.
+    pub rolling_tstrides: Vec<isize>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -190,7 +194,7 @@ fn np_mid<E: Element>(a: E, b: E) -> f64 {
 
 /// The value written for "no valid data" in an output of the sort dtype.
 #[inline(always)]
-fn fill_value(job: &Job) -> f64 {
+pub(crate) fn fill_value(job: &Job) -> f64 {
     match job.missing {
         Missing::NoData(v) if !job.sdt.is_float() => v as f64,
         _ => f64::NAN,
@@ -215,6 +219,9 @@ pub(crate) struct Blk<'a, S: Vector> {
 /// Process one unit of work: one row, pixels `p0..p1`.
 #[inline(always)]
 pub(crate) unsafe fn run_unit<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, u: Unit) {
+    if job.rolling.is_some() {
+        return crate::rolling::run_unit::<A, S>(job, u);
+    }
     // Skewed reads get their own instantiation: a runtime branch in the block loop cost the
     // direct path 6%.
     if job.skew && !job.staged && !job.kern.streaming() {
@@ -421,13 +428,13 @@ unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW:
 
 /// Staging tile size in bytes (all frames together). `RANKWISE_TILE_BYTES` overrides it for
 /// experiments.
-fn tile_budget() -> usize {
+pub(crate) fn tile_budget() -> usize {
     static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *B.get_or_init(|| std::env::var("RANKWISE_TILE_BYTES").ok().and_then(|s| s.parse().ok()).unwrap_or(768 * 1024))
 }
 
 #[inline(always)]
-unsafe fn norm<S: Vector>(x: S, s: S::E, o: S::E) -> S {
+pub(crate) unsafe fn norm<S: Vector>(x: S, s: S::E, o: S::E) -> S {
     // x * s + o, two roundings. Only float sort dtypes carry normalization.
     if TypeId::of::<S::E>() == TypeId::of::<f32>() || TypeId::of::<S::E>() == TypeId::of::<f64>() {
         x.mul(S::splat(s)).add(S::splat(o))
@@ -447,7 +454,21 @@ unsafe fn stage<S: Vector>(
     tile: &mut [S::E],
     ts: usize,
 ) {
-    let n = job.n;
+    stage_frames::<S>(job, src, ps, t0, cnt, tile, ts)
+}
+
+/// [`stage`] for any list of frames (a moving window stages one frame at a time).
+#[inline(always)]
+pub(crate) unsafe fn stage_frames<S: Vector>(
+    job: &Job,
+    src: &[*const u8],
+    ps: isize,
+    t0: usize,
+    cnt: usize,
+    tile: &mut [S::E],
+    ts: usize,
+) {
+    let n = src.len();
     let tp = tile.as_mut_ptr();
     macro_rules! go {
         ($t:ty) => {{
@@ -619,7 +640,7 @@ fn lowest<E: Element>() -> E {
 
 /// Dispatch the block to the operation's epilogue.
 #[inline(always)]
-unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk: &Blk<S>) {
+pub(crate) unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk: &Blk<S>) {
     let n = job.n;
     let lanes = blk.lanes;
     let mut vals = [0f64; MAXL];
@@ -921,12 +942,17 @@ unsafe fn mad<S: crate::arch::SortVec, C: crate::arch::SortVec + FVector>(
         let medv = C::load(med.as_ptr());
         let mv = C::load(mcnt.as_ptr());
         let inf = C::splat(C::E::MAX);
+        // |inf - inf| (or a NaN median of -inf and +inf) is NaN, and SciPy's median of the
+        // deviations propagates it; the network must not see it.
+        let mut nan_dev = C::mask_none();
         for k in 0..n {
             let x: C = load_group::<S, C>(blk.buf, k, g);
             let dev = x.sub(medv).abs();
             let valid = C::splat(C::E::from_usize(k)).lt(mv);
-            *d.add(k) = C::select(valid, dev, inf);
+            nan_dev = nan_dev.or(dev.nan_mask().and(valid));
+            *d.add(k) = C::select(valid.andnot(dev.nan_mask()), dev, inf);
         }
+        let nan_dev = nan_dev.bits();
         C::apply_net(d, &job.net_bitonic);
         for i in 0..C::L {
             let lane = g * C::L + i;
@@ -935,7 +961,7 @@ unsafe fn mad<S: crate::arch::SortVec, C: crate::arch::SortVec + FVector>(
             }
             let m = if omit { ms[lane] } else { n };
             let bad = if omit { m == 0 } else { ms[lane] < n };
-            if bad {
+            if bad || (nan_dev >> i) & 1 == 1 {
                 vals[lane] = f64::NAN;
                 continue;
             }

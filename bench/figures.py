@@ -179,6 +179,35 @@ def ensemble(theme):
     plt.close(fig)
 
 
+def rolling(theme):
+    t = THEMES[theme]
+    d = json.loads((RES / "rolling.json").read_text())
+    cases = [c for c in dict.fromkeys(r["case"] for r in d["rows"])]
+    titles = {c: (f"moving median · {c.split('=')[1]}-frame trailing windows" if c.startswith("rolling")
+                  else "monthly climatology · median of each calendar month") for c in cases}
+    groups = [(titles[c], [dict(tool=r["tool"], seconds=r["seconds"]) for r in d["rows"] if r["case"] == c])
+              for c in cases]
+    h = [len(g[1]) for g in groups]
+    fig, axes = plt.subplots(len(groups), 1, figsize=(9.2, 0.36 * sum(h) + 1.0 + 0.55 * len(groups)),
+                             gridspec_kw=dict(height_ratios=h, hspace=0.42), facecolor=t["surface"])
+    speed = []
+    for ax, (title, rs) in zip(axes, groups):
+        style(ax, t)
+        ref = min(r["seconds"] for r in rs if "AVX-512" in r["tool"] or "NEON" in r["tool"])
+        bars(ax, rs, t, ref)
+        panel_title(fig, ax, title, t)
+        speed.append(min(r["seconds"] for r in rs if not r["tool"].startswith("rankwise")) / ref)
+    headline(fig, f"Moving medians {min(speed[:-1]):.0f}–{max(speed[:-1]):.0f}× faster than bottleneck, "
+             f"group medians {speed[-1]:.0f}× faster than NumPy",
+             f"Seconds for {d['T']} float32 frames of {d['side']}×{d['side']}, lower is better · one core · pandas timed "
+             "on a slice and scaled", t)
+    fig.text(0.015, 0.008, "rankwise matches xarray's rolling(..., min_periods=1).median() (bottleneck and NumPy) "
+             "on every value.", fontsize=8.5, color=t["muted"])
+    fig.subplots_adjust(left=0.3, right=0.98, top=1 - 1.25 / fig.get_size_inches()[1], bottom=0.05)
+    fig.savefig(IMG / f"bench_rolling_{theme}.png", dpi=200, facecolor=t["surface"])
+    plt.close(fig)
+
+
 def stride(theme):
     """Power-of-two frame strides: time relative to padded frames, before and after skewed reads."""
     from matplotlib.lines import Line2D
@@ -230,7 +259,7 @@ def stride(theme):
 
 if __name__ == "__main__":
     for th in THEMES:
-        for f in (astro, sweep, ensemble, stride):
+        for f in (astro, sweep, ensemble, stride, rolling):
             try:
                 f(th)
             except FileNotFoundError as e:

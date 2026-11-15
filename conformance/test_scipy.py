@@ -61,3 +61,15 @@ def test_mad(isa, n):
         warnings.simplefilter("ignore", RuntimeWarning)
         identical(rw.mad(x, axis=0), stats.median_abs_deviation(x, axis=0))
         identical(rw.mad(x, axis=0, nan_policy="omit"), stats.median_abs_deviation(x, axis=0, nan_policy="omit"))
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 5, 16, 33])
+def test_mad_infinite_values(isa, n):
+    """|inf - inf| is NaN and SciPy's median of the deviations propagates it (it used to
+    come out as inf once the deviations went through the network)."""
+    x = make(n, 61, np.float64, "inf")
+    x[np.random.default_rng(n).random(x.shape) < 0.2] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        identical(rw.mad(x, axis=0, nan_policy="omit"), stats.median_abs_deviation(x, axis=0, nan_policy="omit"))
+        identical(rw.mad(x, axis=0), stats.median_abs_deviation(x, axis=0))

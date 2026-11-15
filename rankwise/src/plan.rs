@@ -7,6 +7,7 @@ use crate::layout::{collapse, RawMask, RawOut, RawStack};
 use crate::net;
 use crate::netgen;
 use crate::quantile::{quantile_index, Lerp, QIdx, ScipyLinear};
+use crate::rolling::Rolling;
 use crate::simd::{resolve_isa, Isa};
 use crate::spec::{ArgRank, Combine, DType, NanPolicy, Op, Precision};
 use crate::{Error, Result, MAX_FRAMES};
@@ -326,6 +327,8 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
         skew,
         isa,
         threads: opts.threads.max(1),
+        rolling: None,
+        rolling_tstrides: vec![],
     })
 }
 
@@ -347,6 +350,9 @@ impl RawStack<'_> {
 
 /// Split the work into units for `threads` workers.
 fn units(job: &Job) -> Vec<Unit> {
+    if job.rolling.as_ref().is_some_and(|r| r.count == 0) {
+        return vec![];
+    }
     let rows = job.space.rows();
     let npix = job.space.npix;
     if npix == 0 || rows == 0 {
@@ -373,19 +379,25 @@ fn units(job: &Job) -> Vec<Unit> {
 }
 
 pub(crate) fn execute(job: &Job) {
-    let us = units(job);
+    execute_many(core::slice::from_ref(job))
+}
+
+/// Run several jobs (the groups of a grouped reduction) on one set of workers.
+pub(crate) fn execute_many(jobs: &[Job]) {
+    let us: Vec<(&Job, Unit)> = jobs.iter().flat_map(|j| units(j).into_iter().map(move |u| (j, u))).collect();
     if us.is_empty() {
         return;
     }
-    if job.threads <= 1 || us.len() == 1 {
-        for u in us {
+    let threads = jobs.iter().map(|j| j.threads).max().unwrap_or(1);
+    if threads <= 1 || us.len() == 1 {
+        for (job, u) in us {
             unsafe { arch::run(job, u) };
         }
         return;
     }
     use std::sync::atomic::{AtomicUsize, Ordering};
     let next = AtomicUsize::new(0);
-    let workers = job.threads.min(us.len());
+    let workers = threads.min(us.len());
     // rayon's global pool, at most `threads` workers at once. (Building a ThreadPool here
     // spawned and joined `threads` OS threads on every call.)
     #[cfg(feature = "rayon")]
@@ -396,7 +408,7 @@ pub(crate) fn execute(job: &Job) {
                 if i >= us.len() {
                     break;
                 }
-                unsafe { arch::run(job, us[i]) };
+                unsafe { arch::run(us[i].0, us[i].1) };
             });
         }
     });
@@ -409,7 +421,7 @@ pub(crate) fn execute(job: &Job) {
                     if i >= us.len() {
                         break;
                     }
-                    unsafe { arch::run(job, us[i]) };
+                    unsafe { arch::run(us[i].0, us[i].1) };
                 });
             }
         });
@@ -431,6 +443,139 @@ pub unsafe fn reduce_raw(
 ) -> Result<()> {
     let job = plan(stack, op, outs, mask, opts)?;
     execute(&job);
+    Ok(())
+}
+
+/// Moving-window reduction ([`Rolling`]) over a raw strided stack.
+///
+/// `outs[j]` is output `j` of window 0, laid out over the non-reduced dimensions; window `t`'s
+/// output `j` starts `t * out_window_strides[j]` bytes after it. Supported ops: median,
+/// quantiles, rank selection, min / max / range, IQR, MAD and rejection (without weights or
+/// a rejection map). Missing values are always skipped (as the `nan*` reductions do) and
+/// windows with fewer than `min_count` valid values get NaN (`nodata` for integer outputs).
+/// Normalization takes one scale and offset per frame of the stack.
+///
+/// # Safety
+/// As [`reduce_raw`]; every output must be valid for writes over all `count` windows.
+pub unsafe fn reduce_rolling_raw(
+    stack: &RawStack,
+    roll: &Rolling,
+    op: &Op,
+    outs: &[RawOut],
+    out_window_strides: &[isize],
+    opts: &Options,
+) -> Result<()> {
+    let nf = stack.frames.len();
+    let w = roll.window;
+    if nf == 0 {
+        return Err(Error::BadDepth(0));
+    }
+    if w == 0 || w > MAX_FRAMES {
+        return Err(Error::BadDepth(w));
+    }
+    if roll.step == 0 {
+        return Err(Error::Param("rolling step must be at least 1".into()));
+    }
+    if !(1..=w).contains(&roll.min_count) {
+        return Err(Error::Param(format!("min_count must be in 1..={w}, got {}", roll.min_count)));
+    }
+    if out_window_strides.len() != outs.len() {
+        return Err(Error::Shape(format!("{} window strides for {} outputs", out_window_strides.len(), outs.len())));
+    }
+    match op {
+        Op::Median
+        | Op::Quantile(_)
+        | Op::SelectRanks(_)
+        | Op::Min
+        | Op::Max
+        | Op::Range
+        | Op::Iqr { .. }
+        | Op::Mad { .. }
+        | Op::Clip(_) => {}
+        _ => return Err(Error::Param(format!("{op:?} has no moving-window form"))),
+    }
+    if opts.weights.is_some() {
+        return Err(Error::Param("weights do not apply to moving windows".into()));
+    }
+    // Plan as a stack of one window (validation, kernel, networks, layout); then hand it every
+    // frame. Normalization is per frame of the whole stack.
+    let mut o = opts.clone();
+    o.nan = NanPolicy::Omit;
+    let norm = match &opts.normalize {
+        Some(z) if z.scale.is_some() || z.offset.is_some() => {
+            let s = z.scale.clone().unwrap_or_else(|| vec![1.0; nf]);
+            let of = z.offset.clone().unwrap_or_else(|| vec![0.0; nf]);
+            if s.len() != nf || of.len() != nf {
+                return Err(Error::Shape(format!("normalization needs {nf} scales and offsets")));
+            }
+            o.normalize = Some(Normalize { scale: Some(vec![1.0; w]), offset: Some(vec![0.0; w]) });
+            Some((s, of))
+        }
+        _ => None,
+    };
+    let frames_w: Vec<*const u8> = (0..w).map(|k| stack.frames[k.min(nf - 1)]).collect();
+    let wstack = RawStack { frames: &frames_w, ..*stack };
+    let mut job = plan(&wstack, op, outs, None, &o)?;
+    job.frames = stack.frames.iter().map(|&p| p as usize).collect();
+    job.norm = norm;
+    job.rolling = Some(*roll);
+    job.rolling_tstrides = out_window_strides.to_vec();
+    execute(&job);
+    Ok(())
+}
+
+/// Reduce each group of frames on its own: `groups[g]` lists the frames (indices into
+/// `stack.frames`) of group `g`, and group `g`'s output `j` starts `g * out_group_strides[j]`
+/// bytes after `outs[j]`. Per-frame weights and normalization follow their frames;
+/// arg-variants report positions within the group. All groups run on one set of workers.
+///
+/// # Safety
+/// As [`reduce_raw`]; every output must be valid for writes over all groups.
+pub unsafe fn reduce_groups_raw(
+    stack: &RawStack,
+    groups: &[Vec<usize>],
+    op: &Op,
+    outs: &[RawOut],
+    out_group_strides: &[isize],
+    opts: &Options,
+) -> Result<()> {
+    let nf = stack.frames.len();
+    if out_group_strides.len() != outs.len() {
+        return Err(Error::Shape(format!("{} group strides for {} outputs", out_group_strides.len(), outs.len())));
+    }
+    if let Some(w) = &opts.weights {
+        if w.len() != nf {
+            return Err(Error::Shape(format!("{} weights for {nf} frames", w.len())));
+        }
+    }
+    let pick = |v: &Option<Vec<f64>>, idx: &[usize]| -> Result<Option<Vec<f64>>> {
+        match v {
+            None => Ok(None),
+            Some(v) if v.len() == nf => Ok(Some(idx.iter().map(|&k| v[k]).collect())),
+            Some(_) => Err(Error::Shape(format!("normalization needs {nf} scales and offsets"))),
+        }
+    };
+    let mut jobs = Vec::with_capacity(groups.len());
+    for (g, idx) in groups.iter().enumerate() {
+        if let Some(&bad) = idx.iter().find(|&&k| k >= nf) {
+            return Err(Error::Param(format!("group {g} names frame {bad} of {nf}")));
+        }
+        let fr: Vec<*const u8> = idx.iter().map(|&k| stack.frames[k]).collect();
+        let st = RawStack { frames: &fr, ..*stack };
+        let go: Vec<RawOut> = outs
+            .iter()
+            .zip(out_group_strides)
+            .map(|(o, &gs)| RawOut { ptr: if o.ptr.is_null() { o.ptr } else { o.ptr.offset(g as isize * gs) }, ..*o })
+            .collect();
+        let mut o = opts.clone();
+        o.weights = opts.weights.as_ref().map(|w| idx.iter().map(|&k| w[k]).collect());
+        o.normalize = match &opts.normalize {
+            Some(z) => Some(Normalize { scale: pick(&z.scale, idx)?, offset: pick(&z.offset, idx)? }),
+            None => None,
+        };
+        jobs.push(plan(&st, op, &go, None, &o)?);
+    }
+    execute_many(&jobs);
     Ok(())
 }
 

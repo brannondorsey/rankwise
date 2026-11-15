@@ -174,6 +174,17 @@ def main():
                            f"{r['pow2_median'] / r['padded_median']:.2f}× | {r['pow2_sigclip']:.1f} | "
                            f"{r['padded_sigclip']:.1f} | {r['pow2_sigclip'] / r['padded_sigclip']:.2f}× |")
         out.append("")
+    rl = load("rolling")
+    if rl:
+        out += [f"## Moving windows and groups: {rl['T']} × {rl['side']} × {rl['side']} float32", "",
+                picture("bench_rolling", "Moving-window benchmark"), "",
+                "| Case | Tool | Seconds | ns / output | Identical |", "|---|---|---|---|---|"]
+        for r in rl["rows"]:
+            out.append(f"| {r['case']} | {r['tool']} | {fmt_s(r['seconds'])} | {r['ns_per_output']:.2f} | "
+                       f"{'yes' if r['identical'] else 'no'} |")
+        out += ["", "Trailing windows with `min_periods=1`; \"identical\" compares with "
+                "`rw.rolling(x, w, min_count=1)`, which matches xarray's `rolling(...).median()`. pandas is timed on "
+                "4096 pixels and scaled; it computes in float64 and returns float64, hence \"no\". groupby: the median of each month over 30 years of monthly frames.", ""]
     (ROOT / "docs" / "benchmarks.md").write_text("\n".join(out) + "\n")
     print("wrote docs/benchmarks.md")
 

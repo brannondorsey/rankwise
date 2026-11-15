@@ -164,6 +164,48 @@ rw_status rw_quantile_f32_f64(const float *const *frames,
                               int32_t nan_omit,
                               double *const *outs);
 
+// Moving-window median of float32 frames into float32 (xarray's
+// `rolling(time=window, center=center, min_periods=min_count).median()`): output `t` covers
+// the `window` frames ending at frame `t` (centered on it when `center` != 0); frames past
+// either end and NaN are skipped, and windows with fewer than `min_count` valid values give
+// NaN. With `step` > 1 only every `step`-th output is computed. `out` holds
+// `ceil(n / step)` windows of `npix` floats, one after another. `n` may exceed
+// `RW_MAX_FRAMES`; `window` may not.
+rw_status rw_rolling_median_f32(const float *const *frames,
+                                size_t n,
+                                size_t npix,
+                                size_t window,
+                                int32_t center,
+                                size_t min_count,
+                                size_t step,
+                                float *out);
+
+// Moving-window quantiles of float32 frames, `np.nanquantile` of each window with a Python
+// float `q` (interpolation in float32), windows as in [`rw_rolling_median_f32`]. `outs`
+// holds `nq` pointers, each to `ceil(n / step)` windows of `npix` floats.
+rw_status rw_rolling_quantile_f32(const float *const *frames,
+                                  size_t n,
+                                  size_t npix,
+                                  size_t window,
+                                  int32_t center,
+                                  size_t min_count,
+                                  size_t step,
+                                  const double *q,
+                                  size_t nq,
+                                  rw_quantile_method m,
+                                  float *const *outs);
+
+// Median of each group of float32 frames: `labels[k]` (in `0..ngroups`) is frame `k`'s
+// group, and `out` holds `ngroups` results of `npix` floats (`np.nanmedian` per group when
+// `nan_omit` != 0). Every group needs at least one and at most `RW_MAX_FRAMES` frames.
+rw_status rw_group_median_f32(const float *const *frames,
+                              size_t n,
+                              size_t npix,
+                              const uint32_t *labels,
+                              size_t ngroups,
+                              int32_t nan_omit,
+                              float *out);
+
 // `np.sort(stack, axis=0)[ranks]` for float32 frames, one output per rank (NaN sorts last).
 rw_status rw_select_ranks_f32(const float *const *frames,
                               size_t n,

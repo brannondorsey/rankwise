@@ -14,5 +14,6 @@ $PIN python3 bench/landsat.py
 if command -v siril-cli >/dev/null; then $PIN python3 bench/siril/time_siril.py; fi
 $PIN python3 bench/e2e.py  # copies Siril's row from results/siril.json
 $PIN python3 bench/gefs.py
+$PIN python3 bench/rolling.py
 python3 bench/figures.py
 python3 bench/report.py

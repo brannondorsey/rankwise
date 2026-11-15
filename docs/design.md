@@ -105,6 +105,28 @@ Precision: center, spread and bounds run in float64 by default, as astropy's C c
 differ from astropy where a value sits within rounding of a bound (1 pixel in 4.2 M in the
 benchmark).
 
+## Moving windows and groups
+
+`rolling.rs` keeps every lane's window sorted (an L1/L2-resident buffer of `w` vectors per
+block) and moves it one frame at a time with a single branch-free pass that deletes the value
+leaving and inserts the value entering: with `d[j] = s[j] < out ? s[j] : s[j + 1]` (the window
+without `out`), the new window is `e[j] = min(max(d[j − 1], in), d[j])`, a compare, a blend, a
+max and a min per rank, about `4w` vector operations instead of a sort of `w`. Because the
+window stays fully sorted, every static epilogue (median, all quantile methods with per-lane
+counts, ranks, IQR, MAD, rejection) runs on it unchanged; when `step` makes sliding cost more
+than a sort, each window is sorted from scratch with the full network.
+
+Frames past either end and missing values (NaN, `nodata`; ±inf for rejection) enter as +inf
+and are not counted, so they sit at the top of the window like the missing values of the `nan*`
+reductions; outputs with fewer than `min_count` valid values are overwritten with the fill.
+This is xarray's `rolling` (NaN padding, `nan*` reductions, `min_periods`) by construction.
+Pixels go in tiles: each frame that enters is copied, the tile's run of pixels, into a ring of
+`w + 1` frames, so the frame axis streams sequentially whatever the input layout (xarray's
+`apply_ufunc` puts it innermost), and the windows of all the tile's blocks advance together.
+
+Grouped reductions need nothing new in the kernel: a group is a stack of frame pointers.
+`reduce_groups_raw` plans every group and runs all their units on one set of workers.
+
 ## Memory layout, deep stacks and the power-of-two stride
 
 The direct path streams `n` frames at once, one cache line per frame per block. Two things
