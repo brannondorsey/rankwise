@@ -150,3 +150,66 @@ A contiguous stack of 2^k-byte frames puts every frame's current cache line in t
 | 47 | skewed | 30.0 | 25.0 | 1.20× | 91.8 | 89.6 | 1.02× |
 | 63 | staged | 46.5 | 38.5 | 1.21× | 132.2 | 125.3 | 1.06× |
 
+## Deep stacks: 256 to 16,384 frames
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="img/bench_deep_dark.png"><img alt="Deep-stack benchmark" src="img/bench_deep_light.png"></picture>
+
+| Frames | Op | Tool | Seconds | ns / value | Identical |
+|---|---|---|---|---|---|
+| 256 | median | rankwise · AVX-512 | 0.0719 | 1.07 | yes |
+| 256 | median | rankwise · AVX2 | 0.133 | 1.99 | yes |
+| 256 | median | rankwise · scalar | 0.252 | 3.76 | yes |
+| 256 | median | NumPy 2.5 | 2.04 | 30.44 | yes |
+| 256 | median | bottleneck 1.6.0 | 1.33 | 19.84 | yes |
+| 511 | median | rankwise · AVX-512 | 0.125 | 1.87 | yes |
+| 511 | median | rankwise · AVX2 | 0.161 | 2.40 | yes |
+| 511 | median | rankwise · scalar | 0.257 | 3.83 | yes |
+| 511 | median | NumPy 2.5 | 1.39 | 20.74 | yes |
+| 511 | median | bottleneck 1.6.0 | 1.05 | 15.59 | yes |
+| 512 | median | rankwise · AVX-512 | 0.0982 | 1.46 | yes |
+| 512 | median | rankwise · AVX2 | 0.183 | 2.73 | yes |
+| 512 | median | rankwise · scalar | 0.272 | 4.06 | yes |
+| 512 | median | NumPy 2.5 | 1.85 | 27.52 | yes |
+| 512 | median | bottleneck 1.6.0 | 1.28 | 19.07 | yes |
+| 513 | median | rankwise · AVX-512 | 0.104 | 1.55 | yes |
+| 513 | median | rankwise · AVX2 | 0.19 | 2.83 | yes |
+| 513 | median | rankwise · scalar | 0.292 | 4.36 | yes |
+| 513 | median | NumPy 2.5 | 1.33 | 19.75 | yes |
+| 513 | median | bottleneck 1.6.0 | 0.936 | 13.95 | yes |
+| 513 | sigclip | rankwise · AVX-512 | 0.218 | 3.25 | yes |
+| 513 | sigclip | astropy 8.0 (scaled) | 3.02 | 44.93 | — |
+| 1000 | median | rankwise · AVX-512 | 0.183 | 2.72 | yes |
+| 1000 | median | rankwise · AVX2 | 0.183 | 2.73 | yes |
+| 1000 | median | rankwise · scalar | 0.351 | 5.22 | yes |
+| 1000 | median | NumPy 2.5 | 1.14 | 17.05 | yes |
+| 1000 | median | bottleneck 1.6.0 | 1 | 14.96 | yes |
+| 1024 | median | rankwise · AVX-512 | 0.146 | 2.18 | yes |
+| 1024 | median | rankwise · AVX2 | 0.193 | 2.88 | yes |
+| 1024 | median | rankwise · scalar | 0.32 | 4.76 | yes |
+| 1024 | median | NumPy 2.5 | 2.05 | 30.56 | yes |
+| 1024 | median | bottleneck 1.6.0 | 1.22 | 18.18 | yes |
+| 2048 | median | rankwise · AVX-512 | 0.183 | 2.73 | yes |
+| 2048 | median | rankwise · AVX2 | 0.345 | 5.15 | yes |
+| 2048 | median | rankwise · scalar | 0.497 | 7.41 | yes |
+| 2048 | median | NumPy 2.5 | 1.98 | 29.52 | yes |
+| 2048 | median | bottleneck 1.6.0 | 1.38 | 20.60 | yes |
+| 2048 | sigclip | rankwise · AVX-512 | 0.315 | 4.69 | yes |
+| 2048 | sigclip | astropy 8.0 (scaled) | 3.74 | 55.80 | — |
+| 4096 | median | rankwise · AVX-512 | 0.223 | 3.32 | yes |
+| 4096 | median | rankwise · AVX2 | 0.441 | 6.58 | yes |
+| 4096 | median | rankwise · scalar | 0.583 | 8.69 | yes |
+| 4096 | median | NumPy 2.5 | 2.35 | 35.03 | yes |
+| 4096 | median | bottleneck 1.6.0 | 1.36 | 20.27 | yes |
+| 8192 | median | rankwise · AVX-512 | 0.299 | 4.46 | yes |
+| 8192 | median | rankwise · AVX2 | 0.564 | 8.41 | yes |
+| 8192 | median | NumPy 2.5 | 2.11 | 31.50 | yes |
+| 8192 | median | bottleneck 1.6.0 | 1.38 | 20.59 | yes |
+| 8192 | sigclip | rankwise · AVX-512 | 0.582 | 8.67 | yes |
+| 8192 | sigclip | astropy 8.0 (scaled) | 3.45 | 51.48 | — |
+| 16384 | median | rankwise · AVX-512 | 0.491 | 7.32 | yes |
+| 16384 | median | rankwise · AVX2 | 0.761 | 11.34 | yes |
+| 16384 | median | NumPy 2.5 | 2.31 | 34.49 | yes |
+| 16384 | median | bottleneck 1.6.0 | 1.4 | 20.90 | yes |
+
+About 256 MiB of float32 per depth. On AVX-512 the blocked bitonic network takes over past 768 frames; AVX2 keeps the hybrid network. astropy's sigma_clip is timed on 4096 pixels and scaled; "identical" for clipping compares kept counts with astropy's mask.
+

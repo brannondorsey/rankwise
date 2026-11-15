@@ -182,7 +182,8 @@ def ensemble(theme):
 def deep(theme):
     t = THEMES[theme]
     d = json.loads((RES / "deep.json").read_text())
-    rows = [r for r in d["rows"] if r["op"] == "median"]
+    # powers of two only (511/513 and 1000 are in the report's table) and no portable line
+    rows = [r for r in d["rows"] if r["op"] == "median" and r["n"] & (r["n"] - 1) == 0 and "scalar" not in r["tool"]]
     fig, ax = plt.subplots(figsize=(9.2, 4.4), facecolor=t["surface"])
     style(ax, t)
     ax.yaxis.grid(True, color=t["grid"], linewidth=0.8)
@@ -201,7 +202,7 @@ def deep(theme):
         ax.text(ns[-1] * 1.12, ys[-1], tool.replace("rankwise · scalar", "rankwise · portable"), va="center",
                 color=t["ink"] if tool.startswith("rankwise") else t["ink2"], fontsize=9.5)
     ax.axvline(512, color=t["muted"], linewidth=1, linestyle=(0, (4, 3)))
-    ax.text(512 * 1.05, ax.get_ylim()[1] * 0.96, "v0.1 limit", va="top", fontsize=9, color=t["muted"])
+    ax.text(512 * 1.05, ax.get_ylim()[0] * 1.08, "v0.1 limit", va="bottom", fontsize=9, color=t["muted"])
     ns = sorted({r["n"] for r in rows})
     ax.set_xscale("log", base=2)
     ax.set_yscale("log")
@@ -211,9 +212,9 @@ def deep(theme):
     ax.set_xlabel("Frames in the stack", color=t["ink2"])
     ax.set_ylabel("ns per value (log)", color=t["ink2"])
     best = {n: min(r["ns_per_value"] for r in rows if r["n"] == n and "AVX-512" in r["tool"]) for n in ns}
-    np_ = {n: min(r["ns_per_value"] for r in rows if r["n"] == n and not r["tool"].startswith("rankwise")) for n in ns}
-    lo = min(np_[n] / best[n] for n in ns if n > 512)
-    headline(fig, f"Medians of 513 to {ns[-1]:,} frames, at least {lo:.0f}× faster than NumPy",
+    alt = {n: min(r["ns_per_value"] for r in rows if r["n"] == n and not r["tool"].startswith("rankwise")) for n in ns}
+    lo = min(alt[n] / best[n] for n in ns if n > 512)
+    headline(fig, f"Medians of 513 to {ns[-1]:,} frames, at least {lo:.0f}× faster than the fastest alternative",
              f"Median of float32 stacks, one core · {d['machine']['cpu']} · lower is better", t, top=0.975)
     fig.subplots_adjust(left=0.08, right=0.83, top=0.8, bottom=0.13)
     fig.savefig(IMG / f"bench_deep_{theme}.png", dpi=200, facecolor=t["surface"])
