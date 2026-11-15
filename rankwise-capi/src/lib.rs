@@ -7,8 +7,9 @@
 #![allow(non_camel_case_types, clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 use rankwise::{
-    presets, reduce_raw, ArgRank, Center, Clip, Combine, DType, Error, NanPolicy, Normalize, Op, Options, Precision,
-    QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Spread,
+    presets, reduce_groups_raw, reduce_raw, reduce_rolling_raw, ArgRank, Center, Clip, Combine, DType, Error,
+    NanPolicy, Normalize, Op, Options, OutRounding, Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut,
+    RawStack, Rolling, Spread,
 };
 use std::ffi::{c_char, CStr};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -473,6 +474,161 @@ pub unsafe extern "C" fn rw_quantile_f32_f64(
     })
 }
 
+/// Frame pointers of a stack that may hold more than `RW_MAX_FRAMES` frames (moving windows
+/// and groups), validated.
+unsafe fn frame_list<'a>(frames: *const *const f32, n: usize) -> Result<&'a [*const u8], rw_status> {
+    if frames.is_null() {
+        return Err(rw_status::RW_ERR_NULL);
+    }
+    if n == 0 {
+        return Err(rw_status::RW_ERR_DEPTH);
+    }
+    let fr = std::slice::from_raw_parts(frames as *const *const u8, n);
+    if fr.iter().any(|p| p.is_null()) {
+        return Err(rw_status::RW_ERR_NULL);
+    }
+    Ok(fr)
+}
+
+unsafe fn rolling_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    window: usize,
+    center: i32,
+    min_count: usize,
+    step: usize,
+    op: &Op,
+    outs: &[*mut f32],
+) -> rw_status {
+    let fr = match frame_list(frames, n) {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    if outs.iter().any(|p| p.is_null()) {
+        return rw_status::RW_ERR_NULL;
+    }
+    if window == 0 || window > RW_MAX_FRAMES {
+        return rw_status::RW_ERR_DEPTH;
+    }
+    let base = if center != 0 { Rolling::centered(window, n) } else { Rolling::trailing(window, n) };
+    let roll = base.min_count(min_count).step(step);
+    let shape = [npix];
+    let strides = [4isize];
+    let stack = RawStack { dtype: DType::F32, frames: fr, shape: &shape, strides: &strides };
+    let raw: Vec<RawOut> =
+        outs.iter().map(|&p| RawOut { ptr: p as *mut u8, dtype: DType::F32, strides: &strides }).collect();
+    let tstr = vec![(npix * 4) as isize; outs.len()];
+    match reduce_rolling_raw(&stack, &roll, op, &raw, &tstr, &opts(NanPolicy::Omit, None)) {
+        Ok(()) => rw_status::RW_OK,
+        Err(e) => status(e),
+    }
+}
+
+/// Moving-window median of float32 frames into float32 (xarray's
+/// `rolling(time=window, center=center, min_periods=min_count).median()`): output `t` covers
+/// the `window` frames ending at frame `t` (centered on it when `center` != 0); frames past
+/// either end and NaN are skipped, and windows with fewer than `min_count` valid values give
+/// NaN. With `step` > 1 only every `step`-th output is computed. `out` holds
+/// `ceil(n / step)` windows of `npix` floats, one after another. `n` may exceed
+/// `RW_MAX_FRAMES`; `window` may not.
+#[no_mangle]
+pub unsafe extern "C" fn rw_rolling_median_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    window: usize,
+    center: i32,
+    min_count: usize,
+    step: usize,
+    out: *mut f32,
+) -> rw_status {
+    guarded(|| rolling_f32(frames, n, npix, window, center, min_count, step, &Op::Median, &[out]))
+}
+
+/// Moving-window quantiles of float32 frames, `np.nanquantile` of each window with a Python
+/// float `q` (interpolation in float32), windows as in [`rw_rolling_median_f32`]. `m` is an
+/// `rw_quantile_method` value. `outs` holds `nq` pointers, each to `ceil(n / step)` windows
+/// of `npix` floats.
+#[no_mangle]
+pub unsafe extern "C" fn rw_rolling_quantile_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    window: usize,
+    center: i32,
+    min_count: usize,
+    step: usize,
+    q: *const f64,
+    nq: usize,
+    m: i32,
+    outs: *const *mut f32,
+) -> rw_status {
+    guarded(|| {
+        if q.is_null() || outs.is_null() {
+            return rw_status::RW_ERR_NULL;
+        }
+        let Some(m) = method(m) else { return rw_status::RW_ERR_PARAM };
+        let qs = std::slice::from_raw_parts(q, nq).to_vec();
+        let os = std::slice::from_raw_parts(outs, nq);
+        let op = Op::Quantile(QuantileSpec {
+            method: m,
+            form: QForm::Weak,
+            out_rounding: OutRounding::CastOnce,
+            ..QuantileSpec::new(qs)
+        });
+        rolling_f32(frames, n, npix, window, center, min_count, step, &op, os)
+    })
+}
+
+/// Median of each group of float32 frames: `labels[k]` (in `0..ngroups`) is frame `k`'s
+/// group, and `out` holds `ngroups` results of `npix` floats (`np.nanmedian` per group when
+/// `nan_omit` != 0). Every group needs at least one and at most `RW_MAX_FRAMES` frames.
+#[no_mangle]
+pub unsafe extern "C" fn rw_group_median_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    labels: *const u32,
+    ngroups: usize,
+    nan_omit: i32,
+    out: *mut f32,
+) -> rw_status {
+    guarded(|| {
+        let fr = match frame_list(frames, n) {
+            Ok(f) => f,
+            Err(e) => return e,
+        };
+        if labels.is_null() || out.is_null() {
+            return rw_status::RW_ERR_NULL;
+        }
+        // every group needs a frame: check before allocating ngroups lists
+        if ngroups == 0 || ngroups > n {
+            return rw_status::RW_ERR_DEPTH;
+        }
+        let lab = std::slice::from_raw_parts(labels, n);
+        let mut groups = vec![Vec::new(); ngroups];
+        for (k, &g) in lab.iter().enumerate() {
+            match groups.get_mut(g as usize) {
+                Some(v) => v.push(k),
+                None => return rw_status::RW_ERR_PARAM,
+            }
+        }
+        if groups.iter().any(|g| g.is_empty() || g.len() > RW_MAX_FRAMES) {
+            return rw_status::RW_ERR_DEPTH;
+        }
+        let shape = [npix];
+        let strides = [4isize];
+        let stack = RawStack { dtype: DType::F32, frames: fr, shape: &shape, strides: &strides };
+        let raw = [RawOut { ptr: out as *mut u8, dtype: DType::F32, strides: &strides }];
+        let nan = if nan_omit != 0 { NanPolicy::Omit } else { NanPolicy::Propagate };
+        match reduce_groups_raw(&stack, &groups, &Op::Median, &raw, &[(npix * 4) as isize], &opts(nan, None)) {
+            Ok(()) => rw_status::RW_OK,
+            Err(e) => status(e),
+        }
+    })
+}
+
 /// `np.sort(stack, axis=0)[ranks]` for float32 frames, one output per rank (NaN sorts last).
 #[no_mangle]
 pub unsafe extern "C" fn rw_select_ranks_f32(
@@ -701,6 +857,50 @@ mod tests {
         assert_eq!(s, rw_status::RW_OK);
         assert_eq!(rej[0], 1);
         let s = unsafe { rw_median_f32(ptrs.as_ptr(), 0, 33, out.as_mut_ptr()) };
+        assert_eq!(s, rw_status::RW_ERR_DEPTH);
+    }
+
+    #[test]
+    fn rolling_and_groups() {
+        let frames: Vec<Vec<f32>> = (0..6).map(|k| vec![k as f32; 3]).collect();
+        let ptrs: Vec<*const f32> = frames.iter().map(|f| f.as_ptr()).collect();
+        let mut out = vec![0f32; 6 * 3];
+        let s = unsafe { rw_rolling_median_f32(ptrs.as_ptr(), 6, 3, 3, 1, 1, 1, out.as_mut_ptr()) };
+        assert_eq!(s, rw_status::RW_OK);
+        let want = [0.5f32, 1.0, 2.0, 3.0, 4.0, 4.5];
+        for t in 0..6 {
+            assert_eq!(&out[t * 3..t * 3 + 3], &[want[t]; 3]);
+        }
+        let mut q = vec![0f32; 3 * 3];
+        let qs = [1.0f64];
+        let outs = [q.as_mut_ptr()];
+        let s = unsafe {
+            rw_rolling_quantile_f32(
+                ptrs.as_ptr(),
+                6,
+                3,
+                2,
+                0,
+                2,
+                2,
+                qs.as_ptr(),
+                1,
+                rw_quantile_method::RW_Q_LINEAR as i32,
+                outs.as_ptr(),
+            )
+        };
+        assert_eq!(s, rw_status::RW_OK);
+        assert!(q[0].is_nan());
+        assert_eq!(&q[3..], &[2.0, 2.0, 2.0, 4.0, 4.0, 4.0]);
+        let labels = [1u32, 0, 1, 0, 1, 0];
+        let mut g = vec![0f32; 2 * 3];
+        let s = unsafe { rw_group_median_f32(ptrs.as_ptr(), 6, 3, labels.as_ptr(), 2, 0, g.as_mut_ptr()) };
+        assert_eq!(s, rw_status::RW_OK);
+        assert_eq!(g, vec![3.0, 3.0, 3.0, 2.0, 2.0, 2.0]);
+        let s = unsafe { rw_group_median_f32(ptrs.as_ptr(), 6, 3, labels.as_ptr(), 3, 0, g.as_mut_ptr()) };
+        assert_eq!(s, rw_status::RW_ERR_DEPTH);
+        // an absurd group count is refused before anything is allocated
+        let s = unsafe { rw_group_median_f32(ptrs.as_ptr(), 6, 3, labels.as_ptr(), 1 << 40, 0, g.as_mut_ptr()) };
         assert_eq!(s, rw_status::RW_ERR_DEPTH);
     }
 

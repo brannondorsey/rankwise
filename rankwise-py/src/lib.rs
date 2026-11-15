@@ -8,8 +8,9 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use rankwise::{
-    presets, reduce_raw, ArgRank, Center, Clip, Combine, DType, Error, Isa, NanPolicy, Normalize, Op, Options,
-    OutRounding, Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Rejection, Spread, Staging,
+    presets, reduce_raw, reduce_rolling_raw, ArgRank, Center, Clip, Combine, DType, Error, Isa, NanPolicy, Normalize,
+    Op, Options, OutRounding, Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Rejection,
+    Rolling, Spread, Staging,
 };
 
 fn err(e: Error) -> PyErr {
@@ -222,6 +223,46 @@ fn reduce(
     .map_err(err)
 }
 
+/// Moving-window reduction: `outs` describe window 0's outputs, `tstrides` the byte step
+/// between windows.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (op, in_dtype, frames, shape, strides, outs, tstrides, opts, window, start, step, count, min_count))]
+fn rolling(
+    py: Python<'_>,
+    op: &Bound<'_, PyDict>,
+    in_dtype: &str,
+    frames: Vec<usize>,
+    shape: Vec<usize>,
+    strides: Vec<isize>,
+    outs: Vec<OutSpec>,
+    tstrides: Vec<isize>,
+    opts: &Bound<'_, PyDict>,
+    window: usize,
+    start: isize,
+    step: usize,
+    count: usize,
+    min_count: usize,
+) -> PyResult<()> {
+    let op = parse_op(op)?;
+    let opts = parse_opts(opts)?;
+    let dt = dtype(in_dtype)?;
+    let out_dts: Vec<DType> = outs.iter().map(|o| dtype(&o.1)).collect::<PyResult<_>>()?;
+    let roll = Rolling { window, start, step, count, min_count };
+    py.detach(move || {
+        let fptrs: Vec<*const u8> = frames.iter().map(|&a| a as *const u8).collect();
+        let stack = RawStack { dtype: dt, frames: &fptrs, shape: &shape, strides: &strides };
+        let raw_outs: Vec<RawOut> = outs
+            .iter()
+            .zip(out_dts.iter())
+            .map(|(o, &d)| RawOut { ptr: o.0 as *mut u8, dtype: d, strides: &o.2 })
+            .collect();
+        // SAFETY: the Python layer allocated every window's outputs and keeps the input alive.
+        unsafe { reduce_rolling_raw(&stack, &roll, &op, &raw_outs, &tstrides, &opts) }
+    })
+    .map_err(err)
+}
+
 #[pyfunction]
 fn available_isas() -> Vec<&'static str> {
     Isa::available().into_iter().map(|i| i.name()).collect()
@@ -273,6 +314,7 @@ fn describe(
 #[pymodule]
 fn _rankwise(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(reduce, m)?)?;
+    m.add_function(wrap_pyfunction!(rolling, m)?)?;
     m.add_function(wrap_pyfunction!(available_isas, m)?)?;
     m.add_function(wrap_pyfunction!(set_isa, m)?)?;
     m.add_function(wrap_pyfunction!(current_isa, m)?)?;

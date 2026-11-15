@@ -38,6 +38,7 @@ mod net;
 pub mod netgen;
 mod plan;
 pub mod quantile;
+mod rolling;
 pub mod simd;
 mod spec;
 
@@ -47,7 +48,11 @@ mod nd;
 pub use error::{Error, Result};
 pub use frames::*;
 pub use layout::{c_strides, RawMask, RawOut, RawStack};
-pub use plan::{describe, natural_dtype, network_size, reduce_raw, Normalize, Options, Staging};
+pub use plan::{
+    describe, natural_dtype, network_size, reduce_groups_raw, reduce_raw, reduce_rolling_raw, Normalize, Options,
+    Staging,
+};
+pub use rolling::Rolling;
 pub use simd::{isa_override, resolve_isa, set_isa_override, Isa};
 pub use spec::*;
 

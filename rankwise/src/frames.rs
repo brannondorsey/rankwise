@@ -1,7 +1,8 @@
 //! Safe API over frame lists: one slice per frame, every slice the same length.
 
 use crate::layout::{RawMask, RawOut, RawStack};
-use crate::plan::{reduce_raw, Options};
+use crate::plan::{reduce_groups_raw, reduce_raw, reduce_rolling_raw, Options};
+use crate::rolling::Rolling;
 use crate::spec::{Clip, DType, NanPolicy, Op, QForm, QuantileSpec};
 use crate::{Error, Result};
 
@@ -123,6 +124,110 @@ pub fn reduce_frames<T: Sample>(
     // SAFETY: slices are valid for npix elements and the borrow checker keeps outputs
     // disjoint from the shared input borrows.
     unsafe { reduce_raw(&stack, op, &raws, mask_ref, opts) }
+}
+
+/// Check `outs` against `per` outputs of `npix` values each; return their raw forms and the
+/// byte stride between consecutive outputs.
+fn batch_outs(outs: &mut [Out], per: usize, npix: usize) -> Result<(Vec<RawOut<'static>>, Vec<isize>)> {
+    let mut raws = Vec::with_capacity(outs.len());
+    let mut strides = Vec::with_capacity(outs.len());
+    for (j, o) in outs.iter_mut().enumerate() {
+        let (r, len) = o.raw();
+        if let Some(l) = len {
+            if l != per * npix {
+                return Err(Error::Shape(format!("output {j} has {l} elements, expected {per} × {npix}")));
+            }
+        }
+        strides.push((npix * r.dtype.size()) as isize);
+        raws.push(r);
+    }
+    Ok((raws, strides))
+}
+
+fn frame_stack<T: Sample>(frames: &[&[T]]) -> Result<(Vec<*const u8>, usize)> {
+    if frames.is_empty() {
+        return Err(Error::BadDepth(0));
+    }
+    let npix = frames[0].len();
+    if let Some(i) = frames.iter().position(|f| f.len() != npix) {
+        return Err(Error::Shape(format!("frame {i} has {} pixels, frame 0 has {npix}", frames[i].len())));
+    }
+    Ok((frames.iter().map(|f| f.as_ptr() as *const u8).collect(), npix))
+}
+
+/// Moving-window reduction over a list of frames. Each output holds `roll.count` windows of
+/// `npix` values, window `t` at `[t * npix .. (t + 1) * npix]`. See [`Rolling`].
+///
+/// ```
+/// use rankwise::{rolling_frames, Op, Options, Out, Rolling};
+/// let frames: Vec<Vec<f32>> = (0..6).map(|k| vec![k as f32; 2]).collect();
+/// let views: Vec<&[f32]> = frames.iter().map(|f| f.as_slice()).collect();
+/// let mut out = vec![0f32; 6 * 2];
+/// // trailing median of 3 frames; the first two windows are short
+/// rolling_frames(&views, &Rolling::trailing(3, 6), &Op::Median, &mut [Out::F32(&mut out)], &Options::default()).unwrap();
+/// assert!(out[0].is_nan() && out[2].is_nan());
+/// assert_eq!(&out[4..], &[1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]);
+/// ```
+pub fn rolling_frames<T: Sample>(
+    frames: &[&[T]],
+    roll: &Rolling,
+    op: &Op,
+    outs: &mut [Out],
+    opts: &Options,
+) -> Result<()> {
+    let (ptrs, npix) = frame_stack(frames)?;
+    let shape = [npix];
+    let strides = [core::mem::size_of::<T>() as isize];
+    let stack = RawStack { dtype: T::DTYPE, frames: &ptrs, shape: &shape, strides: &strides };
+    let (raws, tstr) = batch_outs(outs, roll.count, npix)?;
+    let ostr: Vec<[isize; 1]> = raws.iter().map(|r| [r.dtype.size() as isize]).collect();
+    let raws: Vec<RawOut> = raws.iter().zip(ostr.iter()).map(|(r, s)| RawOut { strides: s, ..*r }).collect();
+    // SAFETY: slices are valid for count × npix elements; outputs are borrowed mutably.
+    unsafe { reduce_rolling_raw(&stack, roll, op, &raws, &tstr, opts) }
+}
+
+/// Reduce groups of frames: `labels[k]` is frame `k`'s group (`0..ngroups`, every group
+/// non-empty). Each output holds `ngroups` results of `npix` values, group `g` at
+/// `[g * npix .. (g + 1) * npix]`. Returns `ngroups`.
+///
+/// ```
+/// use rankwise::{group_frames, Op, Options, Out};
+/// let frames: Vec<Vec<f32>> = (0..6).map(|k| vec![k as f32; 2]).collect();
+/// let views: Vec<&[f32]> = frames.iter().map(|f| f.as_slice()).collect();
+/// let mut out = vec![0f32; 2 * 2];
+/// // even and odd frames
+/// let g = group_frames(&views, &[0, 1, 0, 1, 0, 1], &Op::Median, &mut [Out::F32(&mut out)], &Options::default()).unwrap();
+/// assert_eq!(g, 2);
+/// assert_eq!(out, vec![2.0, 2.0, 3.0, 3.0]);
+/// ```
+pub fn group_frames<T: Sample>(
+    frames: &[&[T]],
+    labels: &[usize],
+    op: &Op,
+    outs: &mut [Out],
+    opts: &Options,
+) -> Result<usize> {
+    let (ptrs, npix) = frame_stack(frames)?;
+    if labels.len() != frames.len() {
+        return Err(Error::Shape(format!("{} labels for {} frames", labels.len(), frames.len())));
+    }
+    let ng = labels.iter().max().map(|&m| m + 1).unwrap_or(0);
+    let mut groups = vec![Vec::new(); ng];
+    for (k, &g) in labels.iter().enumerate() {
+        groups[g].push(k);
+    }
+    if let Some(g) = groups.iter().position(|g| g.is_empty()) {
+        return Err(Error::Param(format!("group {g} has no frames")));
+    }
+    let shape = [npix];
+    let strides = [core::mem::size_of::<T>() as isize];
+    let stack = RawStack { dtype: T::DTYPE, frames: &ptrs, shape: &shape, strides: &strides };
+    let (raws, gstr) = batch_outs(outs, ng, npix)?;
+    let ostr: Vec<[isize; 1]> = raws.iter().map(|r| [r.dtype.size() as isize]).collect();
+    let raws: Vec<RawOut> = raws.iter().zip(ostr.iter()).map(|(r, s)| RawOut { strides: s, ..*r }).collect();
+    // SAFETY: slices are valid for ngroups × npix elements; outputs are borrowed mutably.
+    unsafe { reduce_groups_raw(&stack, &groups, op, &raws, &gstr, opts)? };
+    Ok(ng)
 }
 
 /// `np.median(stack, axis=0)` over a list of frames.

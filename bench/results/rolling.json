@@ -1,0 +1,203 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-15"
+ },
+ "versions": {
+  "numpy": "2.5.3",
+  "bottleneck": "1.6.0",
+  "pandas": "3.0.5",
+  "xarray": "2026.9.0",
+  "rankwise": "0.1.0"
+ },
+ "T": 1000,
+ "side": 256,
+ "rows": [
+  {
+   "case": "rolling w=7",
+   "tool": "rankwise \u00b7 AVX-512",
+   "family": "rankwise",
+   "seconds": 0.2940847940008098,
+   "ns_per_output": 4.487377838147122,
+   "identical": true
+  },
+  {
+   "case": "rolling w=7",
+   "tool": "rankwise \u00b7 AVX2",
+   "family": "rankwise",
+   "seconds": 0.36176939500001026,
+   "ns_per_output": 5.520162887573399,
+   "identical": true
+  },
+  {
+   "case": "rolling w=7",
+   "tool": "rankwise \u00b7 scalar",
+   "family": "rankwise",
+   "seconds": 0.7718516240001918,
+   "ns_per_output": 11.77752111816699,
+   "identical": true
+  },
+  {
+   "case": "rolling w=7",
+   "tool": "bottleneck 1.6.0 move_median",
+   "family": "competitor",
+   "seconds": 4.190122171999974,
+   "ns_per_output": 63.93619036865195,
+   "identical": true
+  },
+  {
+   "case": "rolling w=7",
+   "tool": "pandas 3.0.5",
+   "family": "competitor",
+   "seconds": 16.361102415976347,
+   "ns_per_output": 249.6506105953422,
+   "identical": false
+  },
+  {
+   "case": "rolling w=7",
+   "tool": "NumPy windows + nanmedian",
+   "family": "competitor",
+   "seconds": 21.730126104999727,
+   "ns_per_output": 331.5754105377155,
+   "identical": true
+  },
+  {
+   "case": "rolling w=31",
+   "tool": "rankwise \u00b7 AVX-512",
+   "family": "rankwise",
+   "seconds": 0.48209685400070157,
+   "ns_per_output": 7.3562142028915645,
+   "identical": true
+  },
+  {
+   "case": "rolling w=31",
+   "tool": "rankwise \u00b7 AVX2",
+   "family": "rankwise",
+   "seconds": 0.5725187459993322,
+   "ns_per_output": 8.735942779530825,
+   "identical": true
+  },
+  {
+   "case": "rolling w=31",
+   "tool": "rankwise \u00b7 scalar",
+   "family": "rankwise",
+   "seconds": 1.7334656750008435,
+   "ns_per_output": 26.45058708192205,
+   "identical": true
+  },
+  {
+   "case": "rolling w=31",
+   "tool": "bottleneck 1.6.0 move_median",
+   "family": "competitor",
+   "seconds": 5.7042098860001715,
+   "ns_per_output": 87.03933541870379,
+   "identical": true
+  },
+  {
+   "case": "rolling w=31",
+   "tool": "pandas 3.0.5",
+   "family": "competitor",
+   "seconds": 23.38261859200429,
+   "ns_per_output": 356.79044482428424,
+   "identical": false
+  },
+  {
+   "case": "rolling w=31",
+   "tool": "NumPy windows + nanmedian",
+   "family": "competitor",
+   "seconds": 87.49636456299959,
+   "ns_per_output": 1335.0885706024108,
+   "identical": true
+  },
+  {
+   "case": "rolling w=101",
+   "tool": "rankwise \u00b7 AVX-512",
+   "family": "rankwise",
+   "seconds": 0.8495632899994234,
+   "ns_per_output": 12.963307037344718,
+   "identical": true
+  },
+  {
+   "case": "rolling w=101",
+   "tool": "rankwise \u00b7 AVX2",
+   "family": "rankwise",
+   "seconds": 1.2977677359995141,
+   "ns_per_output": 19.802364135734773,
+   "identical": true
+  },
+  {
+   "case": "rolling w=101",
+   "tool": "rankwise \u00b7 scalar",
+   "family": "rankwise",
+   "seconds": 4.48455797799943,
+   "ns_per_output": 68.42892422484482,
+   "identical": true
+  },
+  {
+   "case": "rolling w=101",
+   "tool": "bottleneck 1.6.0 move_median",
+   "family": "competitor",
+   "seconds": 6.129290917000617,
+   "ns_per_output": 93.52555720520961,
+   "identical": true
+  },
+  {
+   "case": "rolling w=101",
+   "tool": "pandas 3.0.5",
+   "family": "competitor",
+   "seconds": 31.404456607997417,
+   "ns_per_output": 479.1939790038669,
+   "identical": false
+  },
+  {
+   "case": "groupby",
+   "tool": "rankwise \u00b7 AVX-512",
+   "family": "rankwise",
+   "seconds": 0.01064361499993538,
+   "ns_per_output": 13.534056345539577,
+   "identical": true
+  },
+  {
+   "case": "groupby",
+   "tool": "rankwise \u00b7 AVX2",
+   "family": "rankwise",
+   "seconds": 0.016905669999687234,
+   "ns_per_output": 21.496671040455162,
+   "identical": true
+  },
+  {
+   "case": "groupby",
+   "tool": "rankwise \u00b7 scalar",
+   "family": "rankwise",
+   "seconds": 0.03909702999953879,
+   "ns_per_output": 49.714444477766406,
+   "identical": true
+  },
+  {
+   "case": "groupby",
+   "tool": "NumPy (loop over months)",
+   "family": "competitor",
+   "seconds": 0.44929016800051613,
+   "ns_per_output": 571.3019917812553,
+   "identical": true
+  },
+  {
+   "case": "groupby",
+   "tool": "xarray 2026.9.0 groupby",
+   "family": "competitor",
+   "seconds": 0.8785405879989412,
+   "ns_per_output": 1117.1221262600468,
+   "identical": true
+  }
+ ]
+}
