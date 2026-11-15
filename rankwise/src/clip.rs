@@ -338,33 +338,112 @@ fn sub_gt<E: Element>(a: E, b: E, t: E) -> bool {
     }
 }
 
-/// Rousseeuw–Croux Sn (without the consistency constant) of a sorted slice.
+/// Rousseeuw–Croux Sn (without the consistency constant) of a sorted slice: the low median
+/// over `i` of the high median over `j` of `|x[i] - x[j]|`.
+///
+/// For each `i` the distances to the left and to the right are two sorted lists, so their
+/// `k`-th smallest (with the self-distance 0 first) is a binary search: O(c log c) in all,
+/// where merging the lists step by step took O(c²) (seconds per pixel on deep stacks).
 fn sn(x: &[f64]) -> f64 {
     let c = x.len();
     if c < 2 {
         return 0.0;
     }
-    let mut meds = Vec::with_capacity(c);
-    let k = c / 2; // high median of c distances (0-based)
-    for i in 0..c {
-        // merge distances to the left and right, ascending; self-distance 0 first
-        let (mut l, mut r) = (i as isize - 1, i + 1);
-        let mut v = 0.0;
-        for _ in 0..k {
-            let dl = if l >= 0 { x[i] - x[l as usize] } else { f64::INFINITY };
-            let dr = if r < c { x[r] - x[i] } else { f64::INFINITY };
-            if dl <= dr {
-                v = dl;
-                l -= 1;
-            } else {
-                v = dr;
-                r += 1;
-            }
-        }
-        meds.push(v);
-    }
+    let k = c / 2; // high median of c distances (0-based), the self-distance 0 at index 0
+    let mut meds: Vec<f64> = (0..c).map(|i| kth_distance(x, i, k)).collect();
     meds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
     meds[c.div_ceil(2) - 1]
+}
+
+/// The `k`-th smallest (0-based) of `{0} ∪ {x[i] - x[i-t]} ∪ {x[i+t] - x[i]}` for sorted `x`.
+fn kth_distance(x: &[f64], i: usize, k: usize) -> f64 {
+    if k == 0 {
+        return 0.0;
+    }
+    // the k smallest non-self distances take a from the left and k - a from the right
+    let (nl, nr) = (i, x.len() - 1 - i);
+    let left = |t: usize| x[i] - x[i - t]; // t-th nearest on the left, t >= 1
+    let right = |t: usize| x[i + t] - x[i];
+    // largest a in [lo, hi] with left(a) <= right(k - a + 1) (left list may give a values)
+    let (mut lo, mut hi) = (k.saturating_sub(nr), k.min(nl));
+    while lo < hi {
+        let a = lo + (hi - lo).div_ceil(2);
+        // taking a from the left is consistent iff the a-th left is <= the (k-a+1)-th right
+        if k - a + 1 > nr || left(a) <= right(k - a + 1) {
+            lo = a;
+        } else {
+            hi = a - 1;
+        }
+    }
+    let a = lo;
+    let l = if a > 0 { left(a) } else { f64::NEG_INFINITY };
+    let r = if k - a > 0 { right(k - a) } else { f64::NEG_INFINITY };
+    l.max(r)
+}
+
+#[cfg(test)]
+mod sn_tests {
+    use super::*;
+
+    /// The direct merge the binary search replaces.
+    fn sn_merge(x: &[f64]) -> f64 {
+        let c = x.len();
+        if c < 2 {
+            return 0.0;
+        }
+        let mut meds = Vec::with_capacity(c);
+        let k = c / 2;
+        for i in 0..c {
+            let (mut l, mut r) = (i as isize - 1, i + 1);
+            let mut v = 0.0;
+            for _ in 0..k {
+                let dl = if l >= 0 { x[i] - x[l as usize] } else { f64::INFINITY };
+                let dr = if r < c { x[r] - x[i] } else { f64::INFINITY };
+                if dl <= dr {
+                    v = dl;
+                    l -= 1;
+                } else {
+                    v = dr;
+                    r += 1;
+                }
+            }
+            meds.push(v);
+        }
+        meds.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        meds[c.div_ceil(2) - 1]
+    }
+
+    #[test]
+    fn binary_search_sn_matches_merge() {
+        let mut s = 99u64;
+        for c in 0..300usize {
+            for ties in [false, true] {
+                let mut x: Vec<f64> = (0..c)
+                    .map(|_| {
+                        s ^= s << 13;
+                        s ^= s >> 7;
+                        s ^= s << 17;
+                        if ties {
+                            (s % 5) as f64
+                        } else {
+                            (s % 100_000) as f64 * 0.37 - 1000.0
+                        }
+                    })
+                    .collect();
+                x.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                assert_eq!(sn(&x), sn_merge(&x), "c={c} ties={ties}");
+                if c <= 40 {
+                    for i in 0..c {
+                        let mut d: Vec<f64> = x.iter().map(|&y| (y - x[i]).abs()).collect();
+                        d.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                        for k in 0..c {
+                            assert_eq!(kth_distance(&x, i, k), d[k], "c={c} i={i} k={k}");
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Winsorized sigma clipping (Huber).

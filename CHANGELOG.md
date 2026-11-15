@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+* **Deep stacks: up to 65,535 frames** (was 512), on every ISA and for every operation. Stacks
+  deeper than 512 sort with a register-blocked bitonic network: chunks of 32 (AVX-512) sort in
+  registers, then each merge pass loads groups of 16 wires, runs four layers on them in
+  registers and stores them back, so the buffer, which outgrows L1 there, is read once per
+  four layers instead of twice per comparator. Rank pruning works per group.
+* PixInsight's winsorized preset computes Sn in O(n log n) (was O(n²)).
+
 ## 0.1.0 (unreleased)
 
 First release of the production library, rebuilt from the `lanestat-proto` prototype.

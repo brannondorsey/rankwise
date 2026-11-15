@@ -179,6 +179,47 @@ def ensemble(theme):
     plt.close(fig)
 
 
+def deep(theme):
+    t = THEMES[theme]
+    d = json.loads((RES / "deep.json").read_text())
+    rows = [r for r in d["rows"] if r["op"] == "median"]
+    fig, ax = plt.subplots(figsize=(9.2, 4.4), facecolor=t["surface"])
+    style(ax, t)
+    ax.yaxis.grid(True, color=t["grid"], linewidth=0.8)
+    ax.xaxis.grid(False)
+    tools = list(dict.fromkeys(r["tool"] for r in rows))
+    cols = {}
+    others = iter([t["s2"], t["muted"], t["ink2"]])
+    for tool in tools:
+        cols[tool] = rw_color(tool, t) if tool.startswith("rankwise") else next(others)
+    for tool in tools:
+        rs = [r for r in rows if r["tool"] == tool]
+        ns = [r["n"] for r in rs]
+        ys = [r["ns_per_value"] for r in rs]
+        ax.plot(ns, ys, color=cols[tool], linewidth=2.2 if "AVX-512" in tool else 1.6, marker="o", markersize=5,
+                markeredgecolor=t["surface"], markeredgewidth=1.2)
+        ax.text(ns[-1] * 1.12, ys[-1], tool.replace("rankwise · scalar", "rankwise · portable"), va="center",
+                color=t["ink"] if tool.startswith("rankwise") else t["ink2"], fontsize=9.5)
+    ax.axvline(512, color=t["muted"], linewidth=1, linestyle=(0, (4, 3)))
+    ax.text(512 * 1.05, ax.get_ylim()[1] * 0.96, "v0.1 limit", va="top", fontsize=9, color=t["muted"])
+    ns = sorted({r["n"] for r in rows})
+    ax.set_xscale("log", base=2)
+    ax.set_yscale("log")
+    ax.set_xticks([n for n in ns if n & (n - 1) == 0])
+    ax.set_xticklabels([str(n) for n in ns if n & (n - 1) == 0])
+    ax.set_xlim(ns[0] * 0.85, ns[-1] * 5)
+    ax.set_xlabel("Frames in the stack", color=t["ink2"])
+    ax.set_ylabel("ns per value (log)", color=t["ink2"])
+    best = {n: min(r["ns_per_value"] for r in rows if r["n"] == n and "AVX-512" in r["tool"]) for n in ns}
+    np_ = {n: min(r["ns_per_value"] for r in rows if r["n"] == n and not r["tool"].startswith("rankwise")) for n in ns}
+    lo = min(np_[n] / best[n] for n in ns if n > 512)
+    headline(fig, f"Medians of 513 to {ns[-1]:,} frames, at least {lo:.0f}× faster than NumPy",
+             f"Median of float32 stacks, one core · {d['machine']['cpu']} · lower is better", t, top=0.975)
+    fig.subplots_adjust(left=0.08, right=0.83, top=0.8, bottom=0.13)
+    fig.savefig(IMG / f"bench_deep_{theme}.png", dpi=200, facecolor=t["surface"])
+    plt.close(fig)
+
+
 def stride(theme):
     """Power-of-two frame strides: time relative to padded frames, before and after skewed reads."""
     from matplotlib.lines import Line2D
@@ -230,7 +271,7 @@ def stride(theme):
 
 if __name__ == "__main__":
     for th in THEMES:
-        for f in (astro, sweep, ensemble, stride):
+        for f in (astro, sweep, ensemble, stride, deep):
             try:
                 f(th)
             except FileNotFoundError as e:

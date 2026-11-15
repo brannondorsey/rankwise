@@ -240,11 +240,11 @@ python -m pytest conformance -q                            # conformance suite
 
 Rust 1.89 or later (AVX-512 intrinsics are stable from 1.89); no nightly features.
 
-## Scope of v0.1
+## Scope
 
-Up to 512 frames per call (stream row strips for more pixels); float32, float64 and uint16
-(uint8 widened). Not yet: rolling windows and grouped reductions, weighted quantiles, stacks
-deeper than 512, linear-fit clipping and generalized ESD, R and Julia bindings. rankwise is a
+Up to 65,535 frames per call (stream row strips for more pixels); float32, float64 and uint16
+(uint8 widened). Not yet: rolling windows and grouped reductions, weighted quantiles,
+linear-fit clipping and generalized ESD, R and Julia bindings. rankwise is a
 kernel, not a stacker: no I/O, registration or calibration.
 
 ## License

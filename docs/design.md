@@ -60,12 +60,28 @@ Min, max, range and argmin/argmax skip the network: they are one streaming pass.
 * **Hybrid networks for deep stacks.** Batcher's first log2(32) merge levels sort each
   aligned block of 32 wires independently, so for n > 32 rankwise sorts each block with the
   register-resident network and then interprets only the remaining (pruned) merge levels.
+* **Blocked bitonic networks beyond 512 frames.** Past 512 wires the buffer outgrows L1 and
+  the interpreted merge levels, two loads and two stores per comparator, dominate. Deeper stacks
+  use the flip variant of Batcher's bitonic sort instead (every comparator puts the minimum on
+  the lower wire, so padding wires past `n` hold +inf and never move): after the chunk sorts,
+  merge stage `s` is a flip layer (wire `i` against `i ^ (2^s − 1)`) and then half-cleaners
+  down to stride 1. Its layers are cut into passes of four, and each pass runs on groups of 16
+  wires that meet only each other in those four layers: load the group, run the layers in
+  registers, store it back. The buffer is then read once per four layers. Groups that reach past
+  `n` drop the layers that only pair them with padding, and rank pruning keeps a group only if
+  a needed rank depends on it. Against the v0.1 network this is 1.8–2.1× faster from 1,024 to
+  16,384 frames (bitonic has ~15% more comparators, but they run from registers).
+  `RANKWISE_DEEP_NET` (threshold) and `RANKWISE_DEEP_GROUP` (log2 group width) override the
+  defaults for measuring other CPUs. Indices and counts ride in the sort dtype's lanes (uint16
+  for uint16 data), which caps a stack at 65,535 frames.
 * **Bitonic merges for MAD.** The deviations |x − median| of an already sorted stack fall,
   then rise: a bitonic (valley) sequence, which a half-cleaner cascade of n/2·log2 n
   comparators sorts. That is how both `mad()` and MAD-based clipping avoid a second full sort.
 
 The 0-1 principle tests (`rankwise/tests/networks.rs`) check every network exhaustively for
-n ≤ 20: full sorts, pruned selections and the bitonic merger.
+n ≤ 20: full sorts, pruned selections and the bitonic merger; the blocked networks are checked
+the same way for n ≤ 16 with every chunk and group width, and their register-blocked execution
+against their comparator lists.
 
 ## SIMD and dispatch
 

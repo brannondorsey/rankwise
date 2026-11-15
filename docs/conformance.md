@@ -27,7 +27,9 @@ python -m pytest conformance -q          # 1,092 tests, about a minute
 | Siril presets | `siril-cli` 1.2.1 | identical reject maps where definitions allow | see [presets](presets.md) |
 | C ABI | the Python package on the same data | identical | ✅ |
 
-The matrix: every stack depth 1–17 plus 31–33, 63–65, 127–129, 255, 256, 511 and 512; pixel
+The matrix: every stack depth 1–17 plus 31–33, 63–65, 127–129, 255, 256, 511 and 512, and
+deep stacks of 513, 1000, 1024, 1025, 2049 and 4096 (`test_deep.py`; the Rust oracle also runs
+65,535); pixel
 counts that leave partial vectors (1, 7, 15, 16, 17, 33, 1001); float32, float64 and uint16
 (uint8 is widened); frame lists, memory-mapped files, every axis, negative, odd and
 power-of-two strides (direct, skewed and staged reads), Fortran order; NaN densities from none to whole all-NaN slices, ±inf,
