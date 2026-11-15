@@ -1,0 +1,127 @@
+{
+ "machine": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "affinity": [
+   1
+  ],
+  "isas": [
+   "avx512",
+   "avx2",
+   "scalar"
+  ],
+  "python": "3.13.18",
+  "date": "2026-11-15"
+ },
+ "versions": {
+  "numpy": "2.5.3",
+  "rankwise": "0.1.0"
+ },
+ "qs": [
+  0.1,
+  0.5,
+  0.9
+ ],
+ "rows": [
+  {
+   "case": "frames",
+   "n": 31,
+   "side": 512,
+   "tool": "rankwise \u00b7 AVX-512",
+   "family": "rankwise",
+   "seconds": 0.020731571000396798,
+   "ns_per_px": 79.08466720732422,
+   "identical_to_numpy": true
+  },
+  {
+   "case": "frames",
+   "n": 31,
+   "side": 512,
+   "tool": "rankwise \u00b7 AVX2",
+   "family": "rankwise",
+   "seconds": 0.02919016099986038,
+   "ns_per_px": 111.35162734932092,
+   "identical_to_numpy": true
+  },
+  {
+   "case": "frames",
+   "n": 31,
+   "side": 512,
+   "tool": "rankwise \u00b7 scalar",
+   "family": "rankwise",
+   "seconds": 0.28124137399936444,
+   "ns_per_px": 1072.8507003759935,
+   "identical_to_numpy": true
+  },
+  {
+   "case": "frames",
+   "n": 31,
+   "side": 512,
+   "tool": "NumPy 2.5 (weights=)",
+   "family": "competitor",
+   "seconds": 1.5258388439997361,
+   "ns_per_px": 5820.613265990204,
+   "identical_to_numpy": true
+  },
+  {
+   "case": "frames",
+   "n": 31,
+   "side": 512,
+   "tool": "rankwise unweighted",
+   "family": "reference",
+   "seconds": 0.003279869999460061,
+   "ns_per_px": 12.511711118545765,
+   "identical_to_numpy": null
+  },
+  {
+   "case": "map",
+   "n": 31,
+   "side": 256,
+   "tool": "rankwise \u00b7 AVX-512",
+   "family": "rankwise",
+   "seconds": 0.007972248999976728,
+   "ns_per_px": 121.64686584437146,
+   "identical_to_numpy": true
+  },
+  {
+   "case": "map",
+   "n": 31,
+   "side": 256,
+   "tool": "rankwise \u00b7 AVX2",
+   "family": "rankwise",
+   "seconds": 0.011020701000234112,
+   "ns_per_px": 168.16255188345508,
+   "identical_to_numpy": true
+  },
+  {
+   "case": "map",
+   "n": 31,
+   "side": 256,
+   "tool": "rankwise \u00b7 scalar",
+   "family": "rankwise",
+   "seconds": 0.073409984999671,
+   "ns_per_px": 1120.1474761912689,
+   "identical_to_numpy": true
+  },
+  {
+   "case": "map",
+   "n": 31,
+   "side": 256,
+   "tool": "NumPy 2.5 (weights=)",
+   "family": "competitor",
+   "seconds": 0.3604076329993404,
+   "ns_per_px": 5499.38404845185,
+   "identical_to_numpy": true
+  },
+  {
+   "case": "map",
+   "n": 31,
+   "side": 256,
+   "tool": "rankwise unweighted",
+   "family": "reference",
+   "seconds": 0.0008698040001036134,
+   "ns_per_px": 13.272155763299764,
+   "identical_to_numpy": null
+  }
+ ]
+}

@@ -17,6 +17,7 @@ python -m pytest conformance -q          # 1,175 tests, about a minute
 |---|---|---|---|
 | `median`, `nanmedian` | `np.median`, `np.nanmedian` | identical | ✅ |
 | `quantile`, `nanquantile`, `percentile`, `nanpercentile`, all 13 methods | the same NumPy call, same form of `q`, same `out` | identical | ✅ |
+| `quantile(..., weights=w)` and the `nan` / percentile variants, `weighted_median` | NumPy's `weights=` with `method="inverted_cdf"`: per-frame and per-value weights, every form of `q`, any axis | identical (ties: integer weights, see below) | ✅ |
 | `min`, `max`, `nanmin`, `nanmax`, `ptp` | NumPy | identical | ✅ |
 | `argmin`, `argmax`, `nanargmin`, `nanargmax` | NumPy (first occurrence; first NaN wins) | identical; all-NaN gives −1 + warning (`strict=True` raises) | ✅ |
 | `argmedian`, `argselect` | `np.argsort(a, axis, kind="stable")` at the rank(s) | identical | ✅ |
@@ -79,6 +80,13 @@ Matching NumPy bit for bit meant reproducing some behaviours that are easy to mi
   On 1-D input it does not. rankwise does the same in both cases.
 * **Clamped quantile indices keep NumPy's weight.** For `q = 1` NumPy's weight is `n`, not 0;
   with an infinite maximum `inf − inf` makes the result NaN, as in NumPy.
+* **Weighted quantiles** (`weights=`, `method="inverted_cdf"` only): the cumulative weights
+  are summed one by one in float64 in sorted order (`cumsum`), divided by their total, cast to
+  `q`'s dtype (so a float32 `q` compares in float32), and zeros become −1 so leading zero
+  weights are never picked; the result is the first value whose cdf reaches `q`, in the
+  input's dtype. Negative weights raise up front; weights totalling zero, inf or NaN raise
+  after the division (for `nanquantile`, the weights of the slice's valid values), and a slice
+  with NaN gives NaN. `np.percentile` divides `q` by 100 in `q`'s dtype first.
 * **`scipy.stats.iqr` uses `scipy.stats.quantile`, not NumPy's**: `(1 − g)·y[j] + g·y[j+1]`
   in the data's float dtype, and its `scale="normal"` constant is 1.3489795003921636.
 
@@ -107,3 +115,14 @@ Matching NumPy bit for bit meant reproducing some behaviours that are easy to mi
   differ in the last bit. Neither is bit for bit.
 * **`nanargmin`/`nanargmax` on all-NaN slices** return −1 and warn; NumPy raises
   (`strict=True` restores that).
+* **Weighted quantiles with ties**: NumPy sorts with an unstable `argsort`, so the order in
+  which equal values' weights are summed depends on its sort implementation; rankwise sums them
+  in frame order (a stable sort, the same on every ISA). Results can differ only where `q`
+  lands within rounding of a cumulative weight inside a run of equal values; with ties and
+  integer (or other exactly summed) weights the values are identical. Where +0.0 and −0.0
+  tie, which zero NumPy returns depends on its sort, so the sign of a zero result can differ.
+* **`np.nanquantile(..., weights=w)` with 1-D `w` on 2-D+ input** raises `IndexError` in NumPy
+  2.5.3; rankwise treats it as `w` broadcast along the axis (the result NumPy gives for
+  broadcast weights).
+* **Weighted quantiles take `q` as float32 or float64**: a float16 or longdouble `q` raises
+  (NumPy would compare in that dtype).

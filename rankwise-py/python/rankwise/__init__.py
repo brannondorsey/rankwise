@@ -30,7 +30,7 @@ __version__ = _rw.__version__
 MAX_FRAMES = _rw.MAX_FRAMES
 
 __all__ = [
-    "median", "nanmedian", "quantile", "nanquantile", "percentile", "nanpercentile",
+    "median", "nanmedian", "quantile", "nanquantile", "percentile", "nanpercentile", "weighted_median",
     "min", "max", "amin", "amax", "nanmin", "nanmax", "ptp",
     "argmin", "argmax", "nanargmin", "nanargmax", "argmedian", "nanargmedian", "argselect",
     "select_ranks", "trimmed_mean", "trim_mean", "iqr", "mad", "median_abs_deviation",
@@ -229,10 +229,10 @@ def _in_np_dtype(s: _Stack):
     return np.dtype(s.dtype)
 
 
-def _run(op, s: _Stack, outs, opts, mask=None):
+def _run(op, s: _Stack, outs, opts, mask=None, wmap=None):
     rest = len(s.shape)
     entries = [_out_entry(o, rest) for o in outs]
-    _rw.reduce(op, s.dtype, s.frames, list(s.shape), list(s.strides), entries, mask, opts)
+    _rw.reduce(op, s.dtype, s.frames, list(s.shape), list(s.strides), entries, mask, opts, wmap)
 
 
 def _simple(op, a, axis, out, keepdims, dtype_fn, *, omit=False, nodata=None, threads=1, isa=None,
@@ -374,6 +374,83 @@ def _quantile_impl(a, q, axis, out, method, keepdims, *, omit, percent, nodata, 
     return res
 
 
+def _weight_spec(s: _Stack, weights):
+    """Validate ``weights`` as NumPy does; return (per-frame list, weight-map spec, keep-alive)."""
+    w = np.asanyarray(weights)
+    is_list = isinstance(s.keep, list)
+    full = (s.n,) + tuple(s.shape) if is_list else s.keep.shape
+    if w.shape != tuple(full) and w.shape != (s.n,):
+        raise ValueError("Shape of weights must be consistent with shape of a along specified axis.")
+    if w.dtype.kind not in "biuf":
+        raise TypeError(f"weights must be real numbers, got {w.dtype}")
+    if w.shape == (s.n,):
+        if np.any(w < 0):
+            raise ValueError("Weights must be non-negative.")
+        return [float(x) for x in w.astype(np.float64)], None, None
+    # (the kernel checks a weight map for negative weights before it runs)
+    # one weight per value: a second stack laid out like the input
+    if not (w.dtype in (np.dtype(np.float32), np.dtype(np.float64)) and w.dtype.isnative):
+        w = w.astype(np.float64)  # NumPy's cumsum(dtype=float64) widens the same way
+    base = w.__array_interface__["data"][0]
+    ax = 0 if is_list else s.axis
+    st = w.strides[ax]
+    rest = w.strides[:ax] + w.strides[ax + 1:]
+    return None, ([base + k * st for k in range(s.n)], _OUT_OK[w.dtype], list(rest)), w
+
+
+def _weighted_quantile(a, q, axis, out, method, keepdims, weights, *, omit, percent, nodata, threads, isa,
+                       interpolation=None):
+    """NumPy's weighted ``method="inverted_cdf"``: a stable sort, float64 cumulative weights
+    divided by their total and cast to ``q``'s dtype, first value reaching ``q``."""
+    if interpolation is not None:
+        method = interpolation
+    if method != "inverted_cdf":
+        raise ValueError(f"Only method 'inverted_cdf' supports weights. Got: {method}.")
+    if percent:
+        qa = np.asanyarray(np.true_divide(q, 100))  # out=... (NumPy's form) needs NumPy 2.3
+    else:
+        qa = np.asanyarray(q)
+    if qa.dtype.kind == "c":
+        raise TypeError("q must be real")
+    flat = qa.astype(np.float64, copy=False).ravel()
+    if not ((flat >= 0) & (flat <= 1)).all():
+        raise ValueError("Percentiles must be in the range [0, 100]" if percent else "Quantiles must be in the range [0, 1]")
+    if qa.dtype == np.float32:
+        cmp = "f32"
+    elif qa.dtype.kind == "f" and qa.dtype != np.float64:
+        raise TypeError(f"weighted quantiles compare in float32 or float64; got q of dtype {qa.dtype}")
+    else:
+        cmp = "f64"  # NumPy casts the cdf to q's float dtype; integer q compares in float64
+    s = _prep(a, axis)
+    _check_nodata(s, nodata)
+    per_frame, wmap, wkeep = _weight_spec(s, weights)
+    work, final, copy = _prepare_out(out, s.shape, np.dtype(s.dtype), keepdims, s.axis, lead=qa.shape)
+    work2 = work.reshape((flat.size,) + tuple(s.shape))
+    op = {"kind": "wquantile", "q": [float(x) for x in flat], "cmp": cmp}
+    if flat.size:  # an empty q gives an empty result, as in NumPy
+        _run(op, s, [work2[j, ...] for j in range(flat.size)],
+             _opts(omit=omit or nodata is not None, nodata=nodata, threads=threads, isa=isa, weights=per_frame),
+             wmap=wmap)
+    del wkeep
+    if omit and work.dtype.kind == "f" and np.isnan(work).any():
+        warnings.warn(_ALL_NAN, RuntimeWarning, stacklevel=3)
+    res = _finish(work, final, copy, keepdims, s.axis, lead_len=qa.ndim, out_given=out is not None)
+    return res if out is not None else _cast_value_back(res, s, True)
+
+
+_WEIGHTS_DOC = """
+
+    ``weights`` (``method="inverted_cdf"`` only, as in NumPy) is one weight per frame (length
+    ``a.shape[axis]``) or one per value (``a``'s shape). Each quantile is then the first value,
+    in a stable sort, whose cumulative weight reaches ``q`` of the total: NumPy's arithmetic
+    bit for bit (float64 sums divided by the total, compared in ``q``'s dtype). The result has
+    the input's dtype. NumPy orders equal values with an unstable sort; rankwise sums their
+    weights in frame order, which can only matter where ``q`` lands within rounding of a
+    cumulative weight inside a run of equal values (and, for tied +0.0 and -0.0, in which
+    zero's sign is returned).
+    """
+
+
 def quantile(a, q, axis=None, out=None, overwrite_input=False, method="linear", keepdims=False, *,
              weights=None, interpolation=None, nodata=None, threads=1, isa=None):
     """``np.quantile`` along one axis, every ``method``, bit-identical including dtype.
@@ -382,7 +459,8 @@ def quantile(a, q, axis=None, out=None, overwrite_input=False, method="linear", 
     dtype (float32 in, float32 out); a list or float64 array interpolates in float64.
     """
     if weights is not None:
-        raise NotImplementedError("weighted quantiles are planned for rankwise v0.2")
+        return _weighted_quantile(a, q, axis, out, method, keepdims, weights, omit=False, percent=False,
+                                  nodata=nodata, threads=threads, isa=isa, interpolation=interpolation)
     return _quantile_impl(a, q, axis, out, method, keepdims, omit=False, percent=False,
                           nodata=nodata, threads=threads, isa=isa, interpolation=interpolation)
 
@@ -391,7 +469,8 @@ def nanquantile(a, q, axis=None, out=None, overwrite_input=False, method="linear
                 weights=None, interpolation=None, nodata=None, threads=1, isa=None):
     """``np.nanquantile`` along one axis."""
     if weights is not None:
-        raise NotImplementedError("weighted quantiles are planned for rankwise v0.2")
+        return _weighted_quantile(a, q, axis, out, method, keepdims, weights, omit=True, percent=False,
+                                  nodata=nodata, threads=threads, isa=isa, interpolation=interpolation)
     return _quantile_impl(a, q, axis, out, method, keepdims, omit=True, percent=False,
                           nodata=nodata, threads=threads, isa=isa, interpolation=interpolation)
 
@@ -400,7 +479,8 @@ def percentile(a, q, axis=None, out=None, overwrite_input=False, method="linear"
                weights=None, interpolation=None, nodata=None, threads=1, isa=None):
     """``np.percentile`` along one axis."""
     if weights is not None:
-        raise NotImplementedError("weighted quantiles are planned for rankwise v0.2")
+        return _weighted_quantile(a, q, axis, out, method, keepdims, weights, omit=False, percent=True,
+                                  nodata=nodata, threads=threads, isa=isa, interpolation=interpolation)
     return _quantile_impl(a, q, axis, out, method, keepdims, omit=False, percent=True,
                           nodata=nodata, threads=threads, isa=isa, interpolation=interpolation)
 
@@ -409,9 +489,29 @@ def nanpercentile(a, q, axis=None, out=None, overwrite_input=False, method="line
                   weights=None, interpolation=None, nodata=None, threads=1, isa=None):
     """``np.nanpercentile`` along one axis."""
     if weights is not None:
-        raise NotImplementedError("weighted quantiles are planned for rankwise v0.2")
+        return _weighted_quantile(a, q, axis, out, method, keepdims, weights, omit=True, percent=True,
+                                  nodata=nodata, threads=threads, isa=isa, interpolation=interpolation)
     return _quantile_impl(a, q, axis, out, method, keepdims, omit=True, percent=True,
                           nodata=nodata, threads=threads, isa=isa, interpolation=interpolation)
+
+
+for _f in (quantile, nanquantile, percentile, nanpercentile):
+    _f.__doc__ += _WEIGHTS_DOC
+
+
+def weighted_median(a, weights, axis=None, out=None, keepdims=False, *, nan_policy="propagate", nodata=None,
+                    threads=1, isa=None):
+    """The weighted median along one axis: the first value whose cumulative weight reaches
+    half the total, ``np.quantile(a, 0.5, axis, method="inverted_cdf", weights=weights)``
+    (``np.nanquantile`` with ``nan_policy="omit"``). With equal weights this is the lower
+    middle value, not :func:`median`'s average of the two middle values.
+
+    ``weights`` is one weight per frame or one per value, non-negative; the result has the
+    input's dtype.
+    """
+    omit = _nan_policy(a, nan_policy)
+    return _weighted_quantile(a, 0.5, axis, out, "inverted_cdf", keepdims, weights, omit=omit, percent=False,
+                              nodata=nodata, threads=threads, isa=isa)
 
 
 # --------------------------------------------------------------------------- min / max / args

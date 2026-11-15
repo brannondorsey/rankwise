@@ -7,8 +7,8 @@
 #![allow(non_camel_case_types, clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 use rankwise::{
-    presets, reduce_raw, ArgRank, Center, Clip, Combine, DType, Error, NanPolicy, Normalize, Op, Options, Precision,
-    QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Spread,
+    presets, reduce_raw, reduce_raw_weighted, ArgRank, Center, Clip, Combine, DType, Error, NanPolicy, Normalize, Op,
+    Options, Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Spread, WeightedQuantileSpec,
 };
 use std::ffi::{c_char, CStr};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -473,6 +473,66 @@ pub unsafe extern "C" fn rw_quantile_f32_f64(
     })
 }
 
+/// Weighted quantiles of float32 frames into float32 outputs:
+/// `np.quantile(stack, [q...], axis=0, method="inverted_cdf", weights=w)` (`np.nanquantile`
+/// when `nan_omit` != 0). The weighted median is `q = 0.5`.
+///
+/// Give exactly one of `weights` (`n` doubles, one per frame) and `weight_frames` (`n`
+/// pointers to `npix` floats, one weight per value). Weights must be non-negative; a pixel
+/// whose weights total zero, inf or NaN returns `RW_ERR_PARAM` after every output is written.
+#[no_mangle]
+pub unsafe extern "C" fn rw_weighted_quantile_f32(
+    frames: *const *const f32,
+    n: usize,
+    npix: usize,
+    weights: *const f64,
+    weight_frames: *const *const f32,
+    q: *const f64,
+    nq: usize,
+    nan_omit: i32,
+    outs: *const *mut f32,
+) -> rw_status {
+    guarded(|| {
+        if q.is_null() || outs.is_null() || frames.is_null() {
+            return rw_status::RW_ERR_NULL;
+        }
+        if weights.is_null() == weight_frames.is_null() {
+            return rw_status::RW_ERR_PARAM;
+        }
+        if n == 0 || n > RW_MAX_FRAMES {
+            return rw_status::RW_ERR_DEPTH;
+        }
+        let qs = std::slice::from_raw_parts(q, nq).to_vec();
+        let os = std::slice::from_raw_parts(outs, nq);
+        if os.iter().any(|p| p.is_null()) {
+            return rw_status::RW_ERR_NULL;
+        }
+        let op = Op::WeightedQuantile(WeightedQuantileSpec::new(qs));
+        let nan = if nan_omit != 0 { NanPolicy::Omit } else { NanPolicy::Propagate };
+        let mut o = opts(nan, None);
+        if weight_frames.is_null() {
+            o.weights = Some(std::slice::from_raw_parts(weights, n).to_vec());
+            let outs: Vec<(*mut u8, DType)> = os.iter().map(|&p| (p as *mut u8, DType::F32)).collect();
+            return run(DType::F32, frames as _, n, npix, &op, &outs, None, &o);
+        }
+        let fr = std::slice::from_raw_parts(frames as *const *const u8, n);
+        let wf = std::slice::from_raw_parts(weight_frames as *const *const u8, n);
+        if fr.iter().chain(wf.iter()).any(|p| p.is_null()) {
+            return rw_status::RW_ERR_NULL;
+        }
+        let shape = [npix];
+        let strides = [4isize];
+        let stack = RawStack { dtype: DType::F32, frames: fr, shape: &shape, strides: &strides };
+        let wst = RawStack { dtype: DType::F32, frames: wf, shape: &shape, strides: &strides };
+        let raw: Vec<RawOut> =
+            os.iter().map(|&p| RawOut { ptr: p as *mut u8, dtype: DType::F32, strides: &strides }).collect();
+        match reduce_raw_weighted(&stack, &wst, &op, &raw, &o) {
+            Ok(()) => rw_status::RW_OK,
+            Err(e) => status(e),
+        }
+    })
+}
+
 /// `np.sort(stack, axis=0)[ranks]` for float32 frames, one output per rank (NaN sorts last).
 #[no_mangle]
 pub unsafe extern "C" fn rw_select_ranks_f32(
@@ -758,6 +818,68 @@ mod tests {
         let null = core::ptr::null_mut();
         let s = unsafe {
             rw_clip_combine_f32(ptrs.as_ptr(), 9, 33, &c, &params, out.as_mut_ptr(), null, null, core::ptr::null())
+        };
+        assert_eq!(s, rw_status::RW_ERR_PARAM);
+    }
+
+    #[test]
+    fn weighted_quantile() {
+        let frames: Vec<Vec<f32>> = (0..5).map(|k| vec![k as f32; 7]).collect();
+        let ptrs: Vec<*const f32> = frames.iter().map(|f| f.as_ptr()).collect();
+        let mut out = vec![0f32; 7];
+        let outs = [out.as_mut_ptr()];
+        let q = [0.5f64];
+        let w = [1.0, 1.0, 1.0, 1.0, 10.0];
+        let s = unsafe {
+            rw_weighted_quantile_f32(
+                ptrs.as_ptr(),
+                5,
+                7,
+                w.as_ptr(),
+                core::ptr::null(),
+                q.as_ptr(),
+                1,
+                0,
+                outs.as_ptr(),
+            )
+        };
+        assert_eq!(s, rw_status::RW_OK);
+        assert_eq!(out, vec![4.0; 7]);
+        // a weight map that favours frame 1 everywhere
+        let wm: Vec<Vec<f32>> = (0..5).map(|k| vec![if k == 1 { 9.0 } else { 1.0 }; 7]).collect();
+        let wp: Vec<*const f32> = wm.iter().map(|f| f.as_ptr()).collect();
+        let s = unsafe {
+            rw_weighted_quantile_f32(
+                ptrs.as_ptr(),
+                5,
+                7,
+                core::ptr::null(),
+                wp.as_ptr(),
+                q.as_ptr(),
+                1,
+                0,
+                outs.as_ptr(),
+            )
+        };
+        assert_eq!(s, rw_status::RW_OK);
+        assert_eq!(out, vec![1.0; 7]);
+        let z = [0.0; 5];
+        let s = unsafe {
+            rw_weighted_quantile_f32(
+                ptrs.as_ptr(),
+                5,
+                7,
+                z.as_ptr(),
+                core::ptr::null(),
+                q.as_ptr(),
+                1,
+                0,
+                outs.as_ptr(),
+            )
+        };
+        assert_eq!(s, rw_status::RW_ERR_PARAM);
+        let s = unsafe {
+            rw_weighted_quantile_f32(ptrs.as_ptr(), 5, 7, w.as_ptr(), wp.as_ptr(), q.as_ptr(), 1, 0, outs.as_ptr())
         };
         assert_eq!(s, rw_status::RW_ERR_PARAM);
     }

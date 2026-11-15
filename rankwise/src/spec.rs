@@ -180,6 +180,28 @@ impl QuantileSpec {
     }
 }
 
+/// Weighted quantile settings: `np.quantile(a, q, axis, method="inverted_cdf", weights=w)`.
+///
+/// Values are sorted with a stable sort (ties in frame order), the weights summed in that order
+/// in float64 and divided by their total, and each quantile is the first value whose normalized
+/// cumulative weight reaches `q`, compared in `cmp` (the dtype of NumPy's `q` array). Weights
+/// come from [`crate::Options::weights`] (one per frame) or a weight map
+/// ([`crate::reduce_raw_weighted`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct WeightedQuantileSpec {
+    pub q: Vec<f64>,
+    /// dtype of the comparison: [`DType::F64`] for Python floats, lists and float64 or integer
+    /// arrays, [`DType::F32`] for a float32 `q`. NumPy casts the cumulative weights to it.
+    pub cmp: DType,
+}
+
+impl WeightedQuantileSpec {
+    /// Quantiles compared in float64 (`q` a Python float, a list or a float64 array).
+    pub fn new(q: Vec<f64>) -> WeightedQuantileSpec {
+        WeightedQuantileSpec { q, cmp: DType::F64 }
+    }
+}
+
 /// Center estimator for sigma clipping.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Center {
@@ -496,6 +518,9 @@ pub enum Op {
     Median,
     /// `np.quantile` / `np.nanquantile`, one output per q.
     Quantile(QuantileSpec),
+    /// `np.quantile(..., method="inverted_cdf", weights=w)` / `np.nanquantile`, one output per
+    /// q, in the input dtype. The weighted median is `q = 0.5`.
+    WeightedQuantile(WeightedQuantileSpec),
     /// `np.min` / `np.nanmin`.
     Min,
     /// `np.max` / `np.nanmax`.
@@ -524,6 +549,7 @@ impl Op {
         match self {
             Op::SelectRanks(r) => r.len(),
             Op::Quantile(q) => q.q.len(),
+            Op::WeightedQuantile(q) => q.q.len(),
             Op::Clip(_) => 3,
             _ => 1,
         }

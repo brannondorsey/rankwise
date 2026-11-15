@@ -29,16 +29,53 @@ pub(crate) enum Missing {
 /// Per-operation data the epilogues need.
 #[derive(Debug, Clone)]
 pub(crate) enum Kern {
-    Select { ranks: Vec<usize> },
-    Median { omit: bool },
-    Quantile { tabs: Vec<Vec<QIdx>>, lerp: Lerp, omit: bool },
-    Iqr { tlo: Vec<(usize, usize, f64)>, thi: Vec<(usize, usize, f64)>, sp: ScipyLinear, scale: f64, omit: bool },
-    Mad { scale: f64, omit: bool },
-    TrimMean { lo: usize, hi: usize, p: f64, omit: bool },
-    MinMax { which: u8, omit: bool },
-    Arg { max: bool, omit: bool },
-    ArgRank { rank: ArgRank, omit: bool },
+    Select {
+        ranks: Vec<usize>,
+    },
+    Median {
+        omit: bool,
+    },
+    Quantile {
+        tabs: Vec<Vec<QIdx>>,
+        lerp: Lerp,
+        omit: bool,
+    },
+    Iqr {
+        tlo: Vec<(usize, usize, f64)>,
+        thi: Vec<(usize, usize, f64)>,
+        sp: ScipyLinear,
+        scale: f64,
+        omit: bool,
+    },
+    Mad {
+        scale: f64,
+        omit: bool,
+    },
+    TrimMean {
+        lo: usize,
+        hi: usize,
+        p: f64,
+        omit: bool,
+    },
+    MinMax {
+        which: u8,
+        omit: bool,
+    },
+    Arg {
+        max: bool,
+        omit: bool,
+    },
+    ArgRank {
+        rank: ArgRank,
+        omit: bool,
+    },
     Clip(crate::clip::ClipPlan),
+    /// Weighted quantiles; `qs` already rounded to the comparison dtype.
+    WQuantile {
+        qs: Vec<f64>,
+        f32cmp: bool,
+        omit: bool,
+    },
 }
 
 impl Kern {
@@ -49,6 +86,8 @@ impl Kern {
         match self {
             Kern::ArgRank { .. } => true,
             Kern::Clip(c) => c.needs_raw(),
+            // which frames were missing, to sort them after every valid value
+            Kern::WQuantile { omit, .. } => *omit,
             _ => false,
         }
     }
@@ -63,7 +102,7 @@ impl Kern {
             | Kern::TrimMean { omit, .. } => *omit,
             Kern::Mad { .. } => true,
             Kern::ArgRank { rank, omit } => *omit || matches!(rank, ArgRank::Median),
-            Kern::Clip(_) => true,
+            Kern::Clip(_) | Kern::WQuantile { .. } => true,
             Kern::MinMax { .. } | Kern::Arg { .. } => false,
         }
     }
@@ -79,6 +118,14 @@ pub(crate) struct Job {
     pub space: Space,
     pub outs: Vec<(usize, DType)>,
     pub mask: Option<(Vec<usize>, DType)>,
+    /// Weight map frames (laid out like the input, strides in the mask slot of `space`).
+    pub wmap: Option<(Vec<usize>, DType)>,
+    /// One weight per frame (weighted quantiles and clipped means).
+    pub weights: Option<Vec<f64>>,
+    /// Full sorting network for `(value, frame)` pairs (weighted quantiles).
+    pub net_pairs: std::sync::Arc<Vec<crate::netgen::Comparator>>,
+    /// Set by a weighted block whose weights total zero, inf or NaN (NumPy raises).
+    pub bad_weights: std::sync::atomic::AtomicBool,
     pub missing: Missing,
     pub norm: Option<(Vec<f64>, Vec<f64>)>,
     pub kern: Kern,
@@ -139,7 +186,9 @@ pub(crate) unsafe fn put(o: &OutRow, p: usize, vals: &[f64; MAXL], lanes: usize)
         DType::U16 => w!(u16, |x: f64| x as u16),
         DType::I32 => w!(i32, |x: f64| x as i32),
         DType::I64 => w!(i64, |x: f64| x as i64),
-        DType::Bool | DType::U8 => w!(u8, |x: f64| (x != 0.0) as u8),
+        DType::Bool => w!(u8, |x: f64| (x != 0.0) as u8),
+        // a value (a uint8 `out=`, uint8 reject counts), not a flag
+        DType::U8 => w!(u8, |x: f64| x as u8),
     }
 }
 
@@ -193,7 +242,7 @@ fn np_mid<E: Element>(a: E, b: E) -> f64 {
 
 /// The value written for "no valid data" in an output of the sort dtype.
 #[inline(always)]
-fn fill_value(job: &Job) -> f64 {
+pub(crate) fn fill_value(job: &Job) -> f64 {
     match job.missing {
         Missing::NoData(v) if !job.sdt.is_float() => v as f64,
         _ => f64::NAN,
@@ -247,6 +296,13 @@ unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW:
         Some((m, _)) => m.iter().map(|&a| (a as isize + mask_off) as *mut u8).collect(),
         None => vec![],
     };
+    let wrows: Vec<*const u8> = match &job.wmap {
+        Some((m, _)) => m.iter().map(|&a| (a as isize + mask_off) as *const u8).collect(),
+        None => vec![],
+    };
+    let weighted = matches!(job.kern, Kern::WQuantile { .. });
+    let mut wsc =
+        crate::wquant::Scratch::<S>::new(if weighted { n } else { 0 }, if weighted { job.outs.len() } else { 0 });
     let src: Vec<*const u8> = job.frames.iter().map(|&f| (f as isize + in_off) as *const u8).collect();
     let in_ps = job.space.in_ps;
     let esz = core::mem::size_of::<S::E>();
@@ -258,8 +314,12 @@ unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW:
         // Large enough that each frame's copy streams a long run from memory (the hardware
         // prefetcher ramps up once per run), small enough that the tile stays in L2.
         let budget = tile_budget();
-        let target = budget / (n * esz).max(1);
-        ((target / l).max(1) * l).min(16384).max(l)
+        // a weight map is staged with the data, as float64
+        let per = esz + if job.wmap.is_some() { 8 } else { 0 };
+        let target = budget / (n * per).max(1);
+        // ... and no larger than the unit: a unit is one row, and many short rows would each
+        // allocate and clear a full tile
+        ((target / l).max(1) * l).min(16384).max(l).min((u.p1 - u.p0).div_ceil(l) * l)
     } else {
         u.p1 - u.p0
     };
@@ -268,6 +328,15 @@ unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW:
     let ts = tile_px.div_ceil(l) * l + if job.staged { l.max(64 / esz) } else { 0 };
     let mut tile: Vec<S> = if job.staged { vec![S::splat(S::E::ZERO); n * ts / l] } else { vec![] };
     let tile_e = tile.as_mut_ptr() as *mut S::E;
+    // Weight map tile: n rows of `ts` float64 weights, staged with the data (the map's frames
+    // read through the cache directly would double the concurrent streams).
+    let mut wtile: Vec<f64> = if job.wmap.is_some() { vec![0.0; n * ts] } else { vec![] };
+    let wtile_p = wtile.as_mut_ptr();
+    let mut wsrc = match (&job.wmap, &job.weights) {
+        (Some(_), _) => crate::wquant::Weights::Map { tile: wtile_p, ts, off: 0 },
+        (None, Some(w)) => crate::wquant::Weights::Frames(w),
+        (None, None) => crate::wquant::Weights::Frames(&[]),
+    };
     let mut ptrs: Vec<*const S::E> = vec![core::ptr::null(); n];
     let mut scratch_v: Vec<u8> = vec![0u8; 3 * n * 64 + 64];
     let scratch = {
@@ -324,6 +393,22 @@ unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW:
             stage::<S>(job, &src, in_ps, t0, cnt, core::slice::from_raw_parts_mut(tile_e, n * ts), ts);
             for k in 0..n {
                 ptrs[k] = tile_e.add(k * ts);
+            }
+            if let Some((_, wdt)) = &job.wmap {
+                let wps = job.space.mask_ps;
+                for k in 0..n {
+                    let src = wrows[k].offset(t0 as isize * wps);
+                    let dst = wtile_p.add(k * ts);
+                    if *wdt == DType::F32 {
+                        for p in 0..cnt {
+                            *dst.add(p) = (src.offset(p as isize * wps) as *const f32).read_unaligned() as f64;
+                        }
+                    } else {
+                        for p in 0..cnt {
+                            *dst.add(p) = (src.offset(p as isize * wps) as *const f64).read_unaligned();
+                        }
+                    }
+                }
             }
         } else {
             for k in 0..n {
@@ -400,6 +485,26 @@ unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW:
                     *bp.add(k) = S::select(mm, big, x);
                     m = S::select(mm, m.sub(one), m);
                 }
+            }
+            if weighted {
+                let ms = lanes_usize(m);
+                if let crate::wquant::Weights::Map { off, .. } = &mut wsrc {
+                    *off = b;
+                }
+                crate::wquant::block::<S, A::F64>(
+                    job,
+                    bp,
+                    raw.as_ptr(),
+                    &ms,
+                    any_missing,
+                    lanes,
+                    blk_p,
+                    &outs,
+                    &wsrc,
+                    &mut wsc,
+                );
+                b += lanes;
+                continue;
             }
             let plan = if any_missing && job.kern.per_lane_ranks() { &job.net_full } else { &job.net_fast };
             S::apply_net(bp, plan);
@@ -823,7 +928,7 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
                 crate::clip::clip_block::<S, A::F64>(job, plan, blk, &ms);
             }
         }
-        Kern::MinMax { .. } | Kern::Arg { .. } => unreachable!(),
+        Kern::MinMax { .. } | Kern::Arg { .. } | Kern::WQuantile { .. } => unreachable!(),
     }
 }
 

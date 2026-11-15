@@ -8,8 +8,9 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use rankwise::{
-    presets, reduce_raw, ArgRank, Center, Clip, Combine, DType, Error, Isa, NanPolicy, Normalize, Op, Options,
-    OutRounding, Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Rejection, Spread, Staging,
+    presets, reduce_raw, reduce_raw_weighted, ArgRank, Center, Clip, Combine, DType, Error, Isa, NanPolicy, Normalize,
+    Op, Options, OutRounding, Precision, QForm, QuantileMethod, QuantileSpec, RawMask, RawOut, RawStack, Rejection,
+    Spread, Staging, WeightedQuantileSpec,
 };
 
 fn err(e: Error) -> PyErr {
@@ -139,6 +140,13 @@ fn parse_op(d: &Bound<'_, PyDict>) -> PyResult<Op> {
                 out_rounding,
             })
         }
+        "wquantile" => Op::WeightedQuantile(WeightedQuantileSpec {
+            q: req(d, "q")?,
+            cmp: match req::<String>(d, "cmp")?.as_str() {
+                "f32" => DType::F32,
+                _ => DType::F64,
+            },
+        }),
         "min" => Op::Min,
         "max" => Op::Max,
         "range" => Op::Range,
@@ -185,7 +193,7 @@ type OutSpec = (usize, String, Vec<isize>);
 /// arrays); the GIL is released while the kernels run.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (op, in_dtype, frames, shape, strides, outs, mask, opts))]
+#[pyo3(signature = (op, in_dtype, frames, shape, strides, outs, mask, opts, wmap=None))]
 fn reduce(
     py: Python<'_>,
     op: &Bound<'_, PyDict>,
@@ -196,6 +204,7 @@ fn reduce(
     outs: Vec<OutSpec>,
     mask: Option<(Vec<usize>, String, Vec<isize>)>,
     opts: &Bound<'_, PyDict>,
+    wmap: Option<(Vec<usize>, String, Vec<isize>)>,
 ) -> PyResult<()> {
     let op = parse_op(op)?;
     let opts = parse_opts(opts)?;
@@ -203,6 +212,10 @@ fn reduce(
     let out_dts: Vec<DType> = outs.iter().map(|o| dtype(&o.1)).collect::<PyResult<_>>()?;
     let mask_dt = match &mask {
         Some(m) => Some(dtype(&m.1)?),
+        None => None,
+    };
+    let wmap_dt = match &wmap {
+        Some(w) => Some(dtype(&w.1)?),
         None => None,
     };
     py.detach(move || {
@@ -217,7 +230,14 @@ fn reduce(
             mask.as_ref().map(|m| m.0.iter().map(|&a| a as *mut u8).collect()).unwrap_or_default();
         let rm = mask.as_ref().map(|m| RawMask { frames: &mptrs, dtype: mask_dt.unwrap(), strides: &m.2 });
         // SAFETY: the Python layer validated shapes and keeps every buffer alive.
-        unsafe { reduce_raw(&stack, &op, &raw_outs, rm.as_ref(), &opts) }
+        match &wmap {
+            Some((wf, _, ws)) => {
+                let wptrs: Vec<*const u8> = wf.iter().map(|&a| a as *const u8).collect();
+                let wst = RawStack { dtype: wmap_dt.unwrap(), frames: &wptrs, shape: &shape, strides: ws };
+                unsafe { reduce_raw_weighted(&stack, &wst, &op, &raw_outs, &opts) }
+            }
+            None => unsafe { reduce_raw(&stack, &op, &raw_outs, rm.as_ref(), &opts) },
+        }
     })
     .map_err(err)
 }

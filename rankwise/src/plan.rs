@@ -10,6 +10,8 @@ use crate::quantile::{quantile_index, Lerp, QIdx, ScipyLinear};
 use crate::simd::{resolve_isa, Isa};
 use crate::spec::{ArgRank, Combine, DType, NanPolicy, Op, Precision, Rejection};
 use crate::{Error, Result, MAX_FRAMES};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Stacks at least this deep read through the staging tile: more concurrent frame streams
 /// than the hardware prefetchers track make direct loads latency-bound (measured 1.7x faster
@@ -70,7 +72,7 @@ pub struct Options {
     /// omitted, as NaN is in the `nan*` functions.
     pub nodata: Option<f64>,
     pub normalize: Option<Normalize>,
-    /// Per-frame weights for clipped means.
+    /// Per-frame weights for clipped means and weighted quantiles.
     pub weights: Option<Vec<f64>>,
     /// Force an ISA (default: `RANKWISE_ISA`, else the fastest available).
     pub isa: Option<Isa>,
@@ -82,7 +84,7 @@ pub struct Options {
 /// The dtype rankwise writes for `op` on `input` when the caller does not choose one.
 pub fn natural_dtype(op: &Op, input: DType) -> DType {
     match op {
-        Op::SelectRanks(_) | Op::Min | Op::Max | Op::Range => input,
+        Op::SelectRanks(_) | Op::Min | Op::Max | Op::Range | Op::WeightedQuantile(_) => input,
         Op::Median => match input {
             DType::F32 => DType::F32,
             _ => DType::F64,
@@ -114,8 +116,49 @@ fn needed_union(tab: &[QIdx], n: usize, out: &mut Vec<usize>) {
     }
 }
 
+/// Whether any element of a strided float32/float64 weight map is negative (rows along the
+/// innermost dimension, so the inner loop is a plain strided scan).
+unsafe fn any_negative(w: &RawStack) -> bool {
+    let nd = w.shape.len();
+    if w.shape.contains(&0) {
+        return false;
+    }
+    let (inner, ips) = if nd == 0 { (1, 0) } else { (w.shape[nd - 1], w.strides[nd - 1]) };
+    let outer: usize = w.shape[..nd.saturating_sub(1)].iter().product();
+    let mut idx = vec![0usize; nd.saturating_sub(1)];
+    for &base in w.frames {
+        idx.iter_mut().for_each(|i| *i = 0);
+        for _ in 0..outer {
+            let off: isize = idx.iter().zip(w.strides).map(|(&i, &s)| i as isize * s).sum();
+            let row = base.offset(off);
+            let neg = match w.dtype {
+                DType::F32 => (0..inner).any(|p| (row.offset(p as isize * ips) as *const f32).read_unaligned() < 0.0),
+                _ => (0..inner).any(|p| (row.offset(p as isize * ips) as *const f64).read_unaligned() < 0.0),
+            };
+            if neg {
+                return true;
+            }
+            for d in (0..idx.len()).rev() {
+                idx[d] += 1;
+                if idx[d] < w.shape[d] {
+                    break;
+                }
+                idx[d] = 0;
+            }
+        }
+    }
+    false
+}
+
 /// Validate and plan. `outs` must have [`Op::n_outputs`] entries.
-pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&RawMask>, opts: &Options) -> Result<Job> {
+pub(crate) fn plan(
+    stack: &RawStack,
+    op: &Op,
+    outs: &[RawOut],
+    mask: Option<&RawMask>,
+    wmap: Option<&RawStack>,
+    opts: &Options,
+) -> Result<Job> {
     let n = stack.frames.len();
     if n == 0 || n > MAX_FRAMES {
         return Err(Error::BadDepth(n));
@@ -133,7 +176,10 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
     let isa = resolve_isa(opts.isa)?;
     let omit = opts.nan == NanPolicy::Omit || (in_dtype == DType::U16 && opts.nodata.is_some());
     let has_norm = opts.normalize.as_ref().map(|z| z.scale.is_some() || z.offset.is_some()).unwrap_or(false);
-    let sdt = if in_dtype == DType::U16 && has_norm { DType::F32 } else { in_dtype };
+    let weighted = matches!(op, Op::WeightedQuantile(_));
+    // Weighted quantiles carry frame indices in the sort dtype, missing frames as k + n: u16
+    // lanes hold them up to 65535, deeper stacks sort as float32 (exact for u16 values).
+    let sdt = if in_dtype == DType::U16 && (has_norm || (weighted && 2 * n > 65536)) { DType::F32 } else { in_dtype };
     if let Some(v) = opts.nodata {
         if in_dtype != DType::U16 {
             return Err(Error::Param("nodata applies to integer input; floats use NaN".into()));
@@ -165,12 +211,46 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
         if w.len() != n {
             return Err(Error::Shape(format!("{} weights for {n} frames", w.len())));
         }
-        if !matches!(op, Op::Clip(_)) {
-            return Err(Error::Param("weights apply to clipped means only".into()));
+        match op {
+            Op::Clip(_) => {
+                if w.iter().any(|x| !(x.is_finite() && *x >= 0.0)) {
+                    return Err(Error::Param("weights must be finite and non-negative".into()));
+                }
+            }
+            // NumPy rejects negative weights up front; NaN and inf reach its cdf check.
+            Op::WeightedQuantile(_) => {
+                if w.iter().any(|x| *x < 0.0) {
+                    return Err(Error::Param("Weights must be non-negative.".into()));
+                }
+            }
+            _ => return Err(Error::Param("weights apply to clipped means and weighted quantiles only".into())),
         }
-        if w.iter().any(|x| !(x.is_finite() && *x >= 0.0)) {
-            return Err(Error::Param("weights must be finite and non-negative".into()));
+    }
+    if let Some(wm) = wmap {
+        if !weighted {
+            return Err(Error::Param("a weight map applies to weighted quantiles only".into()));
         }
+        if opts.weights.is_some() {
+            return Err(Error::Param("give per-frame weights or a weight map, not both".into()));
+        }
+        if wm.frames.len() != n {
+            return Err(Error::Shape(format!("weight map has {} frames for {n} frames", wm.frames.len())));
+        }
+        if wm.shape != stack.shape || wm.strides.len() != wm.shape.len() {
+            return Err(Error::Shape(format!("weight map has shape {:?}, frames have {:?}", wm.shape, stack.shape)));
+        }
+        if !matches!(wm.dtype, DType::F32 | DType::F64) {
+            return Err(Error::DType(format!("weights must be float32 or float64, got {}", wm.dtype.name())));
+        }
+        if wm.frames.iter().any(|p| p.is_null()) {
+            return Err(Error::Param("null weight map frame".into()));
+        }
+        // SAFETY: the caller guarantees the weight map is readable over its shape and strides.
+        if unsafe { any_negative(wm) } {
+            return Err(Error::Param("Weights must be non-negative.".into()));
+        }
+    } else if weighted && opts.weights.is_none() {
+        return Err(Error::Param("weighted quantiles need weights (Options::weights or a weight map)".into()));
     }
     let unroll = arch::unroll_for(isa, sdt);
     let full_sort = || net::plan(n, None, unroll);
@@ -204,6 +284,26 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
             fast_needed = Some(need);
             let lerp = Lerp::new(sdt_for_lerp(in_dtype, sdt), q.form, q.out_dtype, q.out_rounding);
             Kern::Quantile { tabs, lerp, omit }
+        }
+        Op::WeightedQuantile(q) => {
+            if q.q.is_empty() {
+                return Err(Error::Param("no quantiles requested".into()));
+            }
+            if q.q.iter().any(|x| !(*x >= 0.0 && *x <= 1.0)) {
+                return Err(Error::Param("Quantiles must be in the range [0, 1]".into()));
+            }
+            let f32cmp = match q.cmp {
+                DType::F32 => true,
+                DType::F64 => false,
+                d => {
+                    return Err(Error::DType(format!(
+                        "weighted quantiles compare in float32 or float64, not {}",
+                        d.name()
+                    )))
+                }
+            };
+            let qs = q.q.iter().map(|&x| if f32cmp { (x as f32) as f64 } else { x }).collect();
+            Kern::WQuantile { qs, f32cmp, omit }
         }
         Op::Iqr { lo, hi, scale } => {
             if !(lo.is_finite() && hi.is_finite()) {
@@ -294,16 +394,24 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
         }
     }
 
-    let net_full = full_sort();
-    let net_fast = match &fast_needed {
-        Some(r) => net::plan(n, Some(r), unroll),
-        None => net_full.clone(),
+    let (net_full, net_fast, net_bitonic, net_pairs) = if weighted {
+        // Only the pair network runs; the others are for describe().
+        let pairs = Arc::new(netgen::batcher(n));
+        (net::NetPlan::Interp(pairs.clone()), net::NetPlan::Interp(pairs.clone()), net::NetPlan::Trivial, pairs)
+    } else {
+        let net_full = full_sort();
+        let net_fast = match &fast_needed {
+            Some(r) => net::plan(n, Some(r), unroll),
+            None => net_full.clone(),
+        };
+        (net_full, net_fast, net::bitonic_plan(n), Arc::new(vec![]))
     };
-    let net_bitonic = net::bitonic_plan(n);
 
     let out_strides: Vec<&[isize]> =
         outs.iter().map(|o| if o.ptr.is_null() { stack.strides_zero() } else { o.strides }).collect();
-    let space = collapse(stack.shape, stack.strides, &out_strides, mask.map(|m| m.strides))?;
+    // The weight map rides in the mask slot (they never come together).
+    let space =
+        collapse(stack.shape, stack.strides, &out_strides, mask.map(|m| m.strides).or(wmap.map(|w| w.strides)))?;
     let esz = in_dtype.size() as isize;
     let need_stage = space.npix > 0 && (space.in_ps != esz || sdt != in_dtype);
     let share = if n >= SKEW_SHARE { set_share(stack.frames) } else { 0 };
@@ -311,7 +419,7 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
         Staging::Always => true,
         Staging::Never | Staging::Skew => need_stage,
         Staging::Auto => need_stage || n >= DEEP_STAGE || (n >= CONFLICT_STAGE && share >= 16),
-    };
+    } || wmap.is_some(); // the weight map is staged with the data
     let skew = !staged
         && match opts.staging {
             Staging::Skew => true,
@@ -326,6 +434,10 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
         space,
         outs: outs.iter().map(|o| (o.ptr as usize, o.dtype)).collect(),
         mask: mask.map(|m| (m.frames.iter().map(|&p| p as usize).collect(), m.dtype)),
+        wmap: wmap.map(|w| (w.frames.iter().map(|&p| p as usize).collect(), w.dtype)),
+        weights: opts.weights.clone(),
+        net_pairs,
+        bad_weights: AtomicBool::new(false),
         missing,
         norm,
         kern,
@@ -439,15 +551,44 @@ pub unsafe fn reduce_raw(
     mask: Option<&RawMask>,
     opts: &Options,
 ) -> Result<()> {
-    let job = plan(stack, op, outs, mask, opts)?;
-    execute(&job);
+    let job = plan(stack, op, outs, mask, None, opts)?;
+    run_job(&job)
+}
+
+fn run_job(job: &Job) -> Result<()> {
+    execute(job);
+    if job.bad_weights.load(Ordering::Relaxed) {
+        // NumPy's check after the normalization; outputs are written (NaN at those pixels).
+        return Err(Error::Param("Weights included NaN, inf or were all zero.".into()));
+    }
     Ok(())
+}
+
+/// [`reduce_raw`] for [`Op::WeightedQuantile`] with a weight map: one float32 or float64
+/// weight per value, `weights` laid out like `stack` (same shape, its own frames and strides),
+/// as `np.quantile(a, q, axis, method="inverted_cdf", weights=w)` with `w.shape == a.shape`.
+///
+/// Weights must be non-negative (checked before any kernel runs). A pixel whose weights (of
+/// its valid values, with NaN omitted) total zero, inf or NaN makes the call return
+/// [`Error::Param`] after every output is written, as NumPy raises.
+///
+/// # Safety
+/// As [`reduce_raw`]; every weight frame must be valid for reads over `shape`/`strides`.
+pub unsafe fn reduce_raw_weighted(
+    stack: &RawStack,
+    weights: &RawStack,
+    op: &Op,
+    outs: &[RawOut],
+    opts: &Options,
+) -> Result<()> {
+    let job = plan(stack, op, outs, None, Some(weights), opts)?;
+    run_job(&job)
 }
 
 /// Describe how a call would run: ISA, lanes, network size and path.
 pub fn describe(stack: &RawStack, op: &Op, opts: &Options) -> Result<String> {
     let outs: Vec<RawOut> = (0..op.n_outputs()).map(|_| RawOut::none()).collect();
-    let job = plan(stack, op, &outs, None, opts)?;
+    let job = plan(stack, op, &outs, None, None, opts)?;
     Ok(format!(
         "isa={} lanes={} sort_dtype={} n={} comparators(fast)={} comparators(full)={} path={} rows={} pixels/row={}",
         job.isa,
