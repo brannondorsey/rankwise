@@ -259,7 +259,9 @@ unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW:
         // prefetcher ramps up once per run), small enough that the tile stays in L2.
         let budget = tile_budget();
         let target = budget / (n * esz).max(1);
-        ((target / l).max(1) * l).min(16384).max(l)
+        // ... and no larger than the unit: a unit is one row, and many short rows would each
+        // allocate and clear a full tile
+        ((target / l).max(1) * l).min(16384).max(l).min((u.p1 - u.p0).div_ceil(l) * l)
     } else {
         u.p1 - u.p0
     };

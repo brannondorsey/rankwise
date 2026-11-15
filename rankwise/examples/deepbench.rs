@@ -1,5 +1,5 @@
 //! Median (or `sigclip`, `q`) of `n` frames of `npix` float32 values, best of three, one core:
-//! `cargo run --release --example deepbench -- n npix [median|sigclip|q] [auto|never|always]`.
+//! `cargo run --release --example deepbench -- n npix [median|sigclip|q] [auto|never|always] [isa]`.
 use rankwise::*;
 use std::time::Instant;
 fn main() {
@@ -22,7 +22,7 @@ fn main() {
         "q" => Op::Quantile(QuantileSpec { form: QForm::Weak, ..QuantileSpec::new(vec![0.1]) }),
         _ => Op::Median,
     };
-    let isa = Isa::best();
+    let isa = a.get(5).and_then(|s| Isa::from_name(s)).unwrap_or_else(Isa::best);
     let staging = match a.get(4).map(|s| s.as_str()) {
         Some("never") => Staging::Never,
         Some("always") => Staging::Always,

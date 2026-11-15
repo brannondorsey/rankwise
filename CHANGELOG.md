@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-* **Deep stacks: up to 65,535 frames** (was 512), on every ISA and for every operation. Stacks
-  deeper than 512 sort with a register-blocked bitonic network: chunks of 32 (AVX-512) sort in
-  registers, then each merge pass loads groups of 16 wires, runs four layers on them in
-  registers and stores them back, so the buffer, which outgrows L1 there, is read once per
-  four layers instead of twice per comparator. Rank pruning works per group.
+* **Deep stacks: up to 65,535 frames** (was 512), on every ISA and for every operation. On
+  AVX-512, stacks past 768 frames (where the buffer outgrows L1) sort with a register-blocked
+  bitonic network: chunks of 32 sort in registers, then each merge pass loads groups of 16
+  wires, runs four layers on them in registers and stores them back, so the buffer is read
+  once per four layers instead of twice per comparator. Rank pruning works per group.
+* Staging tiles are no larger than the row they stage (inputs that collapse into many short
+  rows each allocated and cleared a full tile).
 * PixInsight's winsorized preset computes Sn in O(n log n) (was O(n²)).
 
 ## 0.1.0 (unreleased)

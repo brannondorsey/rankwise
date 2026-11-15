@@ -381,71 +381,6 @@ fn kth_distance(x: &[f64], i: usize, k: usize) -> f64 {
     l.max(r)
 }
 
-#[cfg(test)]
-mod sn_tests {
-    use super::*;
-
-    /// The direct merge the binary search replaces.
-    fn sn_merge(x: &[f64]) -> f64 {
-        let c = x.len();
-        if c < 2 {
-            return 0.0;
-        }
-        let mut meds = Vec::with_capacity(c);
-        let k = c / 2;
-        for i in 0..c {
-            let (mut l, mut r) = (i as isize - 1, i + 1);
-            let mut v = 0.0;
-            for _ in 0..k {
-                let dl = if l >= 0 { x[i] - x[l as usize] } else { f64::INFINITY };
-                let dr = if r < c { x[r] - x[i] } else { f64::INFINITY };
-                if dl <= dr {
-                    v = dl;
-                    l -= 1;
-                } else {
-                    v = dr;
-                    r += 1;
-                }
-            }
-            meds.push(v);
-        }
-        meds.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        meds[c.div_ceil(2) - 1]
-    }
-
-    #[test]
-    fn binary_search_sn_matches_merge() {
-        let mut s = 99u64;
-        for c in 0..300usize {
-            for ties in [false, true] {
-                let mut x: Vec<f64> = (0..c)
-                    .map(|_| {
-                        s ^= s << 13;
-                        s ^= s >> 7;
-                        s ^= s << 17;
-                        if ties {
-                            (s % 5) as f64
-                        } else {
-                            (s % 100_000) as f64 * 0.37 - 1000.0
-                        }
-                    })
-                    .collect();
-                x.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                assert_eq!(sn(&x), sn_merge(&x), "c={c} ties={ties}");
-                if c <= 40 {
-                    for i in 0..c {
-                        let mut d: Vec<f64> = x.iter().map(|&y| (y - x[i]).abs()).collect();
-                        d.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                        for k in 0..c {
-                            assert_eq!(kth_distance(&x, i, k), d[k], "c={c} i={i} k={k}");
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// Winsorized sigma clipping (Huber).
 ///
 /// Siril convention (verified black-box): center = median of the range, spread starts as
@@ -867,6 +802,71 @@ pub(crate) unsafe fn clip_block<S: SortVec, C: FVector + SortVec>(
             for i in 0..lanes {
                 let rej = (miss >> i) & 1 == 1 || !(xs[i] >= vlo[i] && xs[i] <= vhi[i]);
                 *dst.offset(i as isize * blk.mask_ps) = rej as u8;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod sn_tests {
+    use super::*;
+
+    /// The direct merge the binary search replaces.
+    fn sn_merge(x: &[f64]) -> f64 {
+        let c = x.len();
+        if c < 2 {
+            return 0.0;
+        }
+        let mut meds = Vec::with_capacity(c);
+        let k = c / 2;
+        for i in 0..c {
+            let (mut l, mut r) = (i as isize - 1, i + 1);
+            let mut v = 0.0;
+            for _ in 0..k {
+                let dl = if l >= 0 { x[i] - x[l as usize] } else { f64::INFINITY };
+                let dr = if r < c { x[r] - x[i] } else { f64::INFINITY };
+                if dl <= dr {
+                    v = dl;
+                    l -= 1;
+                } else {
+                    v = dr;
+                    r += 1;
+                }
+            }
+            meds.push(v);
+        }
+        meds.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        meds[c.div_ceil(2) - 1]
+    }
+
+    #[test]
+    fn binary_search_sn_matches_merge() {
+        let mut s = 99u64;
+        for c in 0..300usize {
+            for ties in [false, true] {
+                let mut x: Vec<f64> = (0..c)
+                    .map(|_| {
+                        s ^= s << 13;
+                        s ^= s >> 7;
+                        s ^= s << 17;
+                        if ties {
+                            (s % 5) as f64
+                        } else {
+                            (s % 100_000) as f64 * 0.37 - 1000.0
+                        }
+                    })
+                    .collect();
+                x.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                assert_eq!(sn(&x), sn_merge(&x), "c={c} ties={ties}");
+                if c <= 40 {
+                    for i in 0..c {
+                        let mut d: Vec<f64> = x.iter().map(|&y| (y - x[i]).abs()).collect();
+                        d.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                        for k in 0..c {
+                            assert_eq!(kth_distance(&x, i, k), d[k], "c={c} i={i} k={k}");
+                        }
+                    }
+                }
             }
         }
     }

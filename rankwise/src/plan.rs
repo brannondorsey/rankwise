@@ -173,7 +173,8 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
         }
     }
     let unroll = arch::unroll_for(isa, sdt);
-    let full_sort = || net::plan(n, None, unroll);
+    let vec_bytes = arch::lanes_for(isa, sdt) * sdt.size();
+    let full_sort = || net::plan(n, None, unroll, vec_bytes);
     let mut fast_needed: Option<Vec<usize>> = None;
 
     let kern = match op {
@@ -296,7 +297,7 @@ pub(crate) fn plan(stack: &RawStack, op: &Op, outs: &[RawOut], mask: Option<&Raw
 
     let net_full = full_sort();
     let net_fast = match &fast_needed {
-        Some(r) => net::plan(n, Some(r), unroll),
+        Some(r) => net::plan(n, Some(r), unroll, vec_bytes),
         None => net_full.clone(),
     };
     let net_bitonic = net::bitonic_plan(n);
