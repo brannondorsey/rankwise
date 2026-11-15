@@ -1,8 +1,8 @@
-// 04 · Real NOAA GEFS 2 m temperature, 31 members, init 2026-11-01 00Z. p10/p50/p90 per cell come
+// Real NOAA GEFS 2 m temperature, 31 members, init 2026-11-01 00Z. p10/p50/p90 per cell come
 // from rankwise.quantile (identical to np.quantile). The surface's height is the p90 − p10 spread,
 // its colour the median; ridgelines run along each latitude row.
 import * as THREE from "three";
-import { $, autosize, clamp, el, getJSON, loadImage, loop, rangeFill, reduced, secs, whenNear } from "./util.js";
+import { $, autosize, clamp, el, getJSON, loadImage, loop, rangeFill, reduced } from "./util.js";
 
 const CITIES = [
   ["Seattle", 47.61, -122.33], ["San Francisco", 37.77, -122.42], ["Los Angeles", 34.05, -118.24],
@@ -163,12 +163,6 @@ export async function initWeather() {
       c.d.style.opacity = portrait && (c.name === "San Francisco" || c.name === "Atlanta") ? 0 : 1;
     }
   });
-
-  miniRace($("#wx-race"), [
-    { tool: "rankwise · AVX-512", s: 0.032, rw: true },
-    { tool: "fastnanquantile", s: 2.3 },
-    { tool: "NumPy quantile", s: 2.62 },
-  ], "p10 · p50 · p90 of 31 × 81 × 121 × 257");
 }
 
 function fanChart(svg, d) {
@@ -219,22 +213,4 @@ function fanChart(svg, d) {
       }
     },
   };
-}
-
-/** A compact real-time race for a case study, started when it scrolls into view. */
-export function miniRace(root, rows, caption) {
-  root.innerHTML = `<div class="slice-head mono"><span>${caption}</span><span class="dim">1 core</span></div>` + rows.map((r) => `<div class="mr-row${r.rw ? " rw" : ""}"><span>${r.tool}</span><span class="t">—</span><div class="mr-bar"><i></i></div></div>`).join("");
-  const els = [...root.querySelectorAll(".mr-row")].map((e) => ({ t: e.querySelector(".t"), i: e.querySelector("i") }));
-  const max = Math.max(...rows.map((r) => r.s));
-  let t = 0, started = false;
-  whenNear(root, () => (started = true), "-15%");
-  loop(root, (dt) => {
-    if (!started || t > max + 0.5) return;
-    t += dt;
-    rows.forEach((r, k) => {
-      const f = Math.min(1, t / r.s);
-      els[k].i.style.width = (f * r.s / max) * 100 + "%";
-      els[k].t.textContent = f >= 1 ? secs(r.s) : "…";
-    });
-  });
 }

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>rankwise — lane-parallel SIMD order statistics</title>
-  <meta name="description" content="Medians, quantiles, ranks and sigma clipping along one axis of an array. One SIMD lane per slice; results identical to NumPy, SciPy and astropy.">
+  <title>rankwise: fast medians, quantiles and sigma clipping along one axis</title>
+  <meta name="description" content="rankwise computes medians, quantiles and sigma-clipped means along one axis of an array, many slices per SIMD instruction. Results identical to NumPy, SciPy and astropy.">
   <meta name="theme-color" content="#04060a">
   <meta name="color-scheme" content="dark">
   <meta property="og:title" content="rankwise">
-  <meta property="og:description" content="Lane-parallel SIMD order statistics. 21× faster medians, 15× faster sigma clipping, identical to NumPy and astropy.">
+  <meta property="og:description" content="Medians, quantiles and sigma clipping along one axis of an array, 15–72× faster on one core with the same results as NumPy and astropy.">
   <meta property="og:image" content="data/og.jpg">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
 </head>
@@ -19,11 +19,11 @@
       <span>rankwise</span>
     </a>
     <nav class="links" aria-label="Sections">
-      <a href="#stack">Demo</a>
-      <a href="#lanes">How</a>
-      <a href="#cases">Uses</a>
-      <a href="#bench">Speed</a>
-      <a href="#code">Code</a>
+      <a href="#why">Why</a>
+      <a href="#examples">Examples</a>
+      <a href="#bench">Benchmarks</a>
+      <a href="#correct">Correctness</a>
+      <a href="#code">Usage</a>
     </nav>
     <a class="btn btn-ghost btn-sm" href="https://github.com/brannondorsey/rankwise" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -31,191 +31,137 @@
     </a>
   </header>
 
-  <main id="top">
-    <!-- HERO: the 3D stack collapses into one frame as you scroll -->
-    <section class="hero" id="hero">
-      <div class="hero-sticky">
-        <canvas class="hero-canvas" aria-label="Forty noisy astronomical sub-exposures stacked in 3D, collapsing into one clean frame"></canvas>
-        <div class="hero-vignette"></div>
-        <div class="hero-copy wrap">
-          <p class="chip"><span class="dot"></span>v0.1 · Rust · C · Python</p>
-          <h1>Order statistics,<br><span class="grad">one lane per slice.</span></h1>
-          <p class="lede">Medians, quantiles and sigma clipping along any axis.<br class="br-wide"> SIMD across slices. Identical to NumPy.</p>
-          <div class="hero-stats">
-            <div><b data-count="21">21</b><span>× median</span></div>
-            <div><b data-count="15">15</b><span>× σ-clip</span></div>
-            <div><b data-count="72">72</b><span>× quantiles</span></div>
-          </div>
-          <div class="cta">
-            <a class="btn btn-primary" href="#stack">See it stack <span aria-hidden="true">↓</span></a>
-            <a class="btn btn-ghost" href="#code">Get started</a>
-          </div>
-        </div>
-        <div class="hero-hud mono" aria-hidden="true">
-          <div class="hud-row"><span class="hud-k">input</span><span class="hud-v" id="hud-n">40 subs</span></div>
-          <div class="hud-row"><span class="hud-k">probe</span><span class="hud-v" id="hud-probe">—</span></div>
-          <div class="hud-row"><span class="hud-k">rejected</span><span class="hud-v hud-o" id="hud-rej">—</span></div>
-        </div>
-        <div class="hero-out mono" aria-hidden="true"><span>rw.sigma_clip_mean(subs, axis=0)</span><b>→ 1 frame</b></div>
-        <div class="scroll-cue" aria-hidden="true"><span></span></div>
-      </div>
-    </section>
-
-    <!-- 01 STACK: live GPU sigma clipping on the synthetic subs -->
-    <section class="sec" id="stack">
+  <main>
+    <!-- Intro: what the library computes, and the SIMD animation of how -->
+    <section class="intro" id="top">
       <div class="wrap">
-        <header class="sec-head">
-          <p class="eyebrow"><span>01</span>Sigma clipping</p>
-          <h2>40 noisy subs in.<br><span class="dim">One clean frame out.</span></h2>
-        </header>
-        <div class="demo stack-demo">
-          <figure class="viewport square" id="stack-view">
-            <canvas aria-label="Stacked image"></canvas>
-            <div class="probe-cross" hidden></div>
-            <div class="vp-tag mono" id="stack-tag">σ-clip · 40 frames</div>
-            <div class="vp-loading">loading 40 subs…</div>
-          </figure>
-          <div class="panel">
-            <div class="seg" role="tablist" id="stack-mode">
-              <button data-mode="0">1 sub</button>
-              <button data-mode="1">Mean</button>
-              <button data-mode="2">Median</button>
-              <button data-mode="3" class="on">σ-clip</button>
-            </div>
-            <label class="slider"><span class="sl-k" id="stack-n-label">Frames</span><input type="range" id="stack-n" min="1" max="40" value="40"><output class="mono" id="stack-n-out">40</output></label>
-            <label class="slider" id="stack-sigma-row"><span class="sl-k">σ</span><input type="range" id="stack-sigma" min="1.5" max="6" step="0.1" value="3"><output class="mono" id="stack-sigma-out">3.0</output></label>
-            <label class="toggle"><input type="checkbox" id="stack-rej"><span class="sw"></span><span>Show what was rejected</span></label>
-            <div class="slice-card">
-              <div class="slice-head mono"><span>one pixel · <b id="stack-px">—</b></span><span class="o" id="stack-px-rej"></span></div>
-              <svg class="slice" id="stack-slice" viewBox="0 0 320 150" preserveAspectRatio="none" aria-label="The 40 values of the probed pixel"></svg>
-              <div class="legend mono"><span><i class="k"></i>kept</span><span><i class="r"></i>rejected</span><span><i class="b"></i>±σ</span></div>
-            </div>
-            <p class="hint">Tap or drag on the image to probe a pixel.</p>
-          </div>
+        <div class="intro-copy">
+          <h1>Fast medians, percentiles and sigma clipping over stacks of arrays</h1>
+          <p class="lede">rankwise reduces one axis of an array to a median, quantile or sigma-clipped mean, for example 40 exposures of the same patch of sky into one image. The results are identical to NumPy, SciPy and astropy, and it runs <span class="nw">15–72×</span> faster on one core. Rust, C and Python.</p>
         </div>
-        <div class="stat-row">
-          <div><b>21.6 → 3.4</b><span>e⁻ background noise</span></div>
-          <div><b>1.1 s</b><span>1800×1200 RGB · 40 subs · 1 core</span></div>
-          <div><b>100%</b><span>rejections identical to astropy</span></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 02 LANES: one SIMD lane per pixel, 3D -->
-    <section class="sec" id="lanes">
-      <div class="wrap">
-        <header class="sec-head">
-          <p class="eyebrow"><span>02</span>How it works</p>
-          <h2>Vectorize <span class="grad">across</span> slices,<br><span class="dim">not inside them.</span></h2>
-        </header>
         <div class="demo lanes-demo">
-          <figure class="viewport wide" id="lanes-view">
-            <canvas aria-label="Registers of 16 pixels being sorted by a comparator network"></canvas>
-            <div class="lanes-axis mono"><span>← 16 neighbouring pixels →</span></div>
+          <figure class="viewport lanes-vp" id="lanes-view">
+            <canvas aria-label="Nine registers of 16 pixels each being sorted by a sequence of min/max instructions"></canvas>
+            <div class="lanes-axis mono"><span>← 16 pixels, one per SIMD lane →</span></div>
             <div class="lanes-asm mono" id="lanes-asm"><div>&nbsp;</div><div>&nbsp;</div></div>
           </figure>
           <div class="lanes-bar">
             <div class="seg seg-sm" id="lanes-isa">
-              <button data-l="16" class="on">AVX-512 · 16</button>
+              <button data-l="16" class="on">AVX-512 · 16 lanes</button>
               <button data-l="8">AVX2 · 8</button>
               <button data-l="4">NEON · 4</button>
             </div>
-            <div class="lanes-meter mono"><span><b id="lanes-ins">0</b> instructions</span><span><b id="lanes-sorts">16</b> sorts in flight</span></div>
+            <div class="lanes-meter mono"><span><b id="lanes-ins">0</b> instructions</span><span><b id="lanes-sorts">16</b> pixels per instruction</span></div>
             <button class="btn btn-ghost btn-sm" id="lanes-play" aria-label="Replay">↻ Replay</button>
           </div>
-        </div>
-        <div class="explain3">
-          <div><b>1 register = 1 frame</b><span>of 16 pixels</span></div>
-          <div><b>vminps + vmaxps</b><span>16 compare-exchanges</span></div>
-          <div><b>0 branches</b><span>on pixel values</span></div>
+          <p class="caption">Each column is one pixel and each row is one exposure of it, loaded into a SIMD register (<span class="mono">zmm0</span>–<span class="mono">zmm8</span>). Each step is a <span class="mono">min</span> and a <span class="mono">max</span> instruction on two rows, so all 16 pixels are compared at once. Larger values move down. When the steps finish, the middle row holds the median of every column. The orange values are satellite trails crossing these pixels, and none of them end up in the median.</p>
         </div>
       </div>
     </section>
 
-    <!-- 03 PRUNE: Batcher network, pruned to the requested ranks -->
-    <section class="sec" id="prune">
-      <div class="wrap">
-        <header class="sec-head">
-          <p class="eyebrow"><span>03</span>Pruned networks</p>
-          <h2>Only the comparators<br><span class="dim">your ranks need.</span></h2>
-        </header>
-        <div class="demo net-demo">
-          <div class="net-controls">
-            <div class="seg seg-sm" id="net-preset">
-              <button data-p="sort">Sort</button>
-              <button data-p="median" class="on">Median</button>
-              <button data-p="q">p10 · p50 · p90</button>
-              <button data-p="minmax">Min · max</button>
-            </div>
-            <label class="slider slider-inline"><span class="sl-k">n</span><input type="range" id="net-n" min="4" max="32" value="31"><output class="mono" id="net-n-out">31</output></label>
-          </div>
-          <div class="net-wrap">
-            <svg id="net-svg" aria-label="Sorting network"></svg>
-          </div>
-          <div class="net-count">
-            <div class="big mono"><b id="net-kept">152</b><span>/ <i id="net-total">186</i></span></div>
-            <div class="net-sub mono">comparators · <span id="net-ranks">rank 15</span></div>
-            <p class="hint">Tap an output wire to toggle its rank.</p>
-          </div>
-        </div>
-      </div>
+    <!-- Why it exists -->
+    <section class="sec" id="why">
+      <div class="wrap"><div class="narrow">
+        <h2>Why it exists</h2>
+        <p>Stacking telescope exposures, compositing satellite passes and summarizing weather ensembles all reduce a stack of arrays along one axis. Each output pixel is the median or a percentile of a short list, usually 10 to 100 values, and there are millions of pixels.</p>
+        <p>NumPy, Bottleneck and astropy process those lists one at a time, running a selection algorithm on each. With only 30 or 40 values per list, the fixed cost per list and unpredictable branches dominate, and SIMD barely helps inside a list that short.</p>
+        <p>rankwise vectorizes across the lists instead, as in the animation above. It sorts 16 pixels per register with a fixed sequence of min/max instructions (a sorting network) and drops the comparisons that can't change the ranks you asked for. The instruction sequence never branches on pixel values.</p>
+      </div></div>
     </section>
 
-    <!-- USE CASES -->
-    <section class="sec" id="cases">
+    <!-- Examples -->
+    <section class="sec" id="examples">
       <div class="wrap">
-        <header class="sec-head">
-          <p class="eyebrow"><span>04</span>Weather ensembles · real NOAA GEFS</p>
-          <h2>31 members.<br><span class="dim">2.5 M slices. 32 ms.</span></h2>
-        </header>
-        <div class="demo wx-demo">
-          <figure class="viewport wx" id="wx-view">
-            <canvas aria-label="Forecast uncertainty over the contiguous US: height is the p10 to p90 spread, colour is the median temperature"></canvas>
-            <div class="wx-labels" id="wx-labels"></div>
-            <div class="vp-tag mono" id="wx-tag">+0 h</div>
-            <div class="wx-legend mono">
-              <div class="wx-ramp"></div>
-              <div class="wx-ramp-l"><span>−10°</span><span>p50 °C</span><span>30°</span></div>
-              <div class="wx-h">height = p90 − p10</div>
+        <h2>Examples</h2>
+
+        <div class="ex" id="stack">
+          <div class="ex-head">
+            <h3>Stacking astrophotography exposures</h3>
+            <p>40 synthetic 30-second exposures with satellite trails, an airplane, a meteor and cosmic rays. A plain mean keeps every trail. Sigma clipping drops each pixel's outliers before averaging, with the same decisions as <span class="mono">astropy.stats.sigma_clip</span>. Tap the image to see one pixel's 40 values.</p>
+            <pre class="line mono"><code>clean = rw.sigma_clip_mean(subs, axis=0, sigma=3)</code></pre>
+          </div>
+          <div class="demo stack-demo">
+            <figure class="viewport square" id="stack-view">
+              <canvas aria-label="Stacked image"></canvas>
+              <div class="probe-cross" hidden></div>
+              <div class="vp-tag mono" id="stack-tag">σ-clip · 40 frames</div>
+              <div class="vp-loading">loading 40 exposures…</div>
+            </figure>
+            <div class="panel">
+              <div class="seg" role="tablist" id="stack-mode">
+                <button data-mode="0">1 exposure</button>
+                <button data-mode="1">Mean</button>
+                <button data-mode="2">Median</button>
+                <button data-mode="3" class="on">σ-clip</button>
+              </div>
+              <label class="slider"><span class="sl-k" id="stack-n-label">Frames</span><input type="range" id="stack-n" min="1" max="40" value="40"><output class="mono" id="stack-n-out">40</output></label>
+              <label class="slider" id="stack-sigma-row"><span class="sl-k">σ</span><input type="range" id="stack-sigma" min="1.5" max="6" step="0.1" value="3"><output class="mono" id="stack-sigma-out">3.0</output></label>
+              <label class="toggle"><input type="checkbox" id="stack-rej"><span class="sw"></span><span>Show rejected values</span></label>
+              <div class="slice-card">
+                <div class="slice-head mono"><span>pixel <b id="stack-px">—</b></span><span class="o" id="stack-px-rej"></span></div>
+                <svg class="slice" id="stack-slice" viewBox="0 0 320 150" preserveAspectRatio="none" aria-label="The 40 values of the selected pixel"></svg>
+                <div class="legend mono"><span><i class="k"></i>kept</span><span><i class="r"></i>rejected</span><span><i class="b"></i>±σ</span></div>
+              </div>
             </div>
-          </figure>
-          <div class="wx-side">
-            <div class="wx-time">
-              <button class="btn btn-ghost btn-icon" id="wx-play" aria-label="Play">❚❚</button>
-              <input type="range" id="wx-lead" min="0" max="240" step="1" value="0" aria-label="Lead time">
-              <output class="mono" id="wx-lead-out">day 0</output>
-            </div>
-            <div class="fan-card">
-              <div class="slice-head mono"><span>Denver · 2 m temperature</span><span class="dim" id="fan-val"></span></div>
-              <svg id="fan" viewBox="0 0 360 200" preserveAspectRatio="none" aria-label="Denver ten-day fan chart"></svg>
-              <div class="legend mono"><span><i class="m"></i>31 members</span><span><i class="b"></i>p10–p90</span><span><i class="k"></i>p50</span></div>
-            </div>
-            <div class="mini-race" id="wx-race"></div>
           </div>
         </div>
 
-        <header class="sec-head sec-head-2">
-          <p class="eyebrow"><span>05</span>Satellite composites · real Landsat 8/9</p>
-          <h2>90 cloudy passes.<br><span class="dim">One clear view.</span></h2>
-        </header>
-        <div class="demo stack-demo ls-demo">
-          <figure class="viewport square" id="ls-view">
-            <canvas aria-label="Landsat composite over Seattle and Tacoma"></canvas>
-            <div class="vp-tag mono" id="ls-tag">median · 90 scenes</div>
-            <div class="vp-loading">loading 90 scenes…</div>
-          </figure>
-          <div class="panel">
-            <div class="seg" id="ls-mode">
-              <button data-mode="0">1 pass</button>
-              <button data-mode="1">np.median</button>
-              <button data-mode="2" class="on">nodata=0</button>
+        <div class="ex" id="cases">
+          <div class="ex-head">
+            <h3>Percentiles of a weather ensemble</h3>
+            <p>One real NOAA GEFS forecast for the contiguous US: 31 ensemble members, 2 m temperature, out to 10 days. The 10th, 50th and 90th percentile at every grid point and lead time (2.5 million lists of 31 values) take 32 ms on one core, against 2.6 s for <span class="mono">np.quantile</span>. Height on the map is the p10–p90 spread.</p>
+            <pre class="line mono"><code>p10, p50, p90 = rw.quantile(members, [0.1, 0.5, 0.9], axis=0)</code></pre>
+          </div>
+          <div class="demo wx-demo">
+            <figure class="viewport wx" id="wx-view">
+              <canvas aria-label="Forecast uncertainty over the contiguous US: height is the p10 to p90 spread, colour is the median temperature"></canvas>
+              <div class="wx-labels" id="wx-labels"></div>
+              <div class="vp-tag mono" id="wx-tag">+0 h</div>
+              <div class="wx-legend mono">
+                <div class="wx-ramp"></div>
+                <div class="wx-ramp-l"><span>−10°</span><span>p50 °C</span><span>30°</span></div>
+                <div class="wx-h">height = p90 − p10</div>
+              </div>
+            </figure>
+            <div class="wx-side">
+              <div class="wx-time">
+                <button class="btn btn-ghost btn-icon" id="wx-play" aria-label="Play">❚❚</button>
+                <input type="range" id="wx-lead" min="0" max="240" step="1" value="0" aria-label="Lead time">
+                <output class="mono" id="wx-lead-out">day 0</output>
+              </div>
+              <div class="fan-card">
+                <div class="slice-head mono"><span>Denver · 2 m temperature</span><span class="dim" id="fan-val"></span></div>
+                <svg id="fan" viewBox="0 0 360 200" preserveAspectRatio="none" aria-label="Denver ten-day fan chart"></svg>
+                <div class="legend mono"><span><i class="m"></i>31 members</span><span><i class="b"></i>p10–p90</span><span><i class="k"></i>p50</span></div>
+              </div>
             </div>
-            <label class="slider"><span class="sl-k" id="ls-n-label">Scenes</span><input type="range" id="ls-n" min="1" max="90" value="90"><output class="mono" id="ls-n-out">90</output></label>
-            <div class="timeline-card">
-              <div class="slice-head mono"><span>2023 → 2024 · cloud cover</span><span class="dim" id="ls-date"></span></div>
-              <div class="timeline" id="ls-timeline"></div>
+          </div>
+        </div>
+
+        <div class="ex">
+          <div class="ex-head">
+            <h3>Cloud-free satellite composites</h3>
+            <p>Every Landsat 8 and 9 pass over Seattle and Tacoma in 2023 and 2024: 90 scenes, with 65% of all pixels under cloud or shadow. Those pixels are stored as 0, and <span class="mono">nodata=0</span> tells rankwise to skip them, so each pixel's median comes only from clear passes. The <span class="mono">np.median</span> button shows the same median with the clouds left in.</p>
+            <pre class="line mono"><code>composite = rw.median(scenes, axis=0, nodata=0)</code></pre>
+          </div>
+          <div class="demo stack-demo ls-demo">
+            <figure class="viewport square" id="ls-view">
+              <canvas aria-label="Landsat composite over Seattle and Tacoma"></canvas>
+              <div class="vp-tag mono" id="ls-tag">median · 90 scenes</div>
+              <div class="vp-loading">loading 90 scenes…</div>
+            </figure>
+            <div class="panel">
+              <div class="seg" id="ls-mode">
+                <button data-mode="0">1 pass</button>
+                <button data-mode="1">np.median</button>
+                <button data-mode="2" class="on">nodata=0</button>
+              </div>
+              <label class="slider"><span class="sl-k" id="ls-n-label">Scenes</span><input type="range" id="ls-n" min="1" max="90" value="90"><output class="mono" id="ls-n-out">90</output></label>
+              <div class="timeline-card">
+                <div class="slice-head mono"><span>cloud cover per pass, 2023–2024</span><span class="dim" id="ls-date"></span></div>
+                <div class="timeline" id="ls-timeline"></div>
+              </div>
             </div>
-            <div class="mini-race" id="ls-race"></div>
           </div>
         </div>
       </div>
@@ -225,8 +171,8 @@
     <section class="sec" id="bench">
       <div class="wrap">
         <header class="sec-head">
-          <p class="eyebrow"><span>06</span>Benchmarks</p>
-          <h2>Real time.<br><span class="dim">One core each.</span></h2>
+          <h2>Benchmarks</h2>
+          <p class="sub">Wall-clock time on one core, each tool reading the same array from RAM. The bars replay in real time.</p>
         </header>
         <div class="race-card">
           <div class="race-top">
@@ -244,7 +190,7 @@
         </div>
         <div class="sweep-card">
           <div class="race-top">
-            <div class="sweep-title"><b class="mono" id="sweep-big">≥ 5.8×</b><span>at every depth from 8 to 511 frames</span></div>
+            <div class="sweep-title"><b class="mono" id="sweep-big">≥ 5.8×</b><span>faster at every stack depth from 8 to 511 frames</span></div>
             <div class="seg seg-sm" id="sweep-op">
               <button data-k="median" class="on">Median</button>
               <button data-k="sigclip">σ-clip</button>
@@ -260,21 +206,20 @@
     <section class="sec" id="correct">
       <div class="wrap">
         <header class="sec-head">
-          <p class="eyebrow"><span>07</span>Conformance</p>
-          <h2>Identical.<br><span class="dim">Not close.</span></h2>
+          <h2>Same results as NumPy, SciPy and astropy</h2>
+          <p class="sub">Same values and same dtype, compared with exact equality. Every instruction set gives bit-identical output at any thread count.</p>
         </header>
         <div class="correct-grid">
           <div class="tests-card">
             <canvas id="tests" aria-label="1,057 conformance tests passing"></canvas>
-            <div class="tests-meta"><b class="mono" id="tests-n">0</b><span>conformance tests · every ISA</span></div>
+            <div class="tests-meta"><b class="mono" id="tests-n">0</b><span>conformance tests, run on every ISA</span></div>
             <div class="refs mono"><span>NumPy 2.5.3</span><span>SciPy 1.18.1</span><span>astropy 8.0.2</span></div>
           </div>
           <div class="ccd-card">
             <div class="ccd-num mono"><b id="ccd-n">0</b><span>/ 16,830,464</span></div>
-            <p class="ccd-sub">pixels with astropy's exact rejection mask, on real CCD frames</p>
+            <p class="ccd-sub">pixels with astropy's exact rejection mask, on real CCD calibration frames</p>
             <div class="ccd-bars" id="ccd-bars"></div>
             <div class="isa-eq mono"><span>AVX-512</span><i>=</i><span>AVX2</span><i>=</i><span>NEON</span><i>=</i><span>portable</span></div>
-            <p class="ccd-sub">bit for bit, on every thread count</p>
           </div>
         </div>
       </div>
@@ -284,8 +229,8 @@
     <section class="sec" id="code">
       <div class="wrap">
         <header class="sec-head">
-          <p class="eyebrow"><span>08</span>Use it</p>
-          <h2>NumPy's API.<br><span class="dim">Any axis. No copies.</span></h2>
+          <h2>Usage</h2>
+          <p class="sub">The Python functions take NumPy's names and arguments (<span class="mono">axis</span>, <span class="mono">out</span>, <span class="mono">keepdims</span>, <span class="mono">method</span>) and work on any axis of a float32, float64 or uint16 array without copying it.</p>
         </header>
         <div class="code-card">
           <div class="code-tabs" role="tablist" id="code-tabs">
@@ -314,7 +259,7 @@
         <a href="https://github.com/brannondorsey/rankwise/blob/main/docs/benchmarks.md">Benchmarks</a>
         <a href="https://github.com/brannondorsey/rankwise/blob/main/docs/conformance.md">Conformance</a>
       </nav>
-      <p class="credits">GEFS data © NOAA via dynamical.org, CC BY 4.0. Landsat imagery courtesy of the U.S. Geological Survey. Astronomical subs are synthetic, generated by <span class="mono">examples/python/astro_demo.py</span>.</p>
+      <p class="credits">GEFS data © NOAA via dynamical.org, CC BY 4.0. Landsat imagery courtesy of the U.S. Geological Survey. The astronomical exposures are synthetic, generated by <span class="mono">examples/python/astro_demo.py</span>.</p>
     </div>
   </footer>
 

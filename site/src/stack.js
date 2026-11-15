@@ -1,4 +1,4 @@
-// 01 · Live stacking of the 40 synthetic subs on the GPU: mean, median and astropy-style sigma
+// Live stacking of the 40 synthetic subs on the GPU: mean, median and astropy-style sigma
 // clipping per pixel and channel, the same rank-bounds algorithm rankwise runs per SIMD lane.
 import * as THREE from "three";
 import { $, autosize, clamp, coarse, easeOut, getJSON, loadImage, loop, rangeFill, reduced, segmented, whenNear } from "./util.js";

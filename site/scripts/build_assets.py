@@ -66,18 +66,6 @@ if "astro" in WHAT:
     Image.fromarray(atlas(codes, 8)).save(p, quality=92, subsampling=0, optimize=True)
     print(kb(p))
 
-    # Hero: every sub at 1/4 size (450x300), display-stretched, plus the rankwise stack.
-    def down(a, f=4):
-        return a.reshape(a.shape[0] // f, f, a.shape[1] // f, f, -1).mean((1, 3))
-
-    hero = np.stack([stretch(down(s)) for s in st])
-    p = OUT / "hero_subs.jpg"
-    Image.fromarray(atlas(hero, 8)).save(p, quality=78, optimize=True, progressive=True)
-    print(kb(p))
-    p = OUT / "hero_stack.jpg"
-    Image.fromarray(stretch(down(sig, 2))).save(p, quality=88, optimize=True, progressive=True)
-    print(kb(p))
-
     # default probe: the crop pixel where rejection removed the most signal from 2-4 frames
     rej = g["rejmap"][:, Y0:Y0 + S, X0:X0 + S, 1].sum(0)
     removed = np.where((rej >= 2) & (rej <= 4), g["removed"][Y0:Y0 + S, X0:X0 + S], 0)
@@ -103,7 +91,6 @@ if "astro" in WHAT:
     meta = dict(frames=int(N), tile=S, cols=8, crop=[Y0, X0], enc=[X1, C1, MAX], probe=[int(px), int(py)],
                 lanes=dict(frames=fr, y=int(ly), x=int(lx), codes=lanes),
                 stretch=[[float(lo), float(hi), float(m)] for lo, hi, m in P], sat=1.6,
-                hero=dict(w=W // 4, h=H // 4, cols=8),
                 noise=g["nz"], seconds=g["t_sig"])
     (OUT / "astro.json").write_text(json.dumps(meta, indent=1))
 

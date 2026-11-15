@@ -4,11 +4,11 @@ Static site (Vite + three.js, no framework). Every demo runs on the repository's
 
 | Demo | Data |
 |---|---|
-| Hero deck, live stacking (01), lanes (02) | the 40 synthetic subs of `examples/python/astro_demo.py` |
-| Pruned networks (03) | `src/netgen.js`, a port of `rankwise/src/netgen.rs` |
-| Weather (04) | real NOAA GEFS run of `bench/gefs.py`; p10/p50/p90 from `rw.quantile` |
-| Composites (05) | the 90 Landsat scenes of `bench/landsat.py`, at 120 m |
-| Benchmarks, conformance (06–07) | `bench/results/*.json` |
+| SIMD lanes (top of the page) | 16 pixels × 9 frames of the synthetic exposures of `examples/python/astro_demo.py`, sorted by the pruned median network of `src/netgen.js` (a port of `rankwise/src/netgen.rs`) |
+| Astrophotography stacking | the 40 synthetic exposures of `examples/python/astro_demo.py` |
+| Weather ensemble | real NOAA GEFS run of `bench/gefs.py`; p10/p50/p90 from `rw.quantile` |
+| Satellite composites | the 90 Landsat scenes of `bench/landsat.py`, at 120 m |
+| Benchmarks, correctness | `bench/results/*.json` |
 
 The stacking and composite demos compute mean / median / sigma clipping per pixel in a
 fragment shader (rank bounds over sorted codes, as rankwise does per SIMD lane).

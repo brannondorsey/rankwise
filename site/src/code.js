@@ -1,43 +1,35 @@
-// 08 · Code, from the README.
+// Code samples, shortened from the README.
 import { $, segmented } from "./util.js";
 
 const SNIPPETS = {
   py: { lang: "py", code: `import numpy as np
 import rankwise as rw
 
-stack = np.load("lights.npy", mmap_mode="r")   # (40, 1200, 1800, 3) float32, never copied
+stack = np.load("frames.npy")   # 40 exposures stacked on axis 0: shape (40, 1200, 1800)
 
-clean = rw.sigma_clip_mean(stack, axis=0, sigma=(3, 3), maxiters=5)  # astropy's decisions
-med   = rw.median(stack, axis=0)                    # identical to np.median
-lo, hi = rw.quantile(stack, [0.1, 0.9], axis=0)     # identical to np.quantile, every method
-comp  = rw.median(scenes, axis=0, nodata=0)         # uint16, clouds skipped
-k     = rw.select_ranks(stack, [0, 3, 36], axis=0)  # any ranks, one pass` },
-  rs: { lang: "rs", code: `use ndarray::{Array2, ArrayView3, Axis};
-use rankwise::{Clip, Reduce};
+med = rw.median(stack, axis=0)                      # same result as np.median
+p10, p90 = rw.quantile(stack, [0.1, 0.9], axis=0)   # same result as np.quantile
+clean = rw.sigma_clip_mean(stack, axis=0, sigma=3)  # same pixels rejected as astropy` },
+  rs: { lang: "rs", code: `// one slice per frame, each with one value per pixel
+let frames: Vec<&[f32]> = exposures.iter().map(|f| f.as_slice()).collect();
 
-fn integrate(stack: ArrayView3<f32>) -> rankwise::Result<Array2<f32>> {
-    let mut out = Array2::zeros((stack.dim().1, stack.dim().2));
-    stack.reduce_into(Axis(0), Clip::sigma(3.0, 3.0).max_iters(5).mean(), out.view_mut())?;
-    Ok(out)
-}
-
-// plain slices, one per frame: no ndarray needed
-let frames: Vec<&[f32]> = subs.iter().map(|s| s.as_slice()).collect();
-rankwise::median_frames(&frames, &mut master_dark)?;` },
+let mut med = vec![0.0f32; npix];
+rankwise::median_frames(&frames, &mut med)?;   // same result as np.median(stack, axis=0)` },
   c: { lang: "c", code: `#include <rankwise.h>
 
-const float *frames[40];                  /* one pointer per frame, H*W floats each */
-rw_clip clip = rw_clip_sigma(3.0f, 3.0f, /*maxiters*/ 5);
-rw_status st = rw_clip_mean_f32(frames, 40, H * W, &clip, out, /*rejected*/ NULL);` },
-  build: { lang: "sh", code: `# Rust core
-cargo test --release -p rankwise --features ndarray
+const float *frames[40];   /* 40 exposures, npix floats each */
+float *med = malloc(npix * sizeof(float));
+
+rw_status st = rw_median_f32(frames, 40, npix, med);` },
+  build: { lang: "sh", code: `# Python: abi3 wheel, Python >= 3.9
+pip install maturin && maturin build --release -m rankwise-py/Cargo.toml -o dist
+pip install --find-links dist rankwise
+
+# Rust
+cargo add rankwise --git https://github.com/brannondorsey/rankwise
 
 # C library: librankwise.so / .dylib / .dll + rankwise.h
-cargo build --release -p rankwise-capi
-
-# Python: abi3 wheel, Python >= 3.9
-pip install maturin && maturin build --release -m rankwise-py/Cargo.toml -o dist
-pip install --find-links dist rankwise` },
+cargo build --release -p rankwise-capi` },
 };
 
 const KW = {

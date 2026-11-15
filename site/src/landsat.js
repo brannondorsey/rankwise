@@ -1,9 +1,8 @@
-// 05 · Every Landsat 8/9 pass over Seattle and Tacoma in 2023–2024 (90 scenes, real data via
+// Every Landsat 8/9 pass over Seattle and Tacoma in 2023–2024 (90 scenes, real data via
 // Microsoft Planetary Computer). Medians run per pixel on the GPU: with clouds kept (np.median) or
 // with QA-flagged clouds and shadows as nodata (rw.median(..., nodata=0)).
 import * as THREE from "three";
 import { $, autosize, clamp, easeOut, getJSON, loadImage, loop, rangeFill, reduced, segmented } from "./util.js";
-import { miniRace } from "./weather.js";
 
 const FRAG = /* glsl */ `
 precision highp float;
@@ -145,10 +144,4 @@ export async function initLandsat() {
     renderer.setRenderTarget(null);
     renderer.render(scB, cam);
   });
-
-  miniRace($("#ls-race"), [
-    { tool: "rankwise · uint16, nodata=0", s: 0.231, rw: true },
-    { tool: "Bottleneck nanmedian", s: 4.91 },
-    { tool: "NumPy nanmedian", s: 20.6 },
-  ], "median of 90 × 2048² · 65% cloud");
 }

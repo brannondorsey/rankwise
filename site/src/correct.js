@@ -1,4 +1,4 @@
-// 07 · 1,057 conformance tests light up; real CCD frames match astropy's mask on every pixel.
+// 1,057 conformance tests light up; real CCD frames match astropy's mask on every pixel.
 import B from "./bench.json";
 import { $, clamp, easeOut, fmt, loop, reduced, whenNear } from "./util.js";
 

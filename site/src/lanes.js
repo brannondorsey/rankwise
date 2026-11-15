@@ -1,6 +1,6 @@
-// 02 · 16 neighbouring pixels × 9 frames, one register per frame. Every compare-exchange of two
+// 16 neighbouring pixels × 9 frames, one register per frame. Every compare-exchange of two
 // registers (a min and a max) advances all 16 sorts at once; outliers sink, the median row lights up.
-// Values are real: 16 pixels of the synthetic subs where satellite trails cross.
+// Values are real: 16 pixels of the synthetic exposures where satellite trails cross. Shown first on the page.
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { $, autosize, clamp, easeOut, getJSON, loop, reduced, segmented, smoothstep } from "./util.js";
@@ -200,12 +200,12 @@ export async function initLanes() {
     t0 += dt;
     // fit 16 lanes + labels to the width, 9 rows to the height
     const narrow = aspect < 1.4;
-    const needW = LANES + (narrow ? 3.2 : 5.5), needH = R + (narrow ? 1.2 : 2.5);
+    const needW = LANES + (narrow ? 3.2 : 5.5), needH = R + (narrow ? 1.2 : 3.4);
     const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     const dist = Math.max(needH / 2 / tanH, needW / 2 / (tanH * aspect)) * 1.02;
     yaw += (yawT + (reduced ? 0 : Math.sin(t0 * 0.3) * 0.12) - yaw) * 0.06;
     camera.position.set(Math.sin(-0.32 + yaw) * dist, 2.4 + Math.sin(t0 * 0.21) * 0.3, Math.cos(-0.32 + yaw) * dist);
-    camera.lookAt(0.6, aspect < 1.4 ? 0.7 : -0.2, 0);
+    camera.lookAt(0.6, narrow ? 1.25 : 0.35, 0);
 
     // advance the network
     let active = null, u = 0;
