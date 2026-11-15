@@ -60,7 +60,7 @@ fn ops(w: usize) -> Vec<Op> {
         Op::Iqr { lo: 25.0, hi: 75.0, scale: 1.0 },
         Op::Mad { scale: 1.0 },
         Op::Clip(Clip::sigma(2.0, 2.0)),
-        Op::Clip(Clip::median_sigma(2.5, 2.5).median()),
+        Op::Clip(Clip::median_sigma(2.5, 2.5)),
     ]
 }
 
