@@ -119,7 +119,8 @@ Matching NumPy bit for bit meant reproducing some behaviours that are easy to mi
   which equal values' weights are summed depends on its sort implementation; rankwise sums them
   in frame order (a stable sort, the same on every ISA). Results can differ only where `q`
   lands within rounding of a cumulative weight inside a run of equal values; with ties and
-  integer (or other exactly summed) weights they are identical.
+  integer (or other exactly summed) weights the values are identical. Where +0.0 and −0.0
+  tie, which zero NumPy returns depends on its sort, so the sign of a zero result can differ.
 * **`np.nanquantile(..., weights=w)` with 1-D `w` on 2-D+ input** raises `IndexError` in NumPy
   2.5.3; rankwise treats it as `w` broadcast along the axis (the result NumPy gives for
   broadcast weights).

@@ -186,7 +186,9 @@ pub(crate) unsafe fn put(o: &OutRow, p: usize, vals: &[f64; MAXL], lanes: usize)
         DType::U16 => w!(u16, |x: f64| x as u16),
         DType::I32 => w!(i32, |x: f64| x as i32),
         DType::I64 => w!(i64, |x: f64| x as i64),
-        DType::Bool | DType::U8 => w!(u8, |x: f64| (x != 0.0) as u8),
+        DType::Bool => w!(u8, |x: f64| (x != 0.0) as u8),
+        // a value (a uint8 `out=`, uint8 reject counts), not a flag
+        DType::U8 => w!(u8, |x: f64| x as u8),
     }
 }
 
@@ -315,7 +317,9 @@ unsafe fn run_unit_in<A: crate::arch::Arch, S: crate::arch::SortVec, const SKEW:
         // a weight map is staged with the data, as float64
         let per = esz + if job.wmap.is_some() { 8 } else { 0 };
         let target = budget / (n * per).max(1);
-        ((target / l).max(1) * l).min(16384).max(l)
+        // ... and no larger than the unit: a unit is one row, and many short rows would each
+        // allocate and clear a full tile
+        ((target / l).max(1) * l).min(16384).max(l).min((u.p1 - u.p0).div_ceil(l) * l)
     } else {
         u.p1 - u.p0
     };

@@ -427,8 +427,10 @@ def _weighted_quantile(a, q, axis, out, method, keepdims, weights, *, omit, perc
     work, final, copy = _prepare_out(out, s.shape, np.dtype(s.dtype), keepdims, s.axis, lead=qa.shape)
     work2 = work.reshape((flat.size,) + tuple(s.shape))
     op = {"kind": "wquantile", "q": [float(x) for x in flat], "cmp": cmp}
-    _run(op, s, [work2[j, ...] for j in range(flat.size)],
-         _opts(omit=omit or nodata is not None, nodata=nodata, threads=threads, isa=isa, weights=per_frame), wmap=wmap)
+    if flat.size:  # an empty q gives an empty result, as in NumPy
+        _run(op, s, [work2[j, ...] for j in range(flat.size)],
+             _opts(omit=omit or nodata is not None, nodata=nodata, threads=threads, isa=isa, weights=per_frame),
+             wmap=wmap)
     del wkeep
     if omit and work.dtype.kind == "f" and np.isnan(work).any():
         warnings.warn(_ALL_NAN, RuntimeWarning, stacklevel=3)
@@ -444,7 +446,8 @@ _WEIGHTS_DOC = """
     bit for bit (float64 sums divided by the total, compared in ``q``'s dtype). The result has
     the input's dtype. NumPy orders equal values with an unstable sort; rankwise sums their
     weights in frame order, which can only matter where ``q`` lands within rounding of a
-    cumulative weight inside a run of equal values.
+    cumulative weight inside a run of equal values (and, for tied +0.0 and -0.0, in which
+    zero's sign is returned).
     """
 
 

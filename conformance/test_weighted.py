@@ -171,3 +171,33 @@ def test_errors():
         rw.nanquantile(y, 0.5, axis=0, method=IC, weights=np.array([1.0, 0, 0, 0, 0]))
     with pytest.raises(ValueError, match="Quantiles must be in the range"):
         rw.quantile(x, 1.5, axis=0, method=IC, weights=w)
+
+
+def test_review_regressions(isa):
+    # uint8 out= holds values, not flags (weighted and unweighted paths)
+    x = np.random.default_rng(3).integers(0, 200, (9, 6)).astype(np.uint8)
+    w = weights_for(9, "int")
+    o = np.empty(6, np.uint8)
+    rw.quantile(x, 0.5, axis=0, method=IC, weights=w, out=o)
+    identical(o, np.quantile(x, 0.5, axis=0, method=IC, weights=w))
+    o2 = np.empty(6, np.uint8)
+    rw.max(x, axis=0, out=o2)
+    identical(o2, np.max(x, axis=0))
+    o3 = np.empty((2, 6), np.uint8)
+    rw.select_ranks(x, [0, 4], axis=0, out=o3)
+    identical(o3, np.sort(x, axis=0)[[0, 4]])
+    # an empty q gives an empty result
+    y = make(5, 4, np.float32, "normal")
+    identical(rw.quantile(y, [], axis=0, method=IC, weights=np.ones(5)),
+              np.quantile(y, [], axis=0, method=IC, weights=np.ones(5)))
+    # subnormal q: the quotient near q is subnormal too
+    a = np.array([[0.0], [1.0], [2.0]])
+    for wv, q in (([1e-45, 0.5, 0.5], np.float32(1e-45)), ([6e-308, 1e16, 1e16], 5e-324),
+                  ([1e-40, 1.0, 1.0], np.array([1e-39, 2e-39], np.float32))):
+        identical(rw.quantile(a, q, axis=0, method=IC, weights=np.array(wv)),
+                  np.quantile(a, q, axis=0, method=IC, weights=np.array(wv)))
+    # a weight map over many short rows (one tile per row)
+    z = make(31, 4000, np.float32, "normal").reshape(31, 1000, 4).transpose(1, 0, 2)
+    wm = np.random.default_rng(4).random(z.shape)
+    identical(rw.quantile(z, [0.2, 0.7], axis=1, method=IC, weights=wm),
+              np.quantile(z, [0.2, 0.7], axis=1, method=IC, weights=wm))

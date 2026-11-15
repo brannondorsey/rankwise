@@ -123,7 +123,10 @@ pub(crate) unsafe fn block<S: Vector, C: FVector<E = f64>>(
     // Per lane: what to write when there is no answer, else the search thresholds. No
     // cumulative weight below q·total·(1 - 2^-20) can reach q once divided by the total and
     // cast (each rounds by at most 2^-24 relative), so the first one at or above it is where
-    // the exact search starts. A subnormal product may round up by more: start from 0 then.
+    // the exact search starts. Subnormals round by more: when q is below the comparison
+    // dtype's smallest normal (the quotient near q may be subnormal) or the product is
+    // subnormal, start from 0.
+    let min_normal = if f32cmp { f32::MIN_POSITIVE as f64 } else { f64::MIN_POSITIVE };
     let thr_all = &mut sc.thr;
     thr_all.iter_mut().for_each(|t| *t = [0f64; MAXL]);
     let mut status = [0u8; MAXL]; // 0 search, 1 fill, 2 NaN
@@ -146,7 +149,7 @@ pub(crate) unsafe fn block<S: Vector, C: FVector<E = f64>>(
         if status[lane] == 0 {
             for (j, &q) in qs.iter().enumerate() {
                 let t = q * total * (1.0 - 1.0 / 1048576.0);
-                thr_all[j][lane] = if t < f64::MIN_POSITIVE { 0.0 } else { t };
+                thr_all[j][lane] = if q < min_normal || t < f64::MIN_POSITIVE { 0.0 } else { t };
             }
         }
     }
