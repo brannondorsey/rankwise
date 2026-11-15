@@ -288,9 +288,17 @@ impl NetPlan {
 }
 
 type Key = (usize, Vec<usize>);
-fn cache() -> &'static Mutex<HashMap<Key, Arc<(Vec<Comparator>, Vec<u32>)>>> {
-    static C: OnceLock<Mutex<HashMap<Key, Arc<(Vec<Comparator>, Vec<u32>)>>>> = OnceLock::new();
-    C.get_or_init(|| Mutex::new(HashMap::new()))
+type Pruned = Arc<(Vec<Comparator>, Vec<u32>)>;
+/// Cached networks and their total size in bytes.
+struct NetCache {
+    map: HashMap<Key, Pruned>,
+    bytes: usize,
+}
+/// At 65,535 frames one network is about 27 MB, so the cache is capped by size, not count.
+const NET_CACHE_BYTES: usize = 64 << 20;
+fn cache() -> &'static Mutex<NetCache> {
+    static C: OnceLock<Mutex<NetCache>> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(NetCache { map: HashMap::new(), bytes: 0 }))
 }
 
 /// Batcher network for `n` wires pruned to `needed` (all wires when `None`), with levels.
@@ -299,7 +307,7 @@ fn pruned_with_levels(n: usize, needed: Option<&[usize]>) -> Arc<(Vec<Comparator
     key_r.sort_unstable();
     key_r.dedup();
     let key = (n, if needed.is_some() { key_r.clone() } else { vec![usize::MAX] });
-    if let Some(v) = cache().lock().unwrap().get(&key) {
+    if let Some(v) = cache().lock().unwrap().map.get(&key) {
         return v.clone();
     }
     let (full, lv) = netgen::batcher_levels(n);
@@ -326,11 +334,16 @@ fn pruned_with_levels(n: usize, needed: Option<&[usize]>) -> Arc<(Vec<Comparator
         }
     };
     let v = Arc::new(v);
+    let size = v.0.len() * core::mem::size_of::<Comparator>() + v.1.len() * 4;
     let mut c = cache().lock().unwrap();
-    if c.len() > 256 {
-        c.clear();
+    if c.map.len() >= 256 || c.bytes + size > NET_CACHE_BYTES {
+        c.map.clear();
+        c.bytes = 0;
     }
-    c.insert(key, v.clone());
+    if size <= NET_CACHE_BYTES {
+        c.bytes += size;
+        c.map.insert(key, v.clone());
+    }
     v
 }
 
@@ -396,7 +409,15 @@ pub fn plan(n: usize, needed: Option<&[usize]>, unroll: usize, vec_bytes: usize)
         None => unroll >= 32 && n > MAX_UNROLL && n * vec_bytes > DEEP_NET_BYTES,
     };
     if deep {
-        return NetPlan::Deep(deep_plan(n, needed, unroll));
+        let d = deep_plan(n, needed, unroll);
+        // Rank pruning shrinks Batcher's network to a tournament for the minimum (and, at a
+        // power of two, the maximum), which group-level pruning cannot match: there the
+        // hybrid was 2-2.7x faster. Every other rank set leaves Batcher within 1.4x of the
+        // deep network's comparators, where the deep network wins.
+        let extremes = matches!(needed, Some(r) if !r.is_empty() && r.iter().all(|&k| k == 0 || k == n - 1));
+        if !(extremes && deep_threshold().is_none() && pruned_with_levels(n, needed).0.len() * 4 < d.comparators) {
+            return NetPlan::Deep(d);
+        }
     }
     let is_median = needed.map(|r| {
         let mut r = r.to_vec();
@@ -644,6 +665,31 @@ mod tests {
             }
         }
         true
+    }
+
+    #[test]
+    fn deep_plan_choice_and_cache_budget() {
+        if deep_threshold().is_none() {
+            let is_deep = |n: usize, r: &[usize]| matches!(plan(n, Some(r), 32, 64), NetPlan::Deep(_));
+            // the minimum (and, at a power of two, the maximum) keep the tournament
+            assert!(!is_deep(4096, &[0]));
+            assert!(!is_deep(4096, &[4095]));
+            assert!(!is_deep(4096, &[0, 4095]));
+            assert!(!is_deep(1000, &[0]));
+            // anything else is within 1.4x of Batcher: deep
+            assert!(is_deep(4096, &[1]));
+            assert!(is_deep(4096, &[0, 1]));
+            assert!(is_deep(1000, &[0, 999])); // Batcher's maximum is not a tournament here
+            assert!(is_deep(4096, &netgen::median_ranks(4096)));
+            assert!(matches!(plan(4096, None, 32, 64), NetPlan::Deep(_)));
+            // AVX2 never goes deep
+            assert!(!matches!(plan(4096, Some(&[1]), 16, 32), NetPlan::Deep(_)));
+        }
+        // many large networks stay within the byte budget
+        for k in 1..24 {
+            let _ = pruned_with_levels(8192, Some(&[k * 7]));
+            assert!(cache().lock().unwrap().bytes <= NET_CACHE_BYTES);
+        }
     }
 
     #[test]

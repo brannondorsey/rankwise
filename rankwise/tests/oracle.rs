@@ -559,3 +559,41 @@ fn deepest_stack() {
     let more: Vec<&[f32]> = views.iter().copied().chain(std::iter::once(views[0])).collect();
     assert_eq!(median_frames(&more, &mut vec![0f32; npix]), Err(Error::BadDepth(n + 1)));
 }
+
+#[test]
+fn deep_stack_memory_paths() {
+    // Past 2^18 table entries, quantile indices are computed per lane: same results as tables.
+    let n = 1000;
+    let npix = 37;
+    let st = stack(n, npix, 0.2, true, 77);
+    let qs: Vec<f64> = (0..300).map(|i| i as f64 / 299.0).collect();
+    for &isa in &isas() {
+        let opts = Options { isa: Some(isa), nan: NanPolicy::Omit, ..Default::default() };
+        let all = run_f32(&st, &Op::Quantile(QuantileSpec::new(qs.clone())), &opts, qs.len(), DType::F64);
+        for (j, &q) in qs.iter().enumerate().step_by(13) {
+            let one = run_f32(&st, &Op::Quantile(QuantileSpec::new(vec![q])), &opts, 1, DType::F64);
+            assert!(all[j].iter().zip(&one[0]).all(|(a, b)| same(*a, *b)), "{isa} q={q}");
+        }
+        // the minimum and maximum alone keep the hybrid network
+        let o2 = Options { isa: Some(isa), ..Default::default() };
+        for ranks in [vec![0], vec![n - 1], vec![0, n - 1]] {
+            let got = run_f32(&st, &Op::SelectRanks(ranks.clone()), &o2, ranks.len(), DType::F32);
+            for p in 0..npix {
+                let mut c = column(&st, p);
+                sort_nan_last(&mut c);
+                for (j, &r) in ranks.iter().enumerate() {
+                    assert!(same(got[j][p], c[r] as f64), "{isa} r={r}");
+                }
+            }
+        }
+    }
+    // Staging::Skew on a deep stack uses a tile (the skew ring grows as n²)
+    let n = 2000;
+    let st = stack(n, 41, 0.0, false, 78);
+    for &isa in &isas() {
+        let o = |staging| Options { isa: Some(isa), staging, ..Default::default() };
+        let a = run_f32(&st, &Op::Median, &o(Staging::Never), 1, DType::F64);
+        let b = run_f32(&st, &Op::Median, &o(Staging::Skew), 1, DType::F64);
+        assert!(a[0].iter().zip(&b[0]).all(|(x, y)| same(*x, *y)), "{isa} skew");
+    }
+}

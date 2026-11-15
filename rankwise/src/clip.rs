@@ -356,14 +356,17 @@ fn sn(x: &[f64]) -> f64 {
 }
 
 /// The `k`-th smallest (0-based) of `{0} ∪ {x[i] - x[i-t]} ∪ {x[i+t] - x[i]}` for sorted `x`.
+/// The distance between equal infinities (`inf - inf`, NaN) counts as `+inf`: both lists
+/// stay sorted, and Sn stays robust to infinite values as long as they are a minority.
 fn kth_distance(x: &[f64], i: usize, k: usize) -> f64 {
     if k == 0 {
         return 0.0;
     }
     // the k smallest non-self distances take a from the left and k - a from the right
     let (nl, nr) = (i, x.len() - 1 - i);
-    let left = |t: usize| x[i] - x[i - t]; // t-th nearest on the left, t >= 1
-    let right = |t: usize| x[i + t] - x[i];
+    let dist = |d: f64| if d.is_nan() { f64::INFINITY } else { d };
+    let left = |t: usize| dist(x[i] - x[i - t]); // t-th nearest on the left, t >= 1
+    let right = |t: usize| dist(x[i + t] - x[i]);
     // largest a in [lo, hi] with left(a) <= right(k - a + 1) (left list may give a values)
     let (mut lo, mut hi) = (k.saturating_sub(nr), k.min(nl));
     while lo < hi {
@@ -867,6 +870,68 @@ mod sn_tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Brute-force Sn under the same rule: `inf - inf` counts as `+inf`, the self-distance 0.
+    fn sn_brute(x: &[f64]) -> f64 {
+        let c = x.len();
+        if c < 2 {
+            return 0.0;
+        }
+        let k = c / 2;
+        let mut meds: Vec<f64> = (0..c)
+            .map(|i| {
+                let mut d: Vec<f64> = (0..c)
+                    .map(|j| {
+                        let v = (x[j] - x[i]).abs();
+                        if j == i {
+                            0.0
+                        } else if v.is_nan() {
+                            f64::INFINITY
+                        } else {
+                            v
+                        }
+                    })
+                    .collect();
+                d.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                d[k]
+            })
+            .collect();
+        meds.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        meds[c.div_ceil(2) - 1]
+    }
+
+    #[test]
+    fn sn_with_infinities_is_never_negative_or_nan() {
+        let (inf, ninf) = (f64::INFINITY, f64::NEG_INFINITY);
+        // the cases that gave -inf: equal infinities
+        assert_eq!(sn(&[1.0, inf, inf]), inf);
+        assert_eq!(sn(&[ninf, ninf]), inf);
+        assert_eq!(sn(&[0.3, 1.0, 2.0, inf, inf, inf, inf]), inf);
+        // a minority of infinities leaves the finite scale
+        assert_eq!(sn(&[1.0, 2.0, 3.0, 4.0, 5.0, inf, inf]), sn_brute(&[1.0, 2.0, 3.0, 4.0, 5.0, inf, inf]));
+        assert!(sn(&[1.0, 2.0, 3.0, 4.0, 5.0, inf, inf]).is_finite());
+        let mut s = 7u64;
+        for c in 0..60usize {
+            for _ in 0..20 {
+                let mut x: Vec<f64> = (0..c)
+                    .map(|_| {
+                        s ^= s << 13;
+                        s ^= s >> 7;
+                        s ^= s << 17;
+                        match s % 7 {
+                            0 => inf,
+                            1 => ninf,
+                            v => (v % 3) as f64,
+                        }
+                    })
+                    .collect();
+                x.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let v = sn(&x);
+                assert!(v >= 0.0, "{x:?}: {v}");
+                assert_eq!(v, sn_brute(&x), "{x:?}");
             }
         }
     }

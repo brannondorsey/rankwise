@@ -4,9 +4,18 @@
 
 * **Deep stacks: up to 65,535 frames** (was 512), on every ISA and for every operation. On
   AVX-512, stacks past 768 frames (where the buffer outgrows L1) sort with a register-blocked
-  bitonic network: chunks of 32 sort in registers, then each merge pass loads groups of 16
-  wires, runs four layers on them in registers and stores them back, so the buffer is read
-  once per four layers instead of twice per comparator. Rank pruning works per group.
+  bitonic network: chunks of 32 sort in registers, then each merge stage's layers are split
+  evenly into passes of at most four, and a pass of `r` layers loads groups of 2^r wires (8 or
+  16), runs its layers on them in registers and stores them back, so the buffer is read once
+  per three or four layers instead of twice per comparator. Rank pruning works per group;
+  selecting only the minimum (or the maximum) keeps the hybrid network, whose pruned form is
+  a tournament.
+* Memory at depth: the network cache is capped at 64 MiB (a 65,535-frame network is 27 MB;
+  rank sets varied in a loop grew it to gigabytes), quantile tables per count of valid
+  values are built only up to 8 MiB and computed per lane beyond, and `Staging::Skew` uses a
+  tile from 96 frames (its read-ahead ring grows as n²).
+* PixInsight's Sn counts the distance between equal infinities as +inf (it could return
+  −inf, a negative scale, when the stack held repeated infinities and `mask_infinite=False`).
 * Staging tiles are no larger than the row they stage (inputs that collapse into many short
   rows each allocated and cleared a full tile).
 * PixInsight's winsorized preset computes Sn in O(n log n) (was O(n²)).

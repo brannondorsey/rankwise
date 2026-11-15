@@ -65,11 +65,16 @@ Min, max, range and argmin/argmax skip the network: they are one streaming pass.
   loads and two stores per comparator, dominate. Such stacks use the flip variant of Batcher's bitonic sort instead (every comparator puts the minimum on
   the lower wire, so padding wires past `n` hold +inf and never move): after the chunk sorts,
   merge stage `s` is a flip layer (wire `i` against `i ^ (2^s − 1)`) and then half-cleaners
-  down to stride 1. Its layers are cut into passes of four, and each pass runs on groups of 16
-  wires that meet only each other in those four layers: load the group, run the layers in
-  registers, store it back. The buffer is then read once per four layers. Groups that reach past
-  `n` drop the layers that only pair them with padding, and rank pruning keeps a group only if
-  a needed rank depends on it. Against the hybrid network this is about 1.5–2× faster from
+  down to stride 1. Each stage's layers are split as evenly as possible into passes of at
+  most four (stage 6 runs 3 + 3, stage 10 runs 4 + 3 + 3), and a pass of `r` layers runs on
+  groups of 2^r wires that meet only each other in those layers: load the group, run the
+  layers in registers, store it back. The buffer is then read once per three or four layers.
+  Groups that reach past `n` drop the layers that only pair them with padding, and rank
+  pruning keeps a group only if a needed rank depends on it. Group-level pruning cannot shrink
+  the network to a tournament the way Batcher's comparator-level pruning does for the minimum
+  (and, at a power of two, the maximum), so those two keep the hybrid network (2–2.7× faster
+  there); every other rank set leaves Batcher within 1.4× of the deep network's comparators.
+  Against the hybrid network this is about 1.5–2× faster from
   1,024 to 16,384 frames (bitonic has ~15% more comparators, but they run from registers); the
   crossover measured between 768 and 900 frames. On AVX2 (16 registers, groups of 8) the
   hybrid won at every depth tried up to 2,400 frames, so AVX2, NEON (unmeasured) and the
@@ -82,9 +87,12 @@ Min, max, range and argmin/argmax skip the network: they are one streaming pass.
   comparators sorts. That is how both `mad()` and MAD-based clipping avoid a second full sort.
 
 The 0-1 principle tests (`rankwise/tests/networks.rs`) check every network exhaustively for
-n ≤ 20: full sorts, pruned selections and the bitonic merger; the blocked networks are checked
-the same way for n ≤ 16 with every chunk and group width, and their register-blocked execution
-against their comparator lists.
+n ≤ 20: full sorts, pruned selections and the bitonic merger. The blocked networks are checked
+the same way for n ≤ 16 with chunks of 1 to 8 and groups up to 16 wires, and their
+register-blocked execution against their comparator lists (chunks of 1 and 16, n up to 1,025).
+The shipping chunk of 32 never reaches a merge stage at n ≤ 16; the oracle (`tests/oracle.rs`,
+513 to 65,535 frames on every ISA, plus a CI run that forces the deep network from 41 frames)
+and the conformance suite cover it.
 
 ## SIMD and dispatch
 

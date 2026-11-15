@@ -3,9 +3,9 @@
 
 use crate::layout::Space;
 use crate::net::NetPlan;
-use crate::quantile::{Lerp, QIdx, ScipyLinear};
+use crate::quantile::{quantile_index, Lerp, QIdx, ScipyLinear};
 use crate::simd::{Element, FVector, Isa, Mask, Vector};
-use crate::spec::{ArgRank, DType};
+use crate::spec::{ArgRank, DType, QForm, QuantileMethod};
 use core::any::TypeId;
 
 /// "No index" marker that every sort dtype represents exactly.
@@ -26,12 +26,35 @@ pub(crate) enum Missing {
     NoData(u16),
 }
 
+/// Where one quantile falls for each count of valid values: a table while it is small,
+/// else computed per lane (65,535 frames and 1,000 quantiles would take 2 GB of tables).
+#[derive(Debug, Clone)]
+pub(crate) struct QTab {
+    pub q: f64,
+    pub method: QuantileMethod,
+    pub form: QForm,
+    /// With all `n` values valid.
+    pub all: QIdx,
+    /// Indexed by count, `0..=n`.
+    pub by_count: Option<Vec<QIdx>>,
+}
+
+impl QTab {
+    #[inline]
+    fn at(&self, m: usize) -> QIdx {
+        match &self.by_count {
+            Some(t) => t[m],
+            None => quantile_index(self.method, self.form, m, self.q),
+        }
+    }
+}
+
 /// Per-operation data the epilogues need.
 #[derive(Debug, Clone)]
 pub(crate) enum Kern {
     Select { ranks: Vec<usize> },
     Median { omit: bool },
-    Quantile { tabs: Vec<Vec<QIdx>>, lerp: Lerp, omit: bool },
+    Quantile { tabs: Vec<QTab>, lerp: Lerp, omit: bool },
     Iqr { tlo: Vec<(usize, usize, f64)>, thi: Vec<(usize, usize, f64)>, sp: ScipyLinear, scale: f64, omit: bool },
     Mad { scale: f64, omit: bool },
     TrimMean { lo: usize, hi: usize, p: f64, omit: bool },
@@ -681,7 +704,7 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
         Kern::Quantile { tabs, lerp, omit } => {
             for (j, tab) in tabs.iter().enumerate() {
                 if !blk.any_missing || !omit {
-                    match tab[n] {
+                    match tab.all {
                         QIdx::Take(i0) => lanes_f64(*blk.buf.add(i0), &mut vals),
                         QIdx::Lerp { i0, i1, t } => {
                             let mut a = [0f64; MAXL];
@@ -706,7 +729,7 @@ unsafe fn epilogue<A: crate::arch::Arch, S: crate::arch::SortVec>(job: &Job, blk
                     let mut t = [0f64; MAXL];
                     let mut special = 0u64; // lanes that take a value as is (or are empty)
                     for i in 0..lanes {
-                        match tab[ms[i]] {
+                        match tab.at(ms[i]) {
                             QIdx::Take(i0) => {
                                 a[i] = at(blk.buf, i0, i).to_f64();
                                 special |= 1 << i;
