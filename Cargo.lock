@@ -428,7 +428,7 @@ dependencies = [
 
 [[package]]
 name = "rankwise"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "ndarray",
  "proptest",
@@ -437,14 +437,14 @@ dependencies = [
 
 [[package]]
 name = "rankwise-capi"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "rankwise",
 ]
 
 [[package]]
 name = "rankwise-py"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "pyo3",
  "rankwise",
