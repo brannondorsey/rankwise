@@ -57,10 +57,21 @@ jobs:
     permissions:
       id-token: write
     steps:
+      - name: Skip if this version is already on crates.io
+        id: exists
+        # The first release is published by hand (trusted publishing needs the crate to exist).
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -A 'rankwise-release (github.com/brannondorsey/rankwise)' \
+            "https://crates.io/api/v1/crates/rankwise/${GITHUB_REF_NAME#v}")
+          echo "published=$([ "$code" = 200 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v5
+        if: steps.exists.outputs.published == 'false'
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.exists.outputs.published == 'false'
       - uses: rust-lang/crates-io-auth-action@v1
+        if: steps.exists.outputs.published == 'false'
         id: auth
       - run: cargo publish -p rankwise
+        if: steps.exists.outputs.published == 'false'
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
