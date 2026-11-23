@@ -83,6 +83,23 @@ NEON on an x86 box: `apt-get install qemu-user gcc-aarch64-linux-gnu libc6-dev-a
 `cargo test --release -p rankwise --target aarch64-unknown-linux-gnu`. CI also runs native
 aarch64 Linux and macOS arm64. MSRV is 1.89 (checked in CI).
 
+### Releasing
+
+`release.yml` runs on `v*` tags: it checks the tag matches the workspace version, builds
+wheels and the sdist (`wheels.yml`), then publishes to PyPI and crates.io with trusted
+publishing (OIDC). The repo stores no registry tokens. One-time setup per registry:
+
+* **crates.io**: the first `cargo publish -p rankwise` is manual (trusted publishing needs
+  the crate to exist). Then crate Settings → Trusted Publishing: repo `brannondorsey/rankwise`,
+  workflow `release.yml`, environment `crates-io`.
+* **PyPI**: project (or pending publisher) Settings → Publishing → GitHub: repo
+  `brannondorsey/rankwise`, workflow `release.yml`, environment `pypi`.
+* **npm**: `rankwise` is claimed by a manual placeholder; there is no JS package to
+  publish yet, so `release.yml` does not touch npm.
+
+Optionally add required reviewers to the `pypi` and `crates-io` environments in the repo
+settings so a pushed tag waits for approval before publishing.
+
 ## 4. Open items, in priority order
 
 Each has a recommendation; go ahead with it unless Brannon says otherwise.
@@ -97,7 +114,7 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 | 6 | **Siril presets** | sigma, median-sigma, percentile identical on synthetic data; on real frames one exact tie per 16.8 Mpx stack goes the other way in f64 (Siril computes in float32; `precision="f32"` matches every pixel). Winsorized 99.8% at 10 frames, small-stack gap as documented. k-MAD (`rej a`) not reproduced; `preset="siril", method="mad"` raises. | Retest against Siril 1.4 before more black-box work. Do not read Siril source. |
 | 7 | **PixInsight winsorized preset** | Implemented from PCL's public docs (Sn·1.1926 start, cutoff 5); never run against PixInsight. | Check the PCL license, then validate on Brannon's PixInsight install or drop the preset from 0.1.0. |
 | 8 | **Legal** | Design log notes TI US9665542 (different method). | Brannon arranges review before 1.0. |
-| 9 | **Release** | `wheels.yml` builds manylinux x86-64/aarch64, macOS arm64/x86-64 and Windows wheels but does not publish. Names unregistered. | When Brannon registers names: add trusted publishing to `wheels.yml`, `cargo publish` the crate (capi stays unpublished or ships as release artifacts), tag `v0.1.0`, move the CHANGELOG entry out of "unreleased". |
+| 9 | **Release** | `release.yml` publishes `v*` tags to PyPI (wheels + sdist from `wheels.yml`) and crates.io via trusted publishing; no secrets. Names not yet claimed. | Claim the names (§3, Releasing), add the trusted publishers, tag `v0.1.0`, move the CHANGELOG entry out of "unreleased". capi stays unpublished. |
 | 10 | Known differences | Signed-zero sign bit (x86 vs NEON min/max); `median(out=float64)` on f32 averages in f32; `trimmed_mean` more accurate than SciPy's f32; `nanarg*` all-NaN returns −1 (+ `strict=True`). All in [docs/conformance.md](docs/conformance.md#known-differences). | Leave unless a user needs it; −0 canonicalization would cost a blend per output. |
 
 ## 5. v0.2 backlog (from the scope doc; file as `v0.2` issues)

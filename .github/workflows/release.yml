@@ -1,0 +1,66 @@
+name: Release
+
+# Publishes a v* tag to PyPI and crates.io with trusted publishing (OIDC): no stored tokens.
+# Each registry must list this repo, this workflow file (release.yml) and the environment
+# named below as a trusted publisher. See HANDOFF.md, "Releasing".
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Tag matches crate version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compare tag with workspace version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "rankwise"))')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match rankwise $version"
+            exit 1
+          fi
+
+  wheels:
+    needs: check
+    uses: ./.github/workflows/wheels.yml
+
+  pypi:
+    name: Publish to PyPI
+    needs: wheels
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/rankwise/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  crates:
+    name: Publish to crates.io
+    # After the wheels build, so a release that cannot ship to PyPI does not ship here either.
+    needs: wheels
+    runs-on: ubuntu-latest
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/rankwise
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - run: cargo publish -p rankwise
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
