@@ -1,5 +1,5 @@
 // Platforms with a prebuilt native addon. Each ships as its own npm package, an optional
-// dependency of `rankwise` whose `os`, `cpu` and `libc` fields let npm, pnpm, yarn and bun
+// dependency of `@rankwise-js/rankwise` whose `os`, `cpu` and `libc` fields let npm, pnpm, yarn and bun
 // install only the one that matches; names follow napi-rs ("linux-x64-gnu").
 // The build and release scripts read this table too.
 

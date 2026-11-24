@@ -6,7 +6,7 @@
 //   node examples/js/node-parallel.mjs [workers]     # also runs under Bun
 import { availableParallelism } from "node:os";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
-import { init } from "../../rankwise-js/js/node.js"; // "rankwise" once installed
+import { init } from "../../rankwise-js/js/node.js"; // "@rankwise-js/rankwise" once installed
 
 if (isMainThread) {
   const workers = Number(process.argv[2] ?? availableParallelism());

@@ -1,5 +1,5 @@
 {
-  "name": "rankwise",
+  "name": "@rankwise-js/rankwise",
   "version": "0.1.0",
   "private": true,
   "description": "Lane-parallel SIMD order statistics for JavaScript: medians, quantiles, ranks and sigma clipping along one axis, identical to NumPy, SciPy and astropy. Native addon on Node, Bun and Deno; WebAssembly everywhere else.",
@@ -26,6 +26,9 @@
     "README.md"
   ],
   "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18"
   },

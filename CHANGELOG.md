@@ -23,7 +23,7 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
   (enum-valued arguments are validated: out-of-range values return `RW_ERR_PARAM`), and an
   abi3 Python wheel that releases the GIL and runs on NumPy 1.24 and later (bit-identity is
   checked against the pinned NumPy 2.5.3).
-* **JavaScript.** The `rankwise` npm package for Node, Bun, Deno and browsers: the Python
+* **JavaScript.** The `@rankwise-js/rankwise` npm package for Node, Bun, Deno and browsers: the Python
   package's API on TypedArrays, with two backends behind it. Natively, a Node-API addon
   (napi-rs) works on the caller's arrays in place, with AVX-512/AVX2/NEON and `threads`. It
   ships as one optional dependency per platform with `os`/`cpu`/`libc`, so package managers

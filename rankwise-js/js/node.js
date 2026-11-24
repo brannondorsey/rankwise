@@ -3,7 +3,7 @@
 // (an optional dependency with `os`/`cpu`/`libc`); this module loads it, and falls back to the
 // WebAssembly build, saying why, when it is missing or cannot load.
 //
-//   import { init } from "rankwise";      // resolves here under the "node" export condition
+//   import { init } from "@rankwise-js/rankwise";      // resolves here under the "node" export condition
 //   const rw = await init();
 //   rw.backend        // "native" or "wasm"
 //   rw.isa            // "avx512", "avx2", "neon", "simd128", ...

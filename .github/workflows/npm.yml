@@ -1,8 +1,8 @@
 name: npm
 
 # Builds every npm package of a release: one Node-API addon package per platform (an
-# optional dependency of `rankwise` with os/cpu/libc set, so package managers install only
-# the matching one) and `rankwise` itself (both WebAssembly modules and the JS), as the
+# optional dependency of `@rankwise-js/rankwise` with os/cpu/libc set, so package managers install only
+# the matching one) and `@rankwise-js/rankwise` itself (both WebAssembly modules and the JS), as the
 # `npm-packages` artifact. Called by release.yml on tags; run it by hand to check the build
 # without publishing.
 on:

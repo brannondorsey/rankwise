@@ -1,6 +1,6 @@
 # rankwise in JavaScript
 
-`rankwise-js/` is the `rankwise` npm package. It is the Python package's API on TypedArrays,
+`rankwise-js/` is the `@rankwise-js/rankwise` npm package. It is the Python package's API on TypedArrays,
 with two backends behind it:
 
 * **Native**, in Node, Bun and Deno: a Node-API addon (napi-rs) built from the same crate as the

@@ -213,7 +213,7 @@ export interface InitOptions {
   /**
    * Node, Bun and Deno: "auto" (default; the native addon if it loads, else WebAssembly),
    * "native" (throw if it does not load) or "wasm". Defaults to RANKWISE_BACKEND. Browsers
-   * and the `rankwise/wasm` entry always use WebAssembly.
+   * and the `@rankwise-js/rankwise/wasm` entry always use WebAssembly.
    */
   backend?: "auto" | "native" | "wasm";
   /** WebAssembly build: true, false or "auto" (default). */

@@ -10,7 +10,7 @@
 //
 // The body is `members` float32 frames back to back (little-endian); the response is one
 // float32 array per statistic, back to back, with the layout in the X-Rankwise-* headers.
-import { init, RankwiseError } from "../../rankwise-js/js/node.js"; // "rankwise" once installed: native addon, else WebAssembly
+import { init, RankwiseError } from "../../rankwise-js/js/node.js"; // "@rankwise-js/rankwise" once installed: native addon, else WebAssembly
 
 const rw = await init();
 const port = Number(process.env.PORT ?? 8787);

@@ -62,7 +62,7 @@ export function platformManifest(key, version) {
   const manifest = {
     name: packageName(key),
     version,
-    description: `rankwise's native addon for ${key} (installed automatically with rankwise)`,
+    description: `rankwise's native addon for ${key} (installed automatically with @rankwise-js/rankwise)`,
     main: addonFile(key),
     files: [addonFile(key)],
     os: [p.os],

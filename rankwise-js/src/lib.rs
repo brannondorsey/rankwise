@@ -1,4 +1,4 @@
-//! The kernels behind the `rankwise` npm package, for two front ends that share one request
+//! The kernels behind the `@rankwise-js/rankwise` npm package, for two front ends that share one request
 //! format ([`request`]):
 //!
 //! * **WebAssembly** (`wasm32-unknown-unknown`, with or without `+simd128`): plain `rw_*`

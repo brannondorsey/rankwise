@@ -1,4 +1,4 @@
-// Assemble the npm release: one package per platform addon plus `rankwise` itself, whose
+// Assemble the npm release: one package per platform addon plus `@rankwise-js/rankwise` itself, whose
 // staged package.json lists every platform package as an optional dependency (npm, pnpm,
 // yarn and bun then install only the one whose os/cpu/libc match). The repository's own
 // package.json never lists them: the scope is unregistered, and an install in a checkout

@@ -1,9 +1,9 @@
 // rankwise for JavaScript: lane-parallel SIMD order statistics, identical to NumPy, SciPy
 // and astropy. This is the WebAssembly entry point (browsers, bundlers, workers, and the
-// `rankwise/wasm` export); Node, Bun and Deno resolve `rankwise` to node.js, which prefers
+// `@rankwise-js/rankwise/wasm` export); Node, Bun and Deno resolve `@rankwise-js/rankwise` to node.js, which prefers
 // the native addon.
 //
-//   import { init } from "rankwise";
+//   import { init } from "@rankwise-js/rankwise";
 //   const rw = await init();
 //   const master = rw.median(frames);                          // frames: Float32Array[]
 //   const [p10, p90] = rw.quantile(cube, [0.1, 0.9], { shape: [31, 721, 1440] });

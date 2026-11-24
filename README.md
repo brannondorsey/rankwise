@@ -232,7 +232,7 @@ rw_status st = rw_clip_mean_f32(frames, 40, H * W, &clip, out, /*rejected*/ NULL
 ## JavaScript (Node, Bun, Deno and browsers)
 
 ```js
-import { init } from "rankwise";                 // rankwise-js/js/node.js until it is on npm
+import { init } from "@rankwise-js/rankwise";    // rankwise-js/js/node.js until it is on npm
 
 const rw = await init();                         // native addon on servers, WebAssembly elsewhere
 rw.backend, rw.isa;                              // "native", "avx512"  ·  "wasm", "simd128"

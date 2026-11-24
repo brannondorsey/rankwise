@@ -6,7 +6,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
-import { init } from "../../rankwise-js/js/node.js"; // `import { init } from "rankwise"` once installed
+import { init } from "../../rankwise-js/js/node.js"; // `import { init } from "@rankwise-js/rankwise"` once installed
 
 const W = 640;
 const H = 400;

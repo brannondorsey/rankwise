@@ -7,7 +7,7 @@ Node-API; everywhere else it runs WebAssembly. The API and results are identical
 calls are synchronous once it is loaded.
 
 ```js
-import { init } from "rankwise";
+import { init } from "@rankwise-js/rankwise";
 
 const rw = await init();                    // native addon if this platform has one, else WebAssembly
 rw.backend;                                 // "native" | "wasm"
@@ -31,18 +31,18 @@ Uint8Array and ImageData's Uint8ClampedArray are widened to uint16.
 
 The choice is made in two places, each by the tool that owns it.
 
-**At install time, by the package manager.** `rankwise` lists one package per platform as an
+**At install time, by the package manager.** `@rankwise-js/rankwise` lists one package per platform as an
 optional dependency (`@rankwise-js/linux-x64-gnu`, `linux-arm64-gnu`, `darwin-arm64`, `darwin-x64`,
 `win32-x64-msvc`), each with `os`, `cpu` and `libc` set. npm, pnpm, yarn and bun install only the one
 that matches the machine, about 1.7 MB. This is how esbuild, SWC and Lightning CSS ship binaries:
 no install scripts, no downloads at runtime, and lockfiles stay portable.
 
-**At load time, by the export conditions.** Node, Bun and Deno resolve `rankwise` through the
+**At load time, by the export conditions.** Node, Bun and Deno resolve `@rankwise-js/rankwise` through the
 `"node"` condition to `js/node.js`. It loads the platform's addon and falls back to WebAssembly when
 the addon is missing or cannot load (`--omit=optional`, an unsupported platform such as musl,
 Deno without `--allow-ffi`). Browsers and bundlers resolve the `"browser"` condition to
 `js/rankwise.js`, which never references the addon, so bundles stay WebAssembly-only.
-`rankwise/wasm` selects that entry explicitly anywhere.
+`@rankwise-js/rankwise/wasm` selects that entry explicitly anywhere.
 
 The choice is visible and can be overridden:
 

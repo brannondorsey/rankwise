@@ -1,5 +1,5 @@
 // The install story, end to end: pack the release (scripts/pack.mjs), serve it from a
-// throwaway local npm registry, install `rankwise` the way a user would, and check what
+// throwaway local npm registry, install `@rankwise-js/rankwise` the way a user would, and check what
 // lands on disk and what runs.
 //
 //   node scripts/build.mjs --all && node test/package.test.mjs
@@ -7,7 +7,7 @@
 // Proves that
 //   * npm and bun install exactly one addon package, the one matching os/cpu/libc (other
 //     platforms are stand-ins here, also checked with --os/--cpu/--libc),
-//   * `import "rankwise"` then runs the native addon in Node and Bun,
+//   * `import "@rankwise-js/rankwise"` then runs the native addon in Node and Bun,
 //   * without optional dependencies it runs WebAssembly and says why,
 //   * a browser bundle resolves the WebAssembly entry and contains no native loader.
 import assert from "node:assert/strict";
@@ -83,7 +83,7 @@ await new Promise((r) => server.once("listening", r));
 const registry = `http://127.0.0.1:${server.address().port}/`;
 
 // ---- install into fresh projects
-const PROBE = `import { init } from "rankwise";
+const PROBE = `import { init } from "@rankwise-js/rankwise";
 const rw = await init();
 console.log(JSON.stringify({ backend: rw.backend, build: rw.build, isa: rw.isa, fallbackReason: rw.fallbackReason,
   median: Array.from(rw.median([Float32Array.of(1, 5), Float32Array.of(2, 6), Float32Array.of(3, 4)])) }));
@@ -97,12 +97,12 @@ async function project(name, installer, flags = []) {
   writeFileSync(join(dir, "probe.mjs"), PROBE);
   const quiet = { cwd: dir, encoding: "utf8", timeout: 300_000 };
   if (installer === "npm") {
-    await sh("npm", ["install", `rankwise@${version}`, `--registry=${registry}`, `--cache=${join(work, "npm-cache")}`, "--no-audit", "--no-fund", ...flags], quiet);
+    await sh("npm", ["install", `@rankwise-js/rankwise@${version}`, `--registry=${registry}`, `--cache=${join(work, "npm-cache")}`, "--no-audit", "--no-fund", ...flags], quiet);
   } else {
-    await sh("bun", ["add", `rankwise@${version}`, `--registry=${registry}`, `--cache-dir=${join(work, "bun-cache")}`, ...flags], quiet);
+    await sh("bun", ["add", `@rankwise-js/rankwise@${version}`, `--registry=${registry}`, `--cache-dir=${join(work, "bun-cache")}`, ...flags], quiet);
   }
   const scope = join(dir, "node_modules", SCOPE);
-  return { dir, addons: existsSync(scope) ? readdirSync(scope).sort() : [] };
+  return { dir, addons: existsSync(scope) ? readdirSync(scope).filter((d) => d !== "rankwise").sort() : [] }; // the main package shares the scope
 }
 const run = (dir, cmd = process.execPath) => JSON.parse(execFileSync(cmd, ["probe.mjs"], { cwd: dir, encoding: "utf8", env: { ...process.env, RANKWISE_BACKEND: "", RANKWISE_NATIVE_PATH: "" } }));
 
@@ -158,7 +158,7 @@ try {
   });
 
   check("bundling for the browser resolves the WebAssembly entry, with no native loader", () => {
-    writeFileSync(join(npmProject.dir, "app.mjs"), 'import { init } from "rankwise";\nconsole.log(await init());\n');
+    writeFileSync(join(npmProject.dir, "app.mjs"), 'import { init } from "@rankwise-js/rankwise";\nconsole.log(await init());\n');
     const esbuild = (platform) =>
       execFileSync("npx", ["-y", "esbuild@0.25.10", "app.mjs", "--bundle", "--format=esm", `--platform=${platform}`, "--log-level=error",
         "--external:node:*"], { cwd: npmProject.dir, encoding: "utf8", env: { ...process.env, npm_config_registry: "https://registry.npmjs.org/" } });

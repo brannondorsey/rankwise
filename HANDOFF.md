@@ -54,7 +54,7 @@ original handoff (Brannon has it; its §4 facts are all folded into [docs/confor
 | `rankwise/tests/` | `networks.rs` (0-1 principle, n ≤ 20, exhaustive), `oracle.rs` (every ISA vs scalar oracle, bit for bit). |
 | `rankwise-capi/` | `rw_*` C ABI, `catch_unwind` everywhere, `include/rankwise.h` (cbindgen 0.29.4; CI diffs it). |
 | `rankwise-py/` | PyO3 0.30 abi3-py39 extension (`src/lib.rs`) + NumPy-style API (`python/rankwise/__init__.py`). |
-| `rankwise-js/` | The `rankwise` npm package, two backends behind one API. Rust: `src/request.rs` (the f64 request format both share), `src/wasm.rs` (raw `rw_*` exports, no wasm-bindgen), `src/node.rs` (napi-rs addon, `--features node`, bounds-checked segmented addresses). JS: `js/core.js` (NumPy-style API, engine-agnostic), `js/wasm.js` + `js/native.js` (engines), `js/node.js` (Node/Bun/Deno entry: addon first, WebAssembly fallback), `js/rankwise.js` (browser entry), `js/platforms.js` (addon platforms). `scripts/build.mjs` (`dist/*.wasm`, `--native` → `npm/<platform>/`), `scripts/pack.mjs` (release tarballs, injects `optionalDependencies`), `test/` (fixtures, API, conformance, install-from-registry, Chromium), `bench/bench.mjs`. Design and numbers: [docs/javascript.md](docs/javascript.md). |
+| `rankwise-js/` | The `@rankwise-js/rankwise` npm package, two backends behind one API. Rust: `src/request.rs` (the f64 request format both share), `src/wasm.rs` (raw `rw_*` exports, no wasm-bindgen), `src/node.rs` (napi-rs addon, `--features node`, bounds-checked segmented addresses). JS: `js/core.js` (NumPy-style API, engine-agnostic), `js/wasm.js` + `js/native.js` (engines), `js/node.js` (Node/Bun/Deno entry: addon first, WebAssembly fallback), `js/rankwise.js` (browser entry), `js/platforms.js` (addon platforms). `scripts/build.mjs` (`dist/*.wasm`, `--native` → `npm/<platform>/`), `scripts/pack.mjs` (release tarballs, injects `optionalDependencies`), `test/` (fixtures, API, conformance, install-from-registry, Chromium), `bench/bench.mjs`. Design and numbers: [docs/javascript.md](docs/javascript.md). |
 | `conformance/` | pytest suite vs pinned NumPy 2.5.3, SciPy 1.18.1, astropy 8.0.2; Siril preset checks; C ABI vs Python. |
 | `bench/` | One-core benchmarks → `bench/results/*.json` → `figures.py` (charts) and `report.py` (`docs/benchmarks.md`). |
 | `examples/` | `c/stack.c`, `python/astro_demo.py` (README hero, comparison and rejection images), `js/` (Node stacking, Bun server, worker threads, browser page). |
@@ -108,16 +108,18 @@ publishing (OIDC). The repo stores no registry tokens. One-time setup per regist
   workflow `release.yml`, environment `crates-io`.
 * **PyPI**: project (or pending publisher) Settings → Publishing → GitHub: repo
   `brannondorsey/rankwise`, workflow `release.yml`, environment `pypi`.
-* **npm**: `npm.yml` builds `rankwise` and the five `@rankwise-js/<platform>` addon packages;
-  `release.yml` publishes the platform packages, then `rankwise` (skipping versions already
-  on npm). Create the `@rankwise-js` org (free, public). The first release is manual, since
-  trusted publishing needs the packages to exist: run `npm.yml` by hand, download its
-  `npm-packages` artifact and `npm publish <tgz> --access public` each tarball, platform
-  packages first. Then each of the six packages' Settings → Trusted Publisher → GitHub
-  Actions: repo `brannondorsey/rankwise`, workflow `release.yml`, environment `npm`. Only
-  `pack.mjs` output is publishable: the checkout's `package.json` is `private` and lacks the
+* **npm**: everything lives in the `@rankwise-js` scope, because someone else holds the
+  unscoped `rankwise`. `npm.yml` builds `@rankwise-js/rankwise` and the five
+  `@rankwise-js/<platform>` addon packages; `release.yml` publishes the platform packages, then
+  the main one, skipping versions already on npm. One-time setup: create the `@rankwise-js` org
+  (free, public); publish a `0.0.1` placeholder of each of the six names by hand (trusted
+  publishing needs the packages to exist; `platformManifest(key, "0.0.1")` writes a platform
+  one); then each package's Settings → Trusted Publisher → GitHub Actions: repo
+  `brannondorsey/rankwise`, workflow `release.yml`, environment `npm`. Only `pack.mjs` output
+  is publishable: the checkout's `package.json` is `private` and lacks the
   `optionalDependencies`, so `npm publish` from `rankwise-js/` fails instead of shipping a
-  package without addons.
+  package without addons. If npm ever transfers the unscoped `rankwise`, publish there and
+  deprecate the scoped name with a pointer.
 
 Optionally add required reviewers to the `pypi`, `crates-io` and `npm` environments in the repo
 settings so a pushed tag waits for approval before publishing.
