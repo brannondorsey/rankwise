@@ -6,6 +6,12 @@ astropy. On a server it runs the native library (AVX-512, AVX2 or NEON, and thre
 Node-API; everywhere else it runs WebAssembly. The API and results are identical either way, and
 calls are synchronous once it is loaded.
 
+> **Official packages.** rankwise is published on npm only as `@rankwise-js/rankwise` and its
+> `@rankwise-js/<platform>` addons, built from
+> [brannondorsey/rankwise](https://github.com/brannondorsey/rankwise) with npm provenance. The
+> unscoped `rankwise` package and the `@rankwise` scope belong to someone else and are not
+> this project.
+
 ```js
 import { init } from "@rankwise-js/rankwise";
 
