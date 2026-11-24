@@ -3,7 +3,7 @@
 // install only the one that matches; names follow napi-rs ("linux-x64-gnu").
 // The build and release scripts read this table too.
 
-export const SCOPE = "@rankwise";
+export const SCOPE = "@rankwise-js";
 
 export const PLATFORMS = {
   "linux-x64-gnu": { os: "linux", cpu: "x64", libc: "glibc", rust: "x86_64-unknown-linux-gnu" },

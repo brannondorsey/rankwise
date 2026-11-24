@@ -88,7 +88,7 @@ Reproduce: `node rankwise-js/scripts/build.mjs --all`, `cd rankwise-js && npm in
   arm64/x64, Windows x64. `scripts/build.mjs --native` lays out `npm/<platform>/` as that
   platform's package (`os`, `cpu`, `libc`). `scripts/pack.mjs` packs them and the main package,
   adding the platform packages to a staged copy of its `package.json` as `optionalDependencies`.
-  The repository's own `package.json` never lists them: while the `@rankwise` scope is
+  The repository's own `package.json` never lists them: while the `@rankwise-js` scope is
   unregistered, anyone could publish those names, and every `npm install` in a checkout would
   fetch them. `.github/workflows/npm.yml` builds every platform and packs the release.
 * **Debug builds** of the addon need more than Node's 8 MB main-thread stack, because the

@@ -32,7 +32,7 @@ Uint8Array and ImageData's Uint8ClampedArray are widened to uint16.
 The choice is made in two places, each by the tool that owns it.
 
 **At install time, by the package manager.** `rankwise` lists one package per platform as an
-optional dependency (`@rankwise/linux-x64-gnu`, `linux-arm64-gnu`, `darwin-arm64`, `darwin-x64`,
+optional dependency (`@rankwise-js/linux-x64-gnu`, `linux-arm64-gnu`, `darwin-arm64`, `darwin-x64`,
 `win32-x64-msvc`), each with `os`, `cpu` and `libc` set. npm, pnpm, yarn and bun install only the one
 that matches the machine, about 1.7 MB. This is how esbuild, SWC and Lightning CSS ship binaries:
 no install scripts, no downloads at runtime, and lockfiles stay portable.

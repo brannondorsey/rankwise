@@ -3,7 +3,7 @@ name: npm
 # Builds every npm package of a release: one Node-API addon package per platform (an
 # optional dependency of `rankwise` with os/cpu/libc set, so package managers install only
 # the matching one) and `rankwise` itself (both WebAssembly modules and the JS). Publishing
-# is intentionally not wired up until the package name and the @rankwise scope are reserved.
+# is intentionally not wired up until the package name and the @rankwise-js scope are reserved.
 on:
   push:
     tags: ["v*"]

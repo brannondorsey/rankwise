@@ -18,7 +18,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSyn
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLATFORMS, addonFile, packageName, platformKey } from "../js/platforms.js";
+import { PLATFORMS, SCOPE, addonFile, packageName, platformKey } from "../js/platforms.js";
 import { platformManifest } from "../scripts/build.mjs";
 
 const work = mkdtempSync(join(tmpdir(), "rankwise-install-"));
@@ -37,15 +37,17 @@ const bun = (() => {
 const { packAll } = await import("../scripts/pack.mjs");
 await packAll({ out: release, quiet: true }); // every platform listed; only this one's addon is real
 const version = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+// npm names a scoped tarball "<scope>-<name>-<version>.tgz"
+const tarball = (key) => `${packageName(key).slice(1).replace("/", "-")}-${version}.tgz`;
 for (const key of Object.keys(PLATFORMS)) {
-  if (existsSync(join(release, `rankwise-${key}-${version}.tgz`))) continue;
+  if (existsSync(join(release, tarball(key)))) continue;
   const dir = join(work, "stub", key);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, addonFile(key)), "a stand-in: this platform's addon is built in CI");
   writeFileSync(join(dir, "package.json"), JSON.stringify(platformManifest(key, version)));
   execFileSync("npm", ["pack", "--pack-destination", release, "--silent"], { cwd: dir });
 }
-assert.ok(existsSync(join(release, `rankwise-${host}-${version}.tgz`)), `build the ${host} addon first (scripts/build.mjs --native)`);
+assert.ok(existsSync(join(release, tarball(host))), `build the ${host} addon first (scripts/build.mjs --native)`);
 
 // ---- a registry serving those tarballs (packuments carry os/cpu/libc, as npmjs.org's do)
 const packages = new Map();
@@ -96,7 +98,7 @@ async function project(name, installer, flags = []) {
   } else {
     await sh("bun", ["add", `rankwise@${version}`, `--registry=${registry}`, `--cache-dir=${join(work, "bun-cache")}`, ...flags], quiet);
   }
-  const scope = join(dir, "node_modules", "@rankwise");
+  const scope = join(dir, "node_modules", SCOPE);
   return { dir, addons: existsSync(scope) ? readdirSync(scope).sort() : [] };
 }
 const run = (dir, cmd = process.execPath) => JSON.parse(execFileSync(cmd, ["probe.mjs"], { cwd: dir, encoding: "utf8", env: { ...process.env, RANKWISE_BACKEND: "", RANKWISE_NATIVE_PATH: "" } }));
