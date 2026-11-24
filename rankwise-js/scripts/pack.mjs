@@ -47,6 +47,8 @@ export async function packAll({ out = join(pkg, "release"), onlyBuilt = false, q
   try {
     for (const f of ["js", "dist", "README.md"]) await cp(join(pkg, f), join(stage, f), { recursive: true });
     const staged = { ...manifest };
+    // the checkout's package.json is private, so it can't be published without its addons
+    delete staged.private;
     delete staged.devDependencies;
     staged.scripts = {};
     staged.optionalDependencies = Object.fromEntries(listed.map((k) => [packageName(k), manifest.version]));

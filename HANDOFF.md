@@ -108,10 +108,18 @@ publishing (OIDC). The repo stores no registry tokens. One-time setup per regist
   workflow `release.yml`, environment `crates-io`.
 * **PyPI**: project (or pending publisher) Settings → Publishing → GitHub: repo
   `brannondorsey/rankwise`, workflow `release.yml`, environment `pypi`.
-* **npm**: `rankwise` is claimed by a manual placeholder; there is no JS package to
-  publish yet, so `release.yml` does not touch npm.
+* **npm**: `npm.yml` builds `rankwise` and the five `@rankwise-js/<platform>` addon packages;
+  `release.yml` publishes the platform packages, then `rankwise` (skipping versions already
+  on npm). Create the `@rankwise-js` org (free, public). The first release is manual, since
+  trusted publishing needs the packages to exist: run `npm.yml` by hand, download its
+  `npm-packages` artifact and `npm publish <tgz> --access public` each tarball, platform
+  packages first. Then each of the six packages' Settings → Trusted Publisher → GitHub
+  Actions: repo `brannondorsey/rankwise`, workflow `release.yml`, environment `npm`. Only
+  `pack.mjs` output is publishable: the checkout's `package.json` is `private` and lacks the
+  `optionalDependencies`, so `npm publish` from `rankwise-js/` fails instead of shipping a
+  package without addons.
 
-Optionally add required reviewers to the `pypi` and `crates-io` environments in the repo
+Optionally add required reviewers to the `pypi`, `crates-io` and `npm` environments in the repo
 settings so a pushed tag waits for approval before publishing.
 
 ## 4. Open items, in priority order
@@ -128,8 +136,8 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 | 6 | **Siril presets** | sigma, median-sigma, percentile identical on synthetic data; on real frames one exact tie per 16.8 Mpx stack goes the other way in f64 (Siril computes in float32; `precision="f32"` matches every pixel). Winsorized 99.8% at 10 frames, small-stack gap as documented. k-MAD (`rej a`) not reproduced; `preset="siril", method="mad"` raises. | Retest against Siril 1.4 before more black-box work. Do not read Siril source. |
 | 7 | **PixInsight winsorized preset** | Implemented from PCL's public docs (Sn·1.1926 start, cutoff 5); never run against PixInsight. | Check the PCL license, then validate on Brannon's PixInsight install or drop the preset from 0.1.0. |
 | 8 | **Legal** | Design log notes TI US9665542 (different method). | Brannon arranges review before 1.0. |
-| 9 | **Release** | `release.yml` publishes `v*` tags to PyPI (wheels + sdist from `wheels.yml`) and crates.io via trusted publishing; no secrets. Names not yet claimed. | Claim the names (§3, Releasing), add the trusted publishers, tag `v0.1.0`, move the CHANGELOG entry out of "unreleased". capi stays unpublished. |
-| 11 | **JavaScript** | Done: simd128 backend; `rankwise-js` with a Node-API addon (preferred in Node/Bun/Deno) and WebAssembly (browsers, fallback); identical to NumPy on Node, Bun, Deno (native + wasm) and Chromium; install flow tested against a local registry; `npm.yml` builds all platform packages. Not done: Firefox, Safari; addon not run on macOS/Windows/arm64 except in CI; names unregistered (every `package.json` is `private`). | When Brannon registers `rankwise` and the `@rankwise-js` scope: drop `private` (main `package.json` and `platformManifest` in `scripts/build.mjs`), publish the `npm.yml` tarballs, platform packages first. Do **not** add `optionalDependencies` to the repo's `package.json` before the scope is registered (dependency confusion); `pack.mjs` injects them. musl and other platforms fall back to WebAssembly; add them to `js/platforms.js` + `npm.yml` if users ask. |
+| 9 | **Release** | `release.yml` publishes `v*` tags to PyPI (wheels + sdist from `wheels.yml`), crates.io and npm (packages from `npm.yml`) via trusted publishing; no secrets. Names not yet claimed. | Claim the names (§3, Releasing), add the trusted publishers, tag `v0.1.0`, move the CHANGELOG entry out of "unreleased". capi stays unpublished. |
+| 11 | **JavaScript** | Done: simd128 backend; `rankwise-js` with a Node-API addon (preferred in Node/Bun/Deno) and WebAssembly (browsers, fallback); identical to NumPy on Node, Bun, Deno (native + wasm) and Chromium; install flow tested against a local registry; `npm.yml` builds all platform packages. Not done: Firefox, Safari; addon not run on macOS/Windows/arm64 except in CI; `@rankwise-js` scope not yet claimed. | Claim `@rankwise-js` and do the first npm release by hand (§3, Releasing). Do **not** add `optionalDependencies` to the repo's `package.json` (until the scope is owned that invites dependency confusion, and the checkout stays unpublishable); `pack.mjs` injects them. musl and other platforms fall back to WebAssembly; add them to `js/platforms.js` + `npm.yml` if users ask. |
 | 10 | Known differences | Signed-zero sign bit (x86 vs NEON min/max); `median(out=float64)` on f32 averages in f32; `trimmed_mean` more accurate than SciPy's f32; `nanarg*` all-NaN returns −1 (+ `strict=True`). All in [docs/conformance.md](docs/conformance.md#known-differences). | Leave unless a user needs it; −0 canonicalization would cost a blend per output. |
 
 ## 5. v0.2 backlog (from the scope doc; file as `v0.2` issues)

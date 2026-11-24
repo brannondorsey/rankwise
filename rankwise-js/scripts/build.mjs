@@ -71,8 +71,7 @@ export function platformManifest(key, version) {
     license: "MIT OR Apache-2.0",
     repository: { type: "git", url: "https://github.com/brannondorsey/rankwise", directory: "rankwise-js" },
     engines: { node: ">=18" },
-    // remove once the scope is registered (see HANDOFF.md)
-    private: true,
+    publishConfig: { access: "public" },
   };
   return manifest;
 }

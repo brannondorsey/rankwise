@@ -54,6 +54,9 @@ const packages = new Map();
 for (const f of readdirSync(release)) {
   const file = join(release, f);
   const pj = JSON.parse(execFileSync("tar", ["-xzOf", file, "package/package.json"], { encoding: "utf8" }));
+  // what release.yml publishes: public, and the platform packages public under their scope
+  assert.ok(!pj.private, `${f} is private and can't be published`);
+  if (pj.name.startsWith("@")) assert.equal(pj.publishConfig?.access, "public", `${f} would publish as a restricted package`);
   const data = readFileSync(file);
   packages.set(pj.name, { pj, file: f, data, integrity: `sha512-${createHash("sha512").update(data).digest("base64")}` });
 }
@@ -68,7 +71,7 @@ const server = createServer((req, res) => {
   const p = packages.get(url.slice(1));
   if (!p) return res.writeHead(404, { "Content-Type": "application/json" }).end('{"error":"not found"}');
   const base = `http://127.0.0.1:${server.address().port}`;
-  const { private: _, ...meta } = p.pj;
+  const meta = p.pj;
   const doc = {
     name: p.pj.name,
     "dist-tags": { latest: p.pj.version },
