@@ -179,6 +179,32 @@ def ensemble(theme):
     plt.close(fig)
 
 
+def weighted(theme):
+    t = THEMES[theme]
+    d = json.loads((RES / "weighted.json").read_text())
+    groups = []
+    for case, title in (("frames", "one weight per frame · 31 × 512 × 512"), ("map", "one weight per value · 31 × 256 × 256")):
+        groups.append((title, [dict(tool=r["tool"], seconds=r["seconds"]) for r in d["rows"]
+                               if r["case"] == case and r["family"] != "reference"]))
+    h = [len(g[1]) for g in groups]
+    fig, axes = plt.subplots(2, 1, figsize=(9.2, 0.36 * sum(h) + 2.5), gridspec_kw=dict(height_ratios=h, hspace=0.34),
+                             facecolor=t["surface"])
+    speed = []
+    for ax, (title, rs) in zip(axes, groups):
+        style(ax, t)
+        ref = min(r["seconds"] for r in rs if "AVX-512" in r["tool"] or "NEON" in r["tool"])
+        bars(ax, rs, t, ref)
+        panel_title(fig, ax, title, t)
+        speed.append(min(r["seconds"] for r in rs if not r["tool"].startswith("rankwise")) / ref)
+    headline(fig, f"Weighted quantiles {min(speed):.0f}–{max(speed):.0f}× faster than NumPy",
+             "Seconds for p10/p50/p90 of float32 frames (inverted_cdf with weights=), lower is better · one core", t)
+    fig.text(0.015, 0.01, "rankwise is bit-identical to np.quantile(..., weights=w), dtype included.", fontsize=8.5,
+             color=t["muted"])
+    fig.subplots_adjust(left=0.27, right=0.98, top=0.8, bottom=0.08)
+    fig.savefig(IMG / f"bench_weighted_{theme}.png", dpi=200, facecolor=t["surface"])
+    plt.close(fig)
+
+
 def stride(theme):
     """Power-of-two frame strides: time relative to padded frames, before and after skewed reads."""
     from matplotlib.lines import Line2D
@@ -230,7 +256,7 @@ def stride(theme):
 
 if __name__ == "__main__":
     for th in THEMES:
-        for f in (astro, sweep, ensemble, stride):
+        for f in (astro, sweep, ensemble, stride, weighted):
             try:
                 f(th)
             except FileNotFoundError as e:

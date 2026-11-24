@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+* **Weighted quantiles.** `weights=` on `quantile`, `nanquantile`, `percentile` and
+  `nanpercentile` (`method="inverted_cdf"`, as NumPy), with one weight per frame or one per
+  value, and `weighted_median`; bit-identical to NumPy 2.5.3 (dtype, `q` forms, NaN, zero
+  weights, its errors), 40–70× faster. Frame indices ride through the network as a payload, so
+  ties sort stably on every ISA. Rust: `Op::WeightedQuantile`, `reduce_raw_weighted`,
+  `weighted_quantile_frames`; C: `rw_weighted_quantile_f32`.
+
 ## 0.1.0 (unreleased)
 
 First release of the production library, rebuilt from the `lanestat-proto` prototype.

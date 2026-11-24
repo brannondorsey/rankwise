@@ -174,6 +174,17 @@ def main():
                            f"{r['pow2_median'] / r['padded_median']:.2f}× | {r['pow2_sigclip']:.1f} | "
                            f"{r['padded_sigclip']:.1f} | {r['pow2_sigclip'] / r['padded_sigclip']:.2f}× |")
         out.append("")
+    wq = load("weighted")
+    if wq:
+        out += ["## Weighted quantiles: p10 / p50 / p90 with `weights=`", "",
+                picture("bench_weighted", "Weighted quantile benchmark"), "",
+                "| Case | Tool | Seconds | ns / pixel | Identical to NumPy |", "|---|---|---|---|---|"]
+        for r in wq["rows"]:
+            ident = "—" if r["identical_to_numpy"] is None else ("yes" if r["identical_to_numpy"] else "no")
+            case = f"{r['n']} × {r['side']} × {r['side']}, " + ("per frame" if r["case"] == "frames" else "per value")
+            out.append(f"| {case} | {r['tool']} | {fmt_s(r['seconds'])} | {r['ns_per_px']:.1f} | {ident} |")
+        out += ["", "`method=\"inverted_cdf\"` (the only weighted method NumPy has), float32 data, float64 weights. "
+                "\"rankwise unweighted\" is the same call without weights, for scale.", ""]
     (ROOT / "docs" / "benchmarks.md").write_text("\n".join(out) + "\n")
     print("wrote docs/benchmarks.md")
 

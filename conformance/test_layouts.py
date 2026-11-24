@@ -134,3 +134,17 @@ def test_conflicting_strides_take_the_skewed_path(isa, n):
     sc = sigma_clip(x, sigma=2.5, maxiters=5, cenfunc="median", stdfunc="std", axis=0)
     identical(mask, sc.mask)
     identical((np.isfinite(x).sum(0) - lo - hi).astype(np.int64), (~sc.mask).sum(0).astype(np.int64))
+
+
+@pytest.mark.parametrize("n", [1, 2, 9, 40])
+def test_one_dimensional_input(isa, n):
+    """A 1-D stack reduces to 0-d outputs; quantile lists and rank lists write into views."""
+    x = data((n, 3), seed=n)[:, 1]  # non-contiguous too
+    xs = np.nan_to_num(x, nan=7.0)
+    for q in (0.5, [0.2, 0.5], np.array([0.1, 0.9], np.float32)):
+        for m in ("linear", "lower", "hazen"):
+            identical(rw.quantile(xs, q, method=m), np.quantile(xs, q, method=m))
+    with np.errstate(all="ignore"):
+        identical(rw.nanquantile(x, [0.25, 0.75]), np.nanquantile(x, [0.25, 0.75]))
+    identical(rw.select_ranks(xs, [0, n - 1]), np.sort(xs)[[0, n - 1]])
+    identical(rw.median(xs), np.median(xs))
