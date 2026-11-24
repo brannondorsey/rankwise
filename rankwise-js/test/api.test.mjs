@@ -6,7 +6,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { relative } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import * as nodeEntry from "../js/node.js";
 import { addonFile, platformKey } from "../js/platforms.js";
 import * as wasmEntry from "../js/rankwise.js";
@@ -83,6 +84,26 @@ test("Node entry: native when the addon loads, WebAssembly (with the reason) whe
     // an explicit addon path, and the option beating the environment
     assert.equal(select({}, { RANKWISE_NATIVE_PATH: addonPath }).backend, "native");
     assert.equal(select({ backend: "native" }, { RANKWISE_BACKEND: "wasm" }).backend, "native");
+  }
+});
+
+test("Node entry: an explicit native backend ignores `wasm` instead of loading WebAssembly", async () => {
+  const wasm = fileURLToPath(new URL("../dist/rankwise-portable.wasm", import.meta.url));
+  const missing = { RANKWISE_NATIVE_PATH: "/nonexistent/rankwise.node" };
+  // "native" is the addon or an error, by option or by environment, async or sync
+  assert.match(select({ backend: "native", wasm }, missing).error, /no native addon/);
+  assert.match(select({ wasm }, { ...missing, RANKWISE_BACKEND: "native" }).error, /no native addon/);
+  assert.match(select({ backend: "native", wasm, sync: true }, missing).error, /no native addon/);
+  if (hasNative) {
+    assert.equal(select({ backend: "native", wasm }).backend, "native");
+    assert.equal(select({ wasm }, { RANKWISE_BACKEND: "native" }).backend, "native");
+  }
+  // auto and wasm still take the module they are given
+  for (const backend of ["auto", "wasm"]) {
+    const r = select({ backend, wasm });
+    assert.equal(r.backend, "wasm");
+    assert.equal(r.build, "portable");
+    assert.equal(r.fallbackReason, null);
   }
 });
 
@@ -184,6 +205,107 @@ test("zero-copy WebAssembly arrays survive memory growth", async () => {
   assert.throws(() => stack.array, /freed/);
 });
 
+// Compares large arrays without assert's diff (which can take gigabytes on a mismatch).
+const sameArray = (a, b, msg = "arrays differ") => {
+  const i = a.length !== b?.length ? -1 : a.findIndex((v, k) => !Object.is(v, b[k]));
+  if (a.length !== b?.length || i >= 0) assert.fail(`${msg}: ${a.length !== b?.length ? `length ${a.length} vs ${b?.length}` : `at ${i}: ${a[i]} vs ${b[i]}`}`);
+};
+// A fresh instance (small memory), so the scratch buffer a call reserves has to grow it.
+const freshWasm = async () =>
+  wasmEntry.init({ wasm: await readFile(new URL(`../dist/rankwise-${simdSupported() ? "simd128" : "portable"}.wasm`, import.meta.url)) });
+const growing = (rw, f) => {
+  const heap = rw.memory.buffer;
+  const r = f();
+  assert.notEqual(rw.memory.buffer, heap, "the call was meant to grow memory");
+  return r;
+};
+
+test("arrays in WebAssembly memory stay correct when the call itself grows memory", async () => {
+  const ref = await wasmEntry.init();
+  const n = 9;
+  const npix = 1 << 18;
+  const val = (i) => ((i * 7919) % 1009) + (i % 97 === 0 ? 1e6 : 0);
+  const fill = (h) => (h.array.forEach((_, i, a) => (a[i] = val(i) % (a instanceof Uint8Array ? 251 : Infinity))), h);
+  {
+    // frames read in place, out written in place; the mask's scratch grows memory
+    const rw = await freshWasm();
+    const stack = fill(rw.alloc("float32", n * npix));
+    const want = ref.clipCombine(Float32Array.from(stack.array), { shape: [n, npix], mask: true });
+    const out = rw.alloc("float32", npix);
+    const r = growing(rw, () => rw.clipCombine(stack.array, { shape: [n, npix], out: out.array, mask: true }));
+    sameArray(out.array, want.value);
+    sameArray(r.mask, want.mask);
+    sameArray(stack.array, Float32Array.from({ length: n * npix }, (_, i) => val(i))); // input untouched
+  }
+  {
+    // a mask in memory too (written through a fresh view, and returned as one)
+    const rw = await freshWasm();
+    const stack = fill(rw.alloc("float32", n * npix));
+    const want = ref.clipCombine(Float32Array.from(stack.array), { shape: [n, npix], mask: true });
+    const m = rw.alloc("uint8", n * npix);
+    const r = growing(rw, () => rw.clipCombine(stack.array, { shape: [n, npix], mask: m.array }));
+    sameArray(r.value, want.value);
+    sameArray(m.array, want.mask);
+    sameArray(r.mask, want.mask);
+  }
+  {
+    // low/high counts in memory: `rejected` is summed from them after the call
+    const rw = await freshWasm();
+    const stack = fill(rw.alloc("float32", n * npix));
+    const want = ref.clipCombine(Float32Array.from(stack.array), { shape: [n, npix], mask: true, rejected: true });
+    const low = rw.alloc("uint16", npix);
+    const high = rw.alloc("uint16", npix);
+    const r = growing(rw, () =>
+      rw.clipCombine(stack.array, { shape: [n, npix], mask: true, low: low.array, high: high.array, rejected: true }),
+    );
+    sameArray(low.array, want.low);
+    sameArray(high.array, want.high);
+    sameArray(r.low, want.low);
+    sameArray(r.rejected, want.rejected);
+    assert.ok(want.rejected.some((v) => v > 0));
+  }
+  {
+    // a strided layout (inner axis) read in place
+    const rw = await freshWasm();
+    const shape = [4, n, npix / 4];
+    const data = fill(rw.alloc("float32", n * npix));
+    const want = ref.clipCombine(Float32Array.from(data.array), { shape, axis: 1, mask: true });
+    const r = growing(rw, () => rw.clipCombine(data.array, { shape, axis: 1, mask: true }));
+    sameArray(r.value, want.value);
+    sameArray(r.mask, want.mask);
+  }
+  {
+    // uint8 frames in memory are streamed (widened); out in memory is copied into
+    const rw = await freshWasm();
+    rw.chunkBytes = 1 << 30; // one chunk: the whole stack in scratch
+    const u = fill(rw.alloc("uint8", n * npix));
+    const list = () => Array.from({ length: n }, (_, k) => u.array.subarray(k * npix, (k + 1) * npix));
+    const want = ref.median(list().map((f) => Uint8Array.from(f)));
+    const out = rw.alloc("float64", npix);
+    growing(rw, () => rw.median(list(), { out: out.array }));
+    sameArray(out.array, want);
+  }
+  {
+    // uint16 frames in place, a Uint8Array out in memory (narrowed by a copy)
+    const rw = await freshWasm();
+    const stack = fill(rw.alloc("uint16", n * npix));
+    stack.array.forEach((v, i, a) => (a[i] = v % 256));
+    const want = ref.max(Uint16Array.from(stack.array), { shape: [n, npix], out: new Uint8Array(npix) });
+    const out = rw.alloc("uint8", npix);
+    growing(rw, () => rw.max(stack.array, { shape: [n, npix], out: out.array }));
+    sameArray(out.array, want);
+  }
+});
+
+test("init({ wasm }) takes paths relative to the working directory, absolute paths and file URLs", async () => {
+  const file = fileURLToPath(new URL("../dist/rankwise-portable.wasm", import.meta.url));
+  for (const wasm of [relative(process.cwd(), file), file, pathToFileURL(file).href, pathToFileURL(file)]) {
+    assert.equal((await wasmEntry.init({ wasm })).build, "portable", String(wasm));
+  }
+  // a Windows path is a path, not a URL with the scheme "c:"
+  await assert.rejects(wasmEntry.init({ wasm: "C:\\nonexistent\\rankwise.wasm" }), (e) => e.code === "ENOENT");
+});
+
 shared("ImageData-style RGBA Uint8ClampedArray frames: value ops keep the type", async (rw) => {
   const imgs = Array.from({ length: 7 }, (_, k) => Uint8ClampedArray.from({ length: 4 * 64 }, (_, i) => (i * 13 + k * 71) % 256));
   const med = rw.median(imgs);
@@ -258,6 +380,63 @@ shared("threads give identical results", async (rw) => {
     assert.deepEqual(f({ threads: 4 }), f({}));
   }
   assert.throws(() => rw.median(x, { threads: 0 }), RangeError);
+});
+
+shared("maxiters 0 clips until nothing changes for 'sigma' and 'mad', as astropy and the Python binding", async (rw) => {
+  const x = Float64Array.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 40, 60, 200);
+  const rej = (o) => rw.clipCombine(x, { ...o, returnCounts: true }).rejected;
+  // these thresholds need several passes, so one pass rejects less than convergence
+  for (const [method, sigma, once, all] of [["sigma", 2, 1, 3], ["mad", 1, 6, 20]]) {
+    assert.equal(rej({ method, sigma, maxiters: 1 }), once, method);
+    assert.equal(rej({ method, sigma, maxiters: null }), all, method);
+    assert.equal(rej({ method, sigma, maxiters: 0 }), all, method);
+    assert.deepEqual(rw.clipCombine(x, { method, sigma, maxiters: 0 }), rw.clipCombine(x, { method, sigma, maxiters: null }));
+  }
+  assert.equal(rw.sigmaClipMean(x, { sigma: 2, maxiters: 0, returnCounts: true }).rejected, 3);
+});
+
+shared("argselect and selectRanks count negative ranks from the end and check the range", async (rw) => {
+  const x = frames(5, 6, (k, i) => ((k * 7 + i * 3) % 5) + k / 10);
+  const n = x.length;
+  for (let r = -n; r < 0; r++) {
+    assert.deepEqual(rw.argselect(x, r), rw.argselect(x, r + n), `rank ${r}`);
+    assert.deepEqual(rw.selectRanks(x, r), rw.selectRanks(x, r + n), `rank ${r}`);
+  }
+  assert.deepEqual(rw.argselect(x, -1), rw.argmax(x)); // the frame holding the max
+  assert.deepEqual(rw.argselect(x, [-1, 0]), [rw.argselect(x, n - 1), rw.argselect(x, 0)]);
+  assert.equal(rw.argselect(Float64Array.of(3, 9, 1, 4), -1), 1); // 1-D input gives a number
+  for (const f of [(r) => rw.argselect(x, r), (r) => rw.argselect(x, [0, r]), (r) => rw.selectRanks(x, [r])]) {
+    for (const r of [n, -n - 1, 100]) {
+      assert.throws(
+        () => f(r),
+        (e) => e instanceof RankwiseError && e.kind === "param" && e.message === `invalid parameter: rank ${r} out of range for ${n} frames`,
+        `rank ${r}`,
+      );
+    }
+    for (const r of [1.5, NaN, "1"]) assert.throws(() => f(r), (e) => e instanceof TypeError && e.message === "ranks must be integers");
+  }
+});
+
+shared("an unknown staging is a RangeError", async (rw) => {
+  const x = frames(5, 10, (k, i) => k + i);
+  const want = rw.median(x);
+  for (const staging of ["auto", "never", "always", "skew", null, undefined]) assert.deepEqual(rw.median(x, { staging }), want);
+  for (const staging of ["Never", "bogus", 1]) {
+    assert.throws(() => rw.median(x, { staging }), (e) => e instanceof RangeError && e.message === `unknown staging ${JSON.stringify(staging)}`);
+  }
+});
+
+shared("cenfunc 'mean' applies to method 'sigma' or 'mad' only, as in the Python binding", async (rw) => {
+  const x = frames(9, 4, (k, i) => (k * 13 + i * 7) % 11);
+  for (const method of ["sigma", "mad"]) assert.ok(rw.clipCombine(x, { method, cenfunc: "mean" }) instanceof Float32Array);
+  for (const method of ["median_sigma", "winsorized", "percentile", "none"]) {
+    rw.clipCombine(x, { method, cenfunc: "median" }); // the default center is accepted everywhere
+    assert.throws(
+      () => rw.clipCombine(x, { method, cenfunc: "mean" }),
+      (e) => e instanceof RankwiseError && e.kind === "param" && /cenfunc applies to method 'sigma' or 'mad'/.test(e.message),
+      method,
+    );
+  }
 });
 
 let failed = 0;

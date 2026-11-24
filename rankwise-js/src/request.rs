@@ -213,13 +213,22 @@ fn parse_clip(r: &mut Req) -> R<Clip> {
         (_, 5) => Clip::none(),
         (_, m) => return Err(Fail::Request(format!("unknown clip method code {m}"))),
     };
-    c = c.center(match cenfunc {
+    let center = match cenfunc {
         0 => Center::Median,
         1 => Center::Mean,
         x => return Err(Fail::Request(format!("unknown cenfunc code {x}"))),
-    });
+    };
+    // Only sigma and MAD clipping take a center; the others are defined around the median.
+    if center != Center::Median && method != SIGMA && method != MAD {
+        return Err(param("cenfunc applies to method 'sigma' or 'mad'"));
+    }
+    c = c.center(center);
     if stdfunc >= 0 {
-        let s = if stdfunc == 0 { Spread::Std } else { Spread::MadStd };
+        let s = match stdfunc {
+            0 => Spread::Std,
+            1 => Spread::MadStd,
+            x => return Err(Fail::Request(format!("unknown stdfunc code {x}"))),
+        };
         if method == MAD && s != Spread::MadStd {
             return Err(param(
                 "method 'mad' clips with mad_std; use method 'sigma' with stdfunc 'std' for that spread",
@@ -236,7 +245,11 @@ fn parse_clip(r: &mut Req) -> R<Clip> {
         2 => Combine::Sum,
         x => return Err(Fail::Request(format!("unknown combine code {x}"))),
     });
-    c = c.precision(if precision == 1 { Precision::F32 } else { Precision::F64 });
+    c = c.precision(match precision {
+        0 => Precision::F64,
+        1 => Precision::F32,
+        x => return Err(Fail::Request(format!("unknown precision code {x}"))),
+    });
     c.mask_infinite = mask_infinite;
     if let (Some(cut), Rejection::Winsorized { cutoff, .. }) = (cutoff, &mut c.rejection) {
         *cutoff = cut;
@@ -452,4 +465,59 @@ pub(crate) fn current_isa() -> i32 {
 
 pub(crate) fn set_isa(code: i32) -> i32 {
     report(isa_from_code(code as i64).and_then(|i| Ok(rankwise::set_isa_override(i)?)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Clip fields for `method` with the given cenfunc, stdfunc and precision codes.
+    fn clip(method: i64, cenfunc: i64, stdfunc: i64, precision: i64) -> R<Clip> {
+        let v =
+            [method as f64, 3.0, 3.0, 5.0, 0.0, cenfunc as f64, stdfunc as f64, 0.0, precision as f64, 1.0, f64::NAN];
+        let mut r = Req { v: &v, i: 0 };
+        parse_clip(&mut r)
+    }
+
+    fn param_error(r: R<Clip>, re: &str) -> bool {
+        matches!(r, Err(Fail::Core(Error::Param(m))) if m.contains(re))
+    }
+
+    fn request_error(r: R<Clip>, re: &str) -> bool {
+        matches!(r, Err(Fail::Request(m)) if m.contains(re))
+    }
+
+    #[test]
+    fn cenfunc_mean_needs_sigma_or_mad() {
+        assert!(clip(0, 1, -1, 0).is_ok());
+        assert!(clip(1, 1, -1, 0).is_ok());
+        for method in 2..=5 {
+            assert!(clip(method, 0, -1, 0).is_ok(), "median is the default for method {method}");
+            assert!(
+                param_error(clip(method, 1, -1, 0), "cenfunc applies to method 'sigma' or 'mad'"),
+                "method {method}"
+            );
+        }
+        assert!(request_error(clip(0, 2, -1, 0), "unknown cenfunc code 2"));
+    }
+
+    #[test]
+    fn stdfunc_codes_are_checked() {
+        assert!(matches!(clip(0, 0, 0, 0), Ok(Clip { rejection: Rejection::Sigma { spread: Spread::Std, .. }, .. })));
+        assert!(matches!(
+            clip(0, 0, 1, 0),
+            Ok(Clip { rejection: Rejection::Sigma { spread: Spread::MadStd, .. }, .. })
+        ));
+        assert!(request_error(clip(0, 0, 2, 0), "unknown stdfunc code 2"));
+        assert!(param_error(clip(1, 0, 0, 0), "method 'mad' clips with mad_std"));
+        assert!(param_error(clip(3, 0, 1, 0), "stdfunc applies to method 'sigma'"));
+    }
+
+    #[test]
+    fn precision_codes_are_checked() {
+        assert!(matches!(clip(0, 0, -1, 0), Ok(c) if c.precision == Precision::F64));
+        assert!(matches!(clip(0, 0, -1, 1), Ok(c) if c.precision == Precision::F32));
+        assert!(request_error(clip(0, 0, -1, 2), "unknown precision code 2"));
+        assert!(request_error(clip(0, 0, -1, -1), "unknown precision code -1"));
+    }
 }

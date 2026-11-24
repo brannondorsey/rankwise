@@ -67,9 +67,11 @@ function loadNative() {
   return native;
 }
 
+// `wasm` (a module to load) implies WebAssembly under "auto"; an explicit "native" (option or
+// RANKWISE_BACKEND) ignores it: the addon or an error, never a silent fallback.
 function resolveSync(options) {
   const backend = pickBackend(options);
-  if (backend !== "wasm" && options.wasm === undefined) {
+  if (backend === "native" || (backend === "auto" && options.wasm === undefined)) {
     const n = loadNative();
     if (n.engine) return { rw: new Rankwise(n.engine) };
     if (backend === "native") throw new Error(`rankwise: ${n.reason}`);
@@ -86,15 +88,17 @@ const cache = new Map();
  * `rw.fallbackReason` why native was not used.
  *
  * Options: `backend` ("auto" | "native" | "wasm"; default RANKWISE_BACKEND or "auto"),
- * and for WebAssembly `simd` and `wasm` as in the browser build.
+ * and for WebAssembly `simd` and `wasm` as in the browser build. Giving `wasm` selects
+ * WebAssembly under "auto"; "native" ignores it.
  */
 export function init(options = {}) {
-  let key;
+  let backend;
   try {
-    key = `${pickBackend(options)}|${options.simd ?? "auto"}`;
+    backend = pickBackend(options);
   } catch (e) {
     return Promise.reject(e);
   }
+  const key = `${backend}|${options.simd ?? "auto"}`;
   const make = async () => {
     const r = resolveSync(options);
     if (r.rw) return r.rw;
@@ -102,7 +106,7 @@ export function init(options = {}) {
     rw.fallbackReason = r.reason;
     return rw;
   };
-  if (options.wasm !== undefined) return make();
+  if (options.wasm !== undefined && backend !== "native") return make();
   if (!cache.has(key)) {
     const p = make();
     p.catch(() => cache.delete(key));

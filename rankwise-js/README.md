@@ -56,7 +56,7 @@ The choice is visible and can be overridden:
 |---|---|
 | `rw.backend`, `rw.build`, `rw.isa` | what runs: `"native"`, `"linux-x64-gnu"`, `"avx512"` |
 | `rw.fallbackReason` | why the addon was not used, e.g. `no native addon for linux-x64-musl could be loaded (...)` |
-| `init({ backend: "native" })` | the addon or an error: never a silent fallback |
+| `init({ backend: "native" })`, `RANKWISE_BACKEND=native` | the addon or an error: never a silent fallback (a `wasm` option is ignored) |
 | `init({ backend: "wasm" })`, `RANKWISE_BACKEND=wasm` | WebAssembly even where the addon is installed |
 | `RANKWISE_NATIVE_PATH=/path/rankwise.node` | an addon from a file (custom builds) |
 | `RANKWISE_ISA=avx2` | the native ISA, as for the Rust, C and Python libraries |

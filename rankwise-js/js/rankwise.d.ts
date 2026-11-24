@@ -57,7 +57,7 @@ export interface ClipOptions extends CommonOptions {
   sigma?: number | readonly [number, number];
   sigmaLower?: number;
   sigmaUpper?: number;
-  /** Rejection passes (default 5; `null` = until nothing changes). */
+  /** Rejection passes (default 5; `null`, or 0 for "sigma" and "mad" as in astropy, = until nothing changes). */
   maxiters?: number | null;
   cenfunc?: "median" | "mean";
   stdfunc?: "std" | "mad_std";
@@ -212,13 +212,18 @@ export class Rankwise {
 export interface InitOptions {
   /**
    * Node, Bun and Deno: "auto" (default; the native addon if it loads, else WebAssembly),
-   * "native" (throw if it does not load) or "wasm". Defaults to RANKWISE_BACKEND. Browsers
-   * and the `@rankwise-js/rankwise/wasm` entry always use WebAssembly.
+   * "native" (throw if it does not load; `wasm` is ignored) or "wasm". Defaults to
+   * RANKWISE_BACKEND. Under "auto", giving `wasm` selects WebAssembly. Browsers and the
+   * `@rankwise-js/rankwise/wasm` entry always use WebAssembly.
    */
   backend?: "auto" | "native" | "wasm";
   /** WebAssembly build: true, false or "auto" (default). */
   simd?: boolean | "auto";
-  /** Where the WebAssembly module comes from: a URL or path, a Response, bytes or a compiled module. */
+  /**
+   * Where the WebAssembly module comes from: a URL, a file path (relative to the working
+   * directory on Node, Bun and Deno; to the page in browsers), a Response, bytes or a
+   * compiled module.
+   */
   wasm?: string | URL | Response | BufferSource | WebAssembly.Module;
 }
 

@@ -30,13 +30,28 @@ async function compileFrom(src) {
   if (src instanceof WebAssembly.Module) return src;
   if (src instanceof ArrayBuffer || ArrayBuffer.isView(src)) return WebAssembly.compile(src);
   if (typeof Response !== "undefined" && src instanceof Response) return compileResponse(src);
-  const url = src instanceof URL ? src : new URL(String(src), import.meta.url);
+  const url = src instanceof URL ? src : await toUrl(String(src));
   if (url.protocol === "file:") {
     // Node, Bun and Deno: read from disk (Node's fetch does not do file: URLs)
     const { readFile } = await import("node:fs/promises");
     return WebAssembly.compile(await readFile(url));
   }
   return compileResponse(await fetch(url));
+}
+
+const onServer = typeof Deno !== "undefined" || (typeof process !== "undefined" && !!process.versions?.node);
+
+// A URL string (a scheme of two letters or more) as is; anything else is a path. On Node,
+// Bun and Deno a path is a file, relative to the working directory (so `C:\x\a.wasm` is a
+// Windows path, not a URL with the scheme "c:"); in browsers it is relative to the page,
+// as `fetch` would take it.
+async function toUrl(src) {
+  if (/^[a-z][a-z\d+.-]+:/i.test(src)) return new URL(src);
+  if (onServer) {
+    const [{ resolve }, { pathToFileURL }] = await Promise.all([import("node:path"), import("node:url")]);
+    return pathToFileURL(resolve(src));
+  }
+  return new URL(src, globalThis.document?.baseURI ?? globalThis.location?.href ?? import.meta.url);
 }
 
 async function compileResponse(res) {
@@ -89,7 +104,8 @@ const cache = new Map();
  * Load rankwise's WebAssembly build. Resolves to a {@link Rankwise} (cached per build).
  *
  * Options: `simd` (true / false / "auto", default "auto") picks the build; `wasm` overrides
- * where it comes from (a URL or path, a Response, bytes or a compiled WebAssembly.Module).
+ * where it comes from (a URL, a path (on Node, Bun and Deno relative to the working directory),
+ * a Response, bytes or a compiled WebAssembly.Module).
  */
 export function init(options = {}) {
   if (options.backend === "native") {
@@ -221,23 +237,56 @@ export class WasmEngine {
     return a.buffer === this.memory.buffer;
   }
 
+  /**
+   * `a` again, re-viewed if it lives in linear memory: `#reserve` and the kernel can grow
+   * memory, which detaches every view of it (they then read as empty, at offset 0). Call
+   * the result for a view that is valid now.
+   */
+  #live(a) {
+    if (a == null || !this.#resident(a)) return () => a;
+    const C = a.constructor;
+    const off = a.byteOffset;
+    const len = a.length;
+    let v = a;
+    return () => (v.buffer === this.memory.buffer ? v : (v = new C(this.memory.buffer, off, len)));
+  }
+
   /** Run one request. Results are written into `job.outs[j].result` and `job.mask`. */
   run({ s, head, tail, outs, mask }) {
     const nout = outs.length;
     const esz = DTYPES[s.dtype].size;
     const In = DTYPES[s.dtype].ctor;
-    const results = outs.map((o) => o.result);
     const odt = outs.map((o) => o.kdt);
     const native = s.src === s.dtype;
+    // Everything about the caller's arrays is decided, and every address read, here: before
+    // anything can grow memory. After that they are only reached through `#live` views.
+    const results = outs.map((o) => this.#live(o.result));
+    const has = outs.map((o) => o.result != null);
+    const frames = s.kind === "frames" ? s.frames.map((f) => this.#live(f)) : null;
+    const frameOffsets = s.kind === "frames" ? s.frames.map((f) => f.byteOffset) : null;
     const residentFrames = s.kind === "frames" && native && s.frames.every((f) => this.#resident(f));
     const residentData = s.kind === "strided" && native && this.#resident(s.data);
+    const data = s.kind === "strided" ? this.#live(s.data) : null;
+    const dataOffset = residentData ? s.data.byteOffset : 0;
+    const outResident = outs.map((o, j) => has[j] && this.#resident(o.result) && o.result instanceof odt[j].ctor);
+    const outOffsets = outs.map((o, j) => (outResident[j] ? o.result.byteOffset : 0));
+    const maskFlat = mask?.flat ? this.#live(mask.flat) : null;
+    const maskFrames = mask?.frames ? mask.frames.map((f) => this.#live(f)) : null;
+    // hand back views that are valid after the call
+    const settle = () => {
+      outs.forEach((o, j) => (o.result = results[j]()));
+      if (maskFlat) {
+        if (mask.result === mask.flat) mask.result = maskFlat();
+        mask.flat = maskFlat();
+      }
+    };
 
     if (s.kind === "frames" && !residentFrames) {
       // Stream pixel chunks of every frame through linear memory: bounded memory, and the
       // kernel reads each chunk from cache right after it was copied.
       const chunk = Math.max(64, Math.min(Math.ceil(s.npix / 64) * 64, Math.floor(this.chunkBytes / (s.n * esz) / 64) * 64));
       const fstride = Math.ceil((chunk * esz) / 64) * 64 + 64; // +1 line: no 2^k cache aliasing
-      const ostride = odt.map((d, j) => (results[j] ? Math.ceil((chunk * d.size) / 64) * 64 : 0));
+      const ostride = odt.map((d, j) => (has[j] ? Math.ceil((chunk * d.size) / 64) * 64 : 0));
       const mstride = mask ? Math.ceil(chunk / 64) * 64 : 0;
       const reqMax = head.length + 8 + 2 * s.n + 3 * nout + tail.length;
       const base = this.#reserve(s.n * fstride + ostride.reduce((a, b) => a + b, 0) + s.n * mstride + reqMax * 8 + 8);
@@ -251,7 +300,7 @@ export class WasmEngine {
       const mkViews = () => {
         heap = this.memory.buffer;
         views = faddr.map((a) => new In(heap, a, chunk));
-        oviews = odt.map((d, j) => (results[j] ? new d.ctor(heap, oaddr[j], chunk) : null));
+        oviews = odt.map((d, j) => (has[j] ? new d.ctor(heap, oaddr[j], chunk) : null));
         mviews = mask ? maddr.map((a) => new Uint8Array(heap, a, chunk)) : null;
       };
       mkViews();
@@ -259,11 +308,11 @@ export class WasmEngine {
       do {
         const len = Math.min(chunk, s.npix - p0);
         for (let k = 0; k < s.n; k++) {
-          const f = s.frames[k];
+          const f = frames[k]();
           views[k].set(p0 === 0 && len === f.length ? f : f.subarray(p0, p0 + len));
         }
         const req = [...head, 1, len, esz, ...faddr, nout];
-        for (let j = 0; j < nout; j++) req.push(results[j] ? oaddr[j] : 0, odt[j].code, odt[j].size);
+        for (let j = 0; j < nout; j++) req.push(has[j] ? oaddr[j] : 0, odt[j].code, odt[j].size);
         if (mask) req.push(1, ...maddr, DTYPES.bool.code, 1);
         else req.push(0);
         req.push(...tail);
@@ -271,45 +320,44 @@ export class WasmEngine {
         check(this.#x.rw_reduce(raddr, req.length), this.#message);
         if (this.memory.buffer !== heap) mkViews(); // the kernel grew memory
         for (let j = 0; j < nout; j++) {
-          if (results[j]) results[j].set(len === chunk ? oviews[j] : oviews[j].subarray(0, len), p0);
+          if (has[j]) results[j]().set(len === chunk ? oviews[j] : oviews[j].subarray(0, len), p0);
         }
-        if (mask) for (let k = 0; k < s.n; k++) mask.frames[k].set(mviews[k].subarray(0, len), p0);
+        if (mask) for (let k = 0; k < s.n; k++) maskFrames[k]().set(mviews[k].subarray(0, len), p0);
         p0 += chunk;
       } while (p0 < s.npix);
+      settle();
       return;
     }
 
     // One call over the whole array: frames already in WebAssembly memory, or a strided
     // layout (an inner axis reduced), which is copied in whole.
-    let shape, strides, frameOffsets, inBytes = 0;
+    let shape, strides, inBytes = 0;
     if (s.kind === "frames") {
       shape = [s.npix];
       strides = [esz];
-      frameOffsets = s.frames.map((f) => f.byteOffset);
     } else {
       const st = cStrides(s.shape, esz);
       shape = s.outShape;
       strides = st.filter((_, d) => d !== s.axis);
-      frameOffsets = Array.from({ length: s.n }, (_, k) => k * st[s.axis]);
       if (!residentData) inBytes = Math.ceil((s.data.length * esz) / 64) * 64;
     }
-    const outResident = results.map((r, j) => r !== null && this.#resident(r) && r instanceof odt[j].ctor);
-    const obytes = results.map((r, j) => (r === null || outResident[j] ? 0 : Math.ceil((s.npix * odt[j].size) / 64) * 64));
+    const obytes = odt.map((d, j) => (!has[j] || outResident[j] ? 0 : Math.ceil((s.npix * d.size) / 64) * 64));
     const mbytes = mask ? Math.ceil((s.n * s.npix) / 64) * 64 : 0;
     const reqMax = head.length + 4 + 3 * shape.length + 2 * s.n + nout * (2 + shape.length) + tail.length;
     const base = this.#reserve(inBytes + obytes.reduce((a, b) => a + b, 0) + mbytes + reqMax * 8 + 8);
     let p = base;
     let frameAddrs = frameOffsets;
     if (s.kind === "strided") {
-      let dataAddr = s.data.byteOffset;
+      let dataAddr = dataOffset;
       if (!residentData) {
         dataAddr = p;
         p += inBytes;
-        new In(this.memory.buffer, dataAddr, s.data.length).set(s.data);
+        new In(this.memory.buffer, dataAddr, s.data.length).set(data());
       }
-      frameAddrs = frameOffsets.map((o) => dataAddr + o);
+      const st = cStrides(s.shape, esz);
+      frameAddrs = Array.from({ length: s.n }, (_, k) => dataAddr + k * st[s.axis]);
     }
-    const oaddr = results.map((r, j) => (r === null ? 0 : outResident[j] ? r.byteOffset : ((p += obytes[j]), p - obytes[j])));
+    const oaddr = obytes.map((b, j) => (!has[j] ? 0 : outResident[j] ? outOffsets[j] : ((p += b), p - b)));
     const maddr = p;
     p += mbytes;
     const raddr = Math.ceil(p / 8) * 8;
@@ -329,13 +377,14 @@ export class WasmEngine {
     check(this.#x.rw_reduce(raddr, req.length), this.#message);
     const heap = this.memory.buffer;
     for (let j = 0; j < nout; j++) {
-      if (results[j] && !outResident[j]) results[j].set(new odt[j].ctor(heap, oaddr[j], s.npix));
+      if (has[j] && !outResident[j]) results[j]().set(new odt[j].ctor(heap, oaddr[j], s.npix));
     }
     if (mask) {
       const m = new Uint8Array(heap, maddr, s.n * s.npix);
-      if (mask.flat) mask.flat.set(m);
-      else for (let k = 0; k < s.n; k++) mask.frames[k].set(m.subarray(k * s.npix, (k + 1) * s.npix));
+      if (maskFlat) maskFlat().set(m);
+      else for (let k = 0; k < s.n; k++) maskFrames[k]().set(m.subarray(k * s.npix, (k + 1) * s.npix));
     }
+    settle();
   }
 
   /** Describe how a request would run (addresses only steer the cache-set heuristics). */

@@ -7,6 +7,10 @@ use crate::request::{self, report, set_message, with_message, Fail, R};
 use napi::bindgen_prelude::{Float64ArraySlice, Uint8ArraySlice};
 use napi_derive::napi;
 
+// Every export that runs library code is `catch_unwind`: a Rust panic becomes a thrown JS
+// error instead of aborting the host process (unwinding across `extern "C"` aborts). Keep
+// `panic = "abort"` out of the release profile, or this has nothing to catch.
+
 const SEGMENT_BITS: u32 = 40;
 
 fn segmented(segs: &[(*mut u8, usize)]) -> impl Fn(u64, isize, isize) -> R<*mut u8> + '_ {
@@ -38,13 +42,13 @@ fn run(req: &Float64ArraySlice, segments: &mut [Uint8ArraySlice], describe_only:
 }
 
 /// Run the reduction described by `req`; returns a status (0 = ok, else see `message`).
-#[napi]
+#[napi(catch_unwind)]
 pub fn reduce(req: Float64ArraySlice, mut segments: Vec<Uint8ArraySlice>) -> i32 {
     report(run(&req, &mut segments, false).map(|_| ()))
 }
 
 /// Describe how `req` would run; the text is left in `message()`.
-#[napi]
+#[napi(catch_unwind)]
 pub fn describe(req: Float64ArraySlice, mut segments: Vec<Uint8ArraySlice>) -> i32 {
     report(run(&req, &mut segments, true).map(set_message))
 }
@@ -56,23 +60,23 @@ pub fn message() -> String {
 }
 
 /// Bit `i` set when ISA code `i` is available (0 scalar, 1 avx2, 2 avx512, 3 neon).
-#[napi]
+#[napi(catch_unwind)]
 pub fn available_isas() -> u32 {
     request::available_isas()
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn current_isa() -> i32 {
     request::current_isa()
 }
 
 /// Force an ISA by code (-1 restores detection); returns a status.
-#[napi]
+#[napi(catch_unwind)]
 pub fn set_isa(code: i32) -> i32 {
     request::set_isa(code)
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn network_size(n: u32, ranks: Option<Vec<u32>>) -> u32 {
     let r: Vec<usize> = ranks.unwrap_or_default().into_iter().map(|x| x as usize).collect();
     request::network_size(n as usize, &r) as u32
@@ -88,7 +92,8 @@ pub fn version() -> String {
     rankwise::VERSION.to_string()
 }
 
-/// The target this addon was compiled for, e.g. "x86_64-unknown-linux-gnu".
+/// The architecture and OS this addon was compiled for, as Rust names them (`ARCH-OS`, e.g.
+/// "x86_64-linux" or "aarch64-macos"; not a full target triple).
 #[napi]
 pub fn target() -> String {
     format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS)

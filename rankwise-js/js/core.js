@@ -87,6 +87,16 @@ function threads(t) {
   return t;
 }
 
+// Ranks along an axis of `n` values, as the Python binding takes them: integers, negative ones
+// counting from the end. An out-of-range rank gets the kernel's error, naming the rank as given.
+function checkRanks(ranks, n) {
+  const rs = ranks.map((r) => (typeof r === "bigint" ? Number(r) : r));
+  if (!rs.every(Number.isInteger)) throw new TypeError("ranks must be integers");
+  const bad = rs.find((r) => r < -n || r >= n);
+  if (bad !== undefined) throw new RankwiseError("param", `invalid parameter: rank ${bad} out of range for ${n} frames`);
+  return rs.map((r) => (r < 0 ? r + n : r));
+}
+
 /**
  * A TypedArray an engine reads and writes without copying (see `Rankwise.alloc`). Read
  * `.array` again after calls rather than keeping it: WebAssembly memory growth detaches old
@@ -264,14 +274,17 @@ export class Rankwise {
       return new DTYPES[o.dtype].ctor(s.npix);
     });
     const maskRes = mask ? this.#maskArrays(s, mask) : null;
+    const jobOuts = results.map((result, j) => ({ result, kdt: kdt[j] }));
     this.#e.run({
       s,
       head: [...op, DTYPES[s.dtype].code, s.n],
       tail: this.#optsTail(s, opts),
-      outs: results.map((result, j) => ({ result, kdt: kdt[j] })),
+      outs: jobOuts,
       mask: maskRes,
     });
-    return { values: results, mask: maskRes?.result ?? null };
+    // The engine may hand back fresh views: a call that grows WebAssembly memory detaches
+    // the caller's views of it.
+    return { values: jobOuts.map((o) => o.result), mask: maskRes?.result ?? null };
   }
 
   #maskArrays(s, mask) {
@@ -304,6 +317,8 @@ export class Rankwise {
       isa = ISAS.indexOf(o.isa);
       if (isa < 0) throw new RangeError(`unknown ISA ${JSON.stringify(o.isa)}`);
     }
+    const staging = o.staging ?? "auto";
+    if (!Object.hasOwn(STAGING, staging)) throw new RangeError(`unknown staging ${JSON.stringify(o.staging)}`);
     if (o.nodata != null && s.dtype !== "uint16") {
       throw new TypeError("nodata applies to integer input; float data marks missing values with NaN");
     }
@@ -313,7 +328,7 @@ export class Rankwise {
       o.omit || o.nodata != null ? 1 : 0,
       o.nodata == null ? NaN : Number(o.nodata),
       isa,
-      STAGING[o.staging ?? "auto"] ?? 0,
+      STAGING[staging],
       threads(o.threads),
       ...list(clip ? o.scale : null, "scale"),
       ...list(clip ? o.offset : null, "offset"),
@@ -330,8 +345,7 @@ export class Rankwise {
     return out;
   }
 
-  #simple(op, x, opts, dtypeFn, { omit = false, valueLike = false } = {}) {
-    const s = this.#prep(x, opts);
+  #simple(op, x, opts, dtypeFn, { omit = false, valueLike = false, s = this.#prep(x, opts) } = {}) {
     const dt = opts.out ? dtypeOf(opts.out) : dtypeFn(s);
     if (opts.out && !DTYPES[dt]) throw new TypeError(`unsupported out ${opts.out.constructor.name}`);
     const { values } = this.#run(s, op, [{ dtype: dt, out: opts.out }], { ...opts, omit });
@@ -441,8 +455,8 @@ export class Rankwise {
     return this.#simple([5], x, opts, (s) => s.dtype, { omit: opts.nodata != null, valueLike: true });
   }
 
-  #arg(op, x, opts, omit) {
-    return this.#simple(op, x, opts, () => "int32", { omit: omit || opts.nodata != null });
+  #arg(op, x, opts, omit, s = undefined) {
+    return this.#simple(op, x, opts, () => "int32", { omit: omit || opts.nodata != null, s });
   }
 
   /** `np.argmin` along one axis (first occurrence; the first NaN wins). Int32Array. */
@@ -475,10 +489,15 @@ export class Rankwise {
     return this.#arg([8], x, opts, true);
   }
 
-  /** `np.argsort(kind="stable")` at each rank: which frame holds that order statistic. */
+  /**
+   * `np.argsort(kind="stable")` at each rank: which frame holds that order statistic.
+   * Negative ranks count from the end (-1: the frame holding the max). NaN sorts last.
+   */
   argselect(x, ranks, opts = {}) {
     const one = typeof ranks === "number";
-    const res = (one ? [ranks] : Array.from(ranks)).map((r) => this.#arg([9, r], x, opts, false));
+    const s = this.#prep(x, opts);
+    const rs = checkRanks(one ? [ranks] : Array.from(ranks), s.n);
+    const res = rs.map((r) => this.#arg([9, r], x, opts, false, s));
     return one ? res[0] : res;
   }
 
@@ -489,8 +508,7 @@ export class Rankwise {
   selectRanks(x, ranks, opts = {}) {
     const one = typeof ranks === "number";
     const s = this.#prep(x, opts);
-    const rs = (one ? [ranks] : Array.from(ranks, Number)).map((r) => (r < 0 ? r + s.n : r));
-    if (!rs.every(Number.isInteger)) throw new TypeError("ranks must be integers");
+    const rs = checkRanks(one ? [ranks] : Array.from(ranks), s.n);
     const outs = one ? [opts.out] : opts.out ?? rs.map(() => undefined);
     const given = outs[0] !== undefined;
     const { values } = this.#run(s, [0, rs.length, ...rs], outs.map((o) => ({ dtype: given ? dtypeOf(o) : s.dtype, out: o })), opts);
@@ -557,7 +575,8 @@ export class Rankwise {
    * `method`: "sigma" (astropy `sigma_clip`), "mad" (astropy `mad_std` spread),
    * "median_sigma", "winsorized" or "percentile" (Siril's; `sigma` is then the fractional
    * threshold), or "none". `sigma` (default 3) may be `[low, high]`; `sigmaLower` /
-   * `sigmaUpper` override. `maxiters` (default 5; `null` = until nothing changes),
+   * `sigmaUpper` override. `maxiters` (default 5; `null`, or 0 for "sigma" and "mad" as in
+   * astropy, = until nothing changes),
    * `cenfunc` ("median" | "mean"), `stdfunc` ("std" | "mad_std"), `combine` ("mean" |
    * "median" | "sum"), `preset` ("astropy" | "siril" | "pixinsight"), `precision` ("f64" |
    * "f32"), `scale` / `offset` (per-frame normalization `x * scale[k] + offset[k]`), `weights`.
@@ -576,6 +595,8 @@ export class Rankwise {
     if (![null, "astropy", "siril", "pixinsight"].includes(preset)) throw new RangeError(`unknown preset ${JSON.stringify(preset)}`);
     let maxiters = opts.maxiters === undefined ? 5 : opts.maxiters;
     if (maxiters != null && !Number.isFinite(maxiters)) maxiters = null;
+    // astropy's SigmaClip runs `maxiters or np.inf` passes, so 0 clips until nothing changes
+    if (maxiters === 0 && (method === "sigma" || method === "mad")) maxiters = null;
     // both tools iterate until nothing changes
     if (preset === "siril" || (preset === "pixinsight" && maxiters === 5)) maxiters = null;
     const cen = { median: 0, mean: 1 }[opts.cenfunc ?? "median"];
