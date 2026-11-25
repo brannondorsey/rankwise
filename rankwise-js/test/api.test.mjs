@@ -292,6 +292,18 @@ test("arrays in WebAssembly memory stay correct when the call itself grows memor
     }
   }
   {
+    // argselect runs one request per rank on one prepared input; the first grows memory
+    for (const list of [false, true]) {
+      const rw = await freshWasm();
+      const stack = fill(rw.alloc("float32", n * npix));
+      const input = () => (list ? Array.from({ length: n }, (_, k) => stack.array.subarray(k * npix, (k + 1) * npix)) : stack.array);
+      const opts = list ? {} : { shape: [n, npix] };
+      const want = ref.argselect(Float32Array.from(stack.array), [0, 4, -1], { shape: [n, npix] });
+      const r = growing(rw, () => rw.argselect(input(), [0, 4, -1], opts));
+      r.forEach((a, j) => sameArray(a, want[j]));
+    }
+  }
+  {
     // a strided layout (inner axis) read in place
     const rw = await freshWasm();
     const shape = [4, n, npix / 4];
@@ -344,10 +356,16 @@ test("a WebAssembly trap discards the instance, and init() then loads a new one"
     WebAssembly.instantiate = real;
   }
   const x = new Float32Array([3, 1, 2]);
+  const engine = await w.wasmEngine({ simd: false }); // the engine behind rw
+  const h = rw.alloc("float32", 4);
   assert.throws(() => rw.median(x), (e) => /trapped/.test(e.message) && e.cause instanceof WebAssembly.RuntimeError);
   armed = false;
   assert.throws(() => rw.median(x), /trapped earlier and cannot be used again/); // even once the fault is gone
   assert.throws(() => rw.alloc("float32", 4), /trapped earlier/);
+  h.free(); // cleanup does not throw over the trap
+  let late = false;
+  engine.onTrap(() => (late = true)); // a hook added after the trap (a loader still settling) runs at once
+  assert.ok(late);
   const again = await w.init({ simd: false });
   assert.notEqual(again, rw);
   assert.equal(again.median(x), 2);

@@ -187,7 +187,8 @@ export class WasmEngine {
 
   /** Call `fn` if the module traps: the instance is unusable from then on. */
   onTrap(fn) {
-    this.#onTrap.push(fn);
+    if (this.trapped) fn();
+    else this.#onTrap.push(fn);
   }
 
   // A trap (a Rust panic, which compiles to `unreachable`, or a fault) stops the module
@@ -199,7 +200,8 @@ export class WasmEngine {
       if (typeof f !== "function") continue;
       x[name] = (...args) => {
         if (this.trapped) {
-          throw new Error("rankwise: this WebAssembly instance trapped earlier and cannot be used again; call init() for a new one", { cause: this.trapped });
+          if (name === "rw_free") return; // cleanup (free(), finally blocks) must not mask the trap
+          throw new Error("rankwise: this WebAssembly instance trapped earlier and cannot be used again; load a new one (init())", { cause: this.trapped });
         }
         try {
           return f(...args);
@@ -207,7 +209,7 @@ export class WasmEngine {
           if (e instanceof TypeError) throw e; // a bad argument from JS, before the module ran
           this.trapped = e;
           for (const fn of this.#onTrap.splice(0)) fn();
-          throw new Error(`rankwise: the WebAssembly module trapped (${e?.message ?? e}); this instance is discarded, call init() for a new one`, { cause: e });
+          throw new Error(`rankwise: the WebAssembly module trapped (${e?.message ?? e}); this instance is discarded, load a new one (init())`, { cause: e });
         }
       };
     }
@@ -310,6 +312,7 @@ export class WasmEngine {
     const residentFrames = s.kind === "frames" && native && s.frames.every((f) => this.#resident(f));
     const residentData = s.kind === "strided" && native && this.#resident(s.data);
     const data = s.kind === "strided" ? this.#live(s.data) : null;
+    const flat = s.flat ? this.#live(s.flat) : null;
     const dataOffset = residentData ? s.data.byteOffset : 0;
     const outResident = outs.map((o, j) => has[j] && this.#resident(o.result) && o.result instanceof odt[j].ctor);
     const outOffsets = outs.map((o, j) => (outResident[j] ? o.result.byteOffset : 0));
@@ -329,6 +332,11 @@ export class WasmEngine {
         mask.frames = fresh;
       }
       if (keep) job.keep = keep.map((f) => f());
+      // the input too, for callers that run several requests on one prepared input
+      job.s = { ...s };
+      if (frames) job.s.frames = frames.map((f) => f());
+      if (data) job.s.data = data();
+      if (flat) job.s.flat = flat();
     };
 
     if (s.kind === "frames" && !residentFrames) {

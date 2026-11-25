@@ -285,7 +285,7 @@ export class Rankwise {
     this.#e.run(job);
     // The engine may hand back fresh views: a call that grows WebAssembly memory detaches
     // the caller's views of it.
-    return { values: job.outs.map((o) => o.result), mask: maskRes?.result ?? null, keep: job.keep };
+    return { values: job.outs.map((o) => o.result), mask: maskRes?.result ?? null, keep: job.keep, s: job.s };
   }
 
   #maskArrays(s, mask) {
@@ -346,11 +346,12 @@ export class Rankwise {
     return out;
   }
 
-  #simple(op, x, opts, dtypeFn, { omit = false, valueLike = false, s = this.#prep(x, opts) } = {}) {
+  #simple(op, x, opts, dtypeFn, { omit = false, valueLike = false } = {}) {
+    const s = this.#prep(x, opts);
     const dt = opts.out ? dtypeOf(opts.out) : dtypeFn(s);
     if (opts.out && !DTYPES[dt]) throw new TypeError(`unsupported out ${opts.out.constructor.name}`);
-    const { values } = this.#run(s, op, [{ dtype: dt, out: opts.out }], { ...opts, omit });
-    return this.#finish(s, values, { valueLike, given: !!opts.out })[0];
+    const run = this.#run(s, op, [{ dtype: dt, out: opts.out }], { ...opts, omit });
+    return this.#finish(s, run.values, { valueLike, given: !!opts.out })[0];
   }
 
   // ---------------------------------------------------------------- medians
@@ -456,8 +457,8 @@ export class Rankwise {
     return this.#simple([5], x, opts, (s) => s.dtype, { omit: opts.nodata != null, valueLike: true });
   }
 
-  #arg(op, x, opts, omit, s = undefined) {
-    return this.#simple(op, x, opts, () => "int32", { omit: omit || opts.nodata != null, s });
+  #arg(op, x, opts, omit) {
+    return this.#simple(op, x, opts, () => "int32", { omit: omit || opts.nodata != null });
   }
 
   /** `np.argmin` along one axis (first occurrence; the first NaN wins). Int32Array. */
@@ -498,7 +499,17 @@ export class Rankwise {
     const one = typeof ranks === "number";
     const s = this.#prep(x, opts);
     const rs = checkRanks(one ? [ranks] : Array.from(ranks), s.n);
-    const res = rs.map((r) => this.#arg([9, r], x, opts, false, s));
+    // One request per rank on one prepared input: the engine hands the input back re-viewed,
+    // as a request that grows WebAssembly memory detaches views of it.
+    const dt = opts.out ? dtypeOf(opts.out) : "int32";
+    if (opts.out && !DTYPES[dt]) throw new TypeError(`unsupported out ${opts.out.constructor.name}`);
+    const omit = opts.nodata != null;
+    let cur = s;
+    const res = rs.map((r) => {
+      const run = this.#run(cur, [9, r], [{ dtype: dt, out: opts.out }], { ...opts, omit });
+      cur = run.s ?? cur;
+      return this.#finish(cur, run.values, { given: !!opts.out })[0];
+    });
     return one ? res[0] : res;
   }
 
