@@ -40,6 +40,8 @@ lo, hi = rw.quantile(stack, [0.1, 0.9], axis=0)             # identical to np.qu
 trim = rw.trimmed_mean(stack, 0.1, axis=0)                  # scipy.stats.trim_mean
 spread = rw.iqr(stack, axis=0)                              # scipy.stats.iqr
 k = rw.select_ranks(stack, [0, 3, 36], axis=0)              # any ranks, one pass
+bg = rw.rolling(video, 31, axis=0, center=True, min_count=1) # moving median, xarray's rolling
+clim, months = rw.groupby_reduce(daily, month_of, func="quantile", q=0.9)  # per-group reductions
 
 frames = [np.load(f, mmap_mode="r") for f in sorted(paths)] # frames in separate buffers work too
 rw.sigma_clip_mean(frames, sigma=(3, 3), out=out)
@@ -67,6 +69,8 @@ across at most that many workers, capped by the visible CPU count or `RAYON_NUM_
 | `nodata=` (uint16) | missing values skipped, like NaN in the `nan*` functions |
 | `scale=`, `offset=`, `weights=` | per-frame normalization and weighting, fused into the same pass |
 | `low=`, `high=`, `rejected=`, `mask=` | per-pixel reject counts and the full rejection map |
+| `rolling(a, window, func=...)` (median, quantile, min, max, ptp, ranks, IQR, MAD, clipping) | xarray `rolling(..., center, min_periods)`: NaN-padded windows, NaN skipped |
+| `groupby_reduce(a, labels, func=...)` | any function above on each group of frames |
 | `available_isas()`, `set_isa()`, `use_isa()`, `describe()` | dispatch control and introspection |
 
 `xr.apply_ufunc(rw.quantile, ds.tas, 0.9, input_core_dims=[["member"], []], kwargs={"axis": -1}, dask="parallelized")`
@@ -243,8 +247,8 @@ Rust 1.89 or later (AVX-512 intrinsics are stable from 1.89); no nightly feature
 ## Scope of v0.1
 
 Up to 512 frames per call (stream row strips for more pixels); float32, float64 and uint16
-(uint8 widened). Not yet: rolling windows and grouped reductions, weighted quantiles, stacks
-deeper than 512, linear-fit clipping and generalized ESD, R and Julia bindings. rankwise is a
+(uint8 widened); moving windows of up to 512 frames over stacks of any length. Not yet:
+weighted quantiles, stacks deeper than 512, linear-fit clipping and generalized ESD, R and Julia bindings. rankwise is a
 kernel, not a stacker: no I/O, registration or calibration.
 
 ## License

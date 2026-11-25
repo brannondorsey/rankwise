@@ -6,6 +6,7 @@
 
 use crate::engine::{self, Job, Unit};
 use crate::net::{self, NetPlan};
+use crate::rolling;
 use crate::simd::{FVector, Isa, Vector};
 use crate::spec::DType;
 
@@ -44,10 +45,21 @@ mod scalar_impl {
     sv!(F64s);
     sv!(U16s);
     pub(crate) unsafe fn run(job: &Job, u: Unit) {
+        if job.rolling.is_some() {
+            return roll(job, u);
+        }
         match job.sdt {
             DType::F32 => engine::run_unit::<ScalarArch, F32s>(job, u),
             DType::F64 => engine::run_unit::<ScalarArch, F64s>(job, u),
             _ => engine::run_unit::<ScalarArch, U16s>(job, u),
+        }
+    }
+    #[inline(never)]
+    unsafe fn roll(job: &Job, u: Unit) {
+        match job.sdt {
+            DType::F32 => rolling::run_unit::<ScalarArch, F32s>(job, u),
+            DType::F64 => rolling::run_unit::<ScalarArch, F64s>(job, u),
+            _ => rolling::run_unit::<ScalarArch, U16s>(job, u),
         }
     }
 }
@@ -72,7 +84,7 @@ mod x86 {
     }
 
     macro_rules! entries {
-        ($feat:literal, $arch:ty, $net:ident, $run:ident, $( $v:ty => $dt:path ),* ) => {
+        ($feat:literal, $arch:ty, $net:ident, $run:ident, $roll:ident, $( $v:ty => $dt:path ),* ) => {
             $(
                 impl SortVec for $v {
                     #[inline(always)]
@@ -87,16 +99,29 @@ mod x86 {
             }
             #[target_feature(enable = $feat)]
             pub(crate) unsafe fn $run(job: &Job, u: Unit) {
+                if job.rolling.is_some() {
+                    return $roll(job, u);
+                }
                 match job.sdt {
                     $( $dt => engine::run_unit::<$arch, $v>(job, u), )*
                     _ => unreachable!(),
                 }
             }
+            // A frame of its own: inlined, the moving-window kernel's locals would add to
+            // every static call's stack (unoptimized builds keep a slot per temporary).
+            #[target_feature(enable = $feat)]
+            #[inline(never)]
+            unsafe fn $roll(job: &Job, u: Unit) {
+                match job.sdt {
+                    $( $dt => rolling::run_unit::<$arch, $v>(job, u), )*
+                    _ => unreachable!(),
+                }
+            }
         };
     }
-    entries!("avx2", Avx2Arch, net_avx2, run_avx2,
+    entries!("avx2", Avx2Arch, net_avx2, run_avx2, roll_avx2,
         F32x8 => DType::F32, F64x4 => DType::F64, U16x16 => DType::U16);
-    entries!("avx512f,avx512bw,avx512dq,avx512vl", Avx512Arch, net_avx512, run_avx512,
+    entries!("avx512f,avx512bw,avx512dq,avx512vl", Avx512Arch, net_avx512, run_avx512, roll_avx512,
         F32x16 => DType::F32, F64x8 => DType::F64, U16x32 => DType::U16);
 }
 
@@ -124,10 +149,21 @@ mod arm {
     sv!(F64x2);
     sv!(U16x8);
     pub(crate) unsafe fn run(job: &Job, u: Unit) {
+        if job.rolling.is_some() {
+            return roll(job, u);
+        }
         match job.sdt {
             DType::F32 => engine::run_unit::<NeonArch, F32x4>(job, u),
             DType::F64 => engine::run_unit::<NeonArch, F64x2>(job, u),
             _ => engine::run_unit::<NeonArch, U16x8>(job, u),
+        }
+    }
+    #[inline(never)]
+    unsafe fn roll(job: &Job, u: Unit) {
+        match job.sdt {
+            DType::F32 => rolling::run_unit::<NeonArch, F32x4>(job, u),
+            DType::F64 => rolling::run_unit::<NeonArch, F64x2>(job, u),
+            _ => rolling::run_unit::<NeonArch, U16x8>(job, u),
         }
     }
 }

@@ -150,3 +150,34 @@ A contiguous stack of 2^k-byte frames puts every frame's current cache line in t
 | 47 | skewed | 30.0 | 25.0 | 1.20× | 91.8 | 89.6 | 1.02× |
 | 63 | staged | 46.5 | 38.5 | 1.21× | 132.2 | 125.3 | 1.06× |
 
+## Moving windows and groups: 1000 × 256 × 256 float32
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="img/bench_rolling_dark.png"><img alt="Moving-window benchmark" src="img/bench_rolling_light.png"></picture>
+
+| Case | Tool | Seconds | ns / output | Identical |
+|---|---|---|---|---|
+| rolling w=7 | rankwise · AVX-512 | 0.294 | 4.49 | yes |
+| rolling w=7 | rankwise · AVX2 | 0.362 | 5.52 | yes |
+| rolling w=7 | rankwise · scalar | 0.772 | 11.78 | yes |
+| rolling w=7 | bottleneck 1.6.0 move_median | 4.19 | 63.94 | yes |
+| rolling w=7 | pandas 3.0.5 | 16.4 | 249.65 | no |
+| rolling w=7 | NumPy windows + nanmedian | 21.7 | 331.58 | yes |
+| rolling w=31 | rankwise · AVX-512 | 0.482 | 7.36 | yes |
+| rolling w=31 | rankwise · AVX2 | 0.573 | 8.74 | yes |
+| rolling w=31 | rankwise · scalar | 1.73 | 26.45 | yes |
+| rolling w=31 | bottleneck 1.6.0 move_median | 5.7 | 87.04 | yes |
+| rolling w=31 | pandas 3.0.5 | 23.4 | 356.79 | no |
+| rolling w=31 | NumPy windows + nanmedian | 87.5 | 1335.09 | yes |
+| rolling w=101 | rankwise · AVX-512 | 0.85 | 12.96 | yes |
+| rolling w=101 | rankwise · AVX2 | 1.3 | 19.80 | yes |
+| rolling w=101 | rankwise · scalar | 4.48 | 68.43 | yes |
+| rolling w=101 | bottleneck 1.6.0 move_median | 6.13 | 93.53 | yes |
+| rolling w=101 | pandas 3.0.5 | 31.4 | 479.19 | no |
+| groupby | rankwise · AVX-512 | 0.0106 | 13.53 | yes |
+| groupby | rankwise · AVX2 | 0.0169 | 21.50 | yes |
+| groupby | rankwise · scalar | 0.0391 | 49.71 | yes |
+| groupby | NumPy (loop over months) | 0.449 | 571.30 | yes |
+| groupby | xarray 2026.9.0 groupby | 0.879 | 1117.12 | yes |
+
+Trailing windows with `min_periods=1`; "identical" compares with `rw.rolling(x, w, min_count=1)`, which matches xarray's `rolling(...).median()`. pandas is timed on 4096 pixels and scaled; it computes in float64 and returns float64, hence "no". groupby: the median of each month over 30 years of monthly frames.
+
