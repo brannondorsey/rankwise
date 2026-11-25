@@ -82,7 +82,10 @@ export function wasmEngine(options = {}) {
   const key = simd ? "simd128" : "portable";
   if (!engines.has(key)) {
     const p = compileFrom(wasmUrl(simd)).then(instantiate);
-    p.catch(() => engines.delete(key));
+    p.then(
+      (e) => e.onTrap(() => engines.get(key) === p && engines.delete(key)),
+      () => engines.delete(key),
+    );
     engines.set(key, p);
   }
   return engines.get(key);
@@ -119,7 +122,10 @@ export function init(options = {}) {
     return Promise.reject(e);
   }
   if (!cache.has(key)) {
-    const p = wasmEngine(options).then((e) => new Rankwise(e));
+    const p = wasmEngine(options).then((e) => {
+      e.onTrap(() => cache.get(key) === p && cache.delete(key));
+      return new Rankwise(e);
+    });
     p.catch(() => cache.delete(key));
     cache.set(key, p);
   }
@@ -163,8 +169,12 @@ export class WasmEngine {
   backend = "wasm";
   chunkBytes = 1 << 20;
 
+  /** The error the module trapped with (a Rust panic or a fault), or null. */
+  trapped = null;
+  #onTrap = [];
+
   constructor(instance) {
-    this.#x = instance.exports;
+    this.#x = this.#guard(instance.exports);
     this.build = this.#x.rw_available_isas() & (1 << 4) ? "simd128" : "portable";
     this.maxFrames = this.#x.rw_max_frames();
     const v = this.#x.rw_version();
@@ -173,6 +183,35 @@ export class WasmEngine {
 
   get memory() {
     return this.#x.memory;
+  }
+
+  /** Call `fn` if the module traps: the instance is unusable from then on. */
+  onTrap(fn) {
+    this.#onTrap.push(fn);
+  }
+
+  // A trap (a Rust panic, which compiles to `unreachable`, or a fault) stops the module
+  // mid-call, so its allocator and scratch state can be inconsistent: after one, every call
+  // throws, and the loaders' caches drop this instance so that `init()` makes a new one.
+  #guard(raw) {
+    const x = { memory: raw.memory };
+    for (const [name, f] of Object.entries(raw)) {
+      if (typeof f !== "function") continue;
+      x[name] = (...args) => {
+        if (this.trapped) {
+          throw new Error("rankwise: this WebAssembly instance trapped earlier and cannot be used again; call init() for a new one", { cause: this.trapped });
+        }
+        try {
+          return f(...args);
+        } catch (e) {
+          if (e instanceof TypeError) throw e; // a bad argument from JS, before the module ran
+          this.trapped = e;
+          for (const fn of this.#onTrap.splice(0)) fn();
+          throw new Error(`rankwise: the WebAssembly module trapped (${e?.message ?? e}); this instance is discarded, call init() for a new one`, { cause: e });
+        }
+      };
+    }
+    return x;
   }
 
   #message = () =>
@@ -251,8 +290,12 @@ export class WasmEngine {
     return () => (v.buffer === this.memory.buffer ? v : (v = new C(this.memory.buffer, off, len)));
   }
 
-  /** Run one request. Results are written into `job.outs[j].result` and `job.mask`. */
-  run({ s, head, tail, outs, mask }) {
+  /**
+   * Run one request. Results are written into `job.outs[j].result` and `job.mask`; `job.keep`
+   * (arrays the caller writes after the call) comes back as views that are valid after it.
+   */
+  run(job) {
+    const { s, head, tail, outs, mask } = job;
     const nout = outs.length;
     const esz = DTYPES[s.dtype].size;
     const In = DTYPES[s.dtype].ctor;
@@ -272,6 +315,7 @@ export class WasmEngine {
     const outOffsets = outs.map((o, j) => (outResident[j] ? o.result.byteOffset : 0));
     const maskFlat = mask?.flat ? this.#live(mask.flat) : null;
     const maskFrames = mask?.frames ? mask.frames.map((f) => this.#live(f)) : null;
+    const keep = job.keep?.map((a) => this.#live(a));
     // hand back views that are valid after the call
     const settle = () => {
       outs.forEach((o, j) => (o.result = results[j]()));
@@ -279,6 +323,12 @@ export class WasmEngine {
         if (mask.result === mask.flat) mask.result = maskFlat();
         mask.flat = maskFlat();
       }
+      if (maskFrames) {
+        const fresh = maskFrames.map((f) => f());
+        if (mask.result === mask.frames) mask.result = fresh;
+        mask.frames = fresh;
+      }
+      if (keep) job.keep = keep.map((f) => f());
     };
 
     if (s.kind === "frames" && !residentFrames) {

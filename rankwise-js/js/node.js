@@ -99,16 +99,19 @@ export function init(options = {}) {
     return Promise.reject(e);
   }
   const key = `${backend}|${options.simd ?? "auto"}`;
+  let p;
   const make = async () => {
     const r = resolveSync(options);
     if (r.rw) return r.rw;
-    const rw = new Rankwise(await wasmEngine(options));
+    const e = await wasmEngine(options);
+    e.onTrap(() => p && cache.get(key) === p && cache.delete(key));
+    const rw = new Rankwise(e);
     rw.fallbackReason = r.reason;
     return rw;
   };
   if (options.wasm !== undefined && backend !== "native") return make();
   if (!cache.has(key)) {
-    const p = make();
+    p = make();
     p.catch(() => cache.delete(key));
     cache.set(key, p);
   }

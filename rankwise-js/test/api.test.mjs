@@ -265,6 +265,33 @@ test("arrays in WebAssembly memory stay correct when the call itself grows memor
     assert.ok(want.rejected.some((v) => v > 0));
   }
   {
+    // `rejected` in memory: written after the call, through a fresh view
+    const rw = await freshWasm();
+    const stack = fill(rw.alloc("float32", n * npix));
+    const want = ref.clipCombine(Float32Array.from(stack.array), { shape: [n, npix], mask: true, rejected: true });
+    const rej = rw.alloc("uint16", npix);
+    const r = growing(rw, () => rw.clipCombine(stack.array, { shape: [n, npix], mask: true, rejected: rej.array }));
+    sameArray(rej.array, want.rejected);
+    sameArray(r.rejected, want.rejected);
+  }
+  {
+    // a mask given as one in-memory array per frame comes back as fresh views
+    const rw = await freshWasm();
+    const frames = Array.from({ length: n }, (_, k) => {
+      const h = rw.alloc("float32", npix);
+      h.array.forEach((_, i, a) => (a[i] = val(k * npix + i)));
+      return h;
+    });
+    const want = ref.clipCombine(frames.map((h) => Float32Array.from(h.array)), { mask: true });
+    const m = frames.map(() => rw.alloc("uint8", npix));
+    const r = growing(rw, () => rw.clipCombine(frames.map((h) => h.array), { mask: m.map((h) => h.array) }));
+    sameArray(r.value, want.value);
+    for (let k = 0; k < n; k++) {
+      sameArray(m[k].array, want.mask[k]);
+      sameArray(r.mask[k], want.mask[k]);
+    }
+  }
+  {
     // a strided layout (inner axis) read in place
     const rw = await freshWasm();
     const shape = [4, n, npix / 4];
@@ -295,6 +322,36 @@ test("arrays in WebAssembly memory stay correct when the call itself grows memor
     growing(rw, () => rw.max(stack.array, { shape: [n, npix], out: out.array }));
     sameArray(out.array, want);
   }
+});
+
+test("a WebAssembly trap discards the instance, and init() then loads a new one", async () => {
+  // A fresh copy of the loader (its own caches), whose module traps in rw_reduce until `armed`
+  // is cleared: a Rust panic compiles to `unreachable`, which traps like this.
+  let armed = true;
+  const real = WebAssembly.instantiate;
+  WebAssembly.instantiate = async (...a) => {
+    const inst = await real(...a);
+    const exports = { ...inst.exports };
+    const reduce = exports.rw_reduce;
+    exports.rw_reduce = (...b) => (armed ? reduce(0x7fffffff, 1e9) : reduce(...b)); // faults: out of bounds
+    return { exports };
+  };
+  let w, rw;
+  try {
+    w = await import(`../js/wasm.js?trap=${Date.now()}`);
+    rw = await w.init({ simd: false });
+  } finally {
+    WebAssembly.instantiate = real;
+  }
+  const x = new Float32Array([3, 1, 2]);
+  assert.throws(() => rw.median(x), (e) => /trapped/.test(e.message) && e.cause instanceof WebAssembly.RuntimeError);
+  armed = false;
+  assert.throws(() => rw.median(x), /trapped earlier and cannot be used again/); // even once the fault is gone
+  assert.throws(() => rw.alloc("float32", 4), /trapped earlier/);
+  const again = await w.init({ simd: false });
+  assert.notEqual(again, rw);
+  assert.equal(again.median(x), 2);
+  assert.equal(await w.init({ simd: false }), again); // cached again
 });
 
 test("init({ wasm }) takes paths relative to the working directory, absolute paths and file URLs", async () => {

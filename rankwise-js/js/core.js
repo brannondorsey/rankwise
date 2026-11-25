@@ -261,7 +261,7 @@ export class Rankwise {
    * requested). `mask`: true or caller arrays for the rejection map.
    * Returns { values: (TypedArray | null)[], mask }.
    */
-  #run(s, op, outs, opts, mask = null) {
+  #run(s, op, outs, opts, mask = null, keep = undefined) {
     // The kernel's uint8 output is boolean; uint8 values (min/max/select of uint8 input into a
     // Uint8Array `out`) are computed as uint16 and narrowed by the engine.
     const kdt = outs.map((o) => DTYPES[o.dtype === "uint8" ? "uint16" : o.dtype]);
@@ -274,17 +274,18 @@ export class Rankwise {
       return new DTYPES[o.dtype].ctor(s.npix);
     });
     const maskRes = mask ? this.#maskArrays(s, mask) : null;
-    const jobOuts = results.map((result, j) => ({ result, kdt: kdt[j] }));
-    this.#e.run({
+    const job = {
       s,
       head: [...op, DTYPES[s.dtype].code, s.n],
       tail: this.#optsTail(s, opts),
-      outs: jobOuts,
+      outs: results.map((result, j) => ({ result, kdt: kdt[j] })),
       mask: maskRes,
-    });
+      keep,
+    };
+    this.#e.run(job);
     // The engine may hand back fresh views: a call that grows WebAssembly memory detaches
     // the caller's views of it.
-    return { values: jobOuts.map((o) => o.result), mask: maskRes?.result ?? null };
+    return { values: job.outs.map((o) => o.result), mask: maskRes?.result ?? null, keep: job.keep };
   }
 
   #maskArrays(s, mask) {
@@ -623,14 +624,17 @@ export class Rankwise {
     }
     // The kernel always writes three outputs; unrequested counts are not written.
     while (outs.length < 3) outs.push({ dtype: "uint16", none: true });
-    const run = this.#run(s, op, outs, { ...opts, clip: true }, opts.mask || null);
+    // A caller's `rejected` is written after the call: the engine re-views it if the call
+    // grew WebAssembly memory.
+    const keep = counts && opts.rejected && opts.rejected !== true ? [opts.rejected] : undefined;
+    const run = this.#run(s, op, outs, { ...opts, clip: true }, opts.mask || null, keep);
     const value = this.#finish(s, [run.values[0]], { given: !!opts.out })[0];
     if (!extras) return value;
     const res = { value };
     if (counts) {
       res.low = run.values[1];
       res.high = run.values[2];
-      const rej = opts.rejected && opts.rejected !== true ? opts.rejected : new Uint16Array(s.npix);
+      const rej = run.keep ? run.keep[0] : new Uint16Array(s.npix);
       for (let i = 0; i < s.npix; i++) rej[i] = res.low[i] + res.high[i];
       res.rejected = rej;
       if (s.scalar) for (const k of ["low", "high", "rejected"]) res[k] = res[k][0];
