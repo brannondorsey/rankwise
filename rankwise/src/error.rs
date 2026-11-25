@@ -22,7 +22,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::BadDepth(n) => {
-                write!(f, "stack depth {n} is out of range: rankwise v0.1 reduces 1..={} frames", crate::MAX_FRAMES)
+                write!(f, "stack depth {n} is out of range: rankwise reduces 1..={} frames", crate::MAX_FRAMES)
             }
             Error::Shape(s) => write!(f, "shape mismatch: {s}"),
             Error::Param(s) => write!(f, "invalid parameter: {s}"),

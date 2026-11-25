@@ -756,7 +756,11 @@ def use_isa(name: str | None):
 
 
 def network_size(n: int, ranks: Sequence[int] | None = None) -> int:
-    """Comparators in the sorting network for ``n`` values, pruned to ``ranks`` if given."""
+    """Comparators in Batcher's sorting network for ``n`` values, pruned to ``ranks`` if given.
+
+    That is the network every ISA runs except AVX-512 past 768 frames, which runs a deep
+    network with about 10% more comparators; ``describe`` reports the network a call runs.
+    """
     return _rw.network_size(int(n), None if ranks is None else [int(r) for r in ranks])
 
 

@@ -81,8 +81,10 @@ fn run_f32(st: &[Vec<f32>], op: &Op, opts: &Options, nout: usize, dt: DType) -> 
     }
 }
 
-const NS: &[usize] =
-    &[1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 40, 63, 64, 65, 100, 127, 128, 129, 255, 256, 300, 511, 512];
+const NS: &[usize] = &[
+    1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 24, 31, 32, 33, 40, 63, 64, 65, 100, 127, 128, 129, 255, 256, 300, 511, 512,
+    513, 1000, 1024, 1025, 2049, 4096,
+];
 const NPIX: usize = 77; // leaves a partial vector on every ISA
 
 #[test]
@@ -148,7 +150,7 @@ fn quantiles_all_methods_and_forms() {
         }
     };
     for &isa in &isas() {
-        for &n in &[1usize, 2, 5, 16, 31, 40, 129] {
+        for &n in &[1usize, 2, 5, 16, 31, 40, 129, 1025] {
             let st = stack(n, NPIX, 0.15, false, n as u64 + 99);
             for method in QuantileMethod::ALL {
                 for form in [QForm::Weak, QForm::F64, QForm::F32] {
@@ -283,7 +285,7 @@ fn astropy_clip(c: &[f64], lo_s: f64, hi_s: f64, maxiters: i32) -> (f64, f64) {
 #[test]
 fn sigma_clip_matches_astropy_algorithm() {
     for &isa in &isas() {
-        for &n in &[1usize, 2, 3, 4, 8, 15, 16, 31, 40, 64, 127, 255] {
+        for &n in &[1usize, 2, 3, 4, 8, 15, 16, 31, 40, 64, 127, 255, 600, 2049] {
             let mut st = stack(n, NPIX, 0.03, false, n as u64 * 17 + 3);
             // outliers
             let mut r = Rng(n as u64 + 1);
@@ -329,7 +331,7 @@ fn sigma_clip_matches_astropy_algorithm() {
 #[test]
 fn isas_agree_bit_for_bit() {
     let all = isas();
-    for &n in &[7usize, 31, 64, 200] {
+    for &n in &[7usize, 31, 64, 200, 1500] {
         let st = stack(n, 1001, 0.05, false, 42 + n as u64);
         let ops = [
             Op::Median,
@@ -528,5 +530,70 @@ fn misaligned_frames_agree() {
             }
             assert_eq!(want.len(), nout);
         }
+    }
+}
+
+#[test]
+fn deepest_stack() {
+    // MAX_FRAMES frames, every ISA: median, a rank pair and a clipped mean
+    let n = MAX_FRAMES;
+    let npix = 19;
+    let st = stack(n, npix, 0.01, false, 5);
+    for &isa in &isas() {
+        let opts = Options { isa: Some(isa), nan: NanPolicy::Omit, ..Default::default() };
+        let med = run_f32(&st, &Op::Median, &opts, 1, DType::F64);
+        let sel = run_f32(&st, &Op::SelectRanks(vec![0, n / 3, n - 1]), &opts, 3, DType::F64);
+        for p in 0..npix {
+            let mut c = column(&st, p);
+            sort_nan_last(&mut c);
+            let m = c.iter().filter(|x| !x.is_nan()).count();
+            let want = if m % 2 == 1 { c[m / 2] as f64 } else { ((c[m / 2 - 1] + c[m / 2]) * 0.5) as f64 };
+            assert!(same(med[0][p], want), "{isa} p={p}");
+            for (j, &r) in [0, n / 3, n - 1].iter().enumerate() {
+                assert!(same(sel[j][p], c[r] as f64), "{isa} p={p} r={r}");
+            }
+        }
+    }
+    let views: Vec<&[f32]> = st.iter().map(|v| v.as_slice()).collect();
+    assert!(median_frames(&views, &mut vec![0f32; npix]).is_ok());
+    let more: Vec<&[f32]> = views.iter().copied().chain(std::iter::once(views[0])).collect();
+    assert_eq!(median_frames(&more, &mut vec![0f32; npix]), Err(Error::BadDepth(n + 1)));
+}
+
+#[test]
+fn deep_stack_memory_paths() {
+    // Past 2^18 table entries, quantile indices are computed per lane: same results as tables.
+    let n = 1000;
+    let npix = 37;
+    let st = stack(n, npix, 0.2, true, 77);
+    let qs: Vec<f64> = (0..300).map(|i| i as f64 / 299.0).collect();
+    for &isa in &isas() {
+        let opts = Options { isa: Some(isa), nan: NanPolicy::Omit, ..Default::default() };
+        let all = run_f32(&st, &Op::Quantile(QuantileSpec::new(qs.clone())), &opts, qs.len(), DType::F64);
+        for (j, &q) in qs.iter().enumerate().step_by(13) {
+            let one = run_f32(&st, &Op::Quantile(QuantileSpec::new(vec![q])), &opts, 1, DType::F64);
+            assert!(all[j].iter().zip(&one[0]).all(|(a, b)| same(*a, *b)), "{isa} q={q}");
+        }
+        // the minimum and maximum alone keep the hybrid network
+        let o2 = Options { isa: Some(isa), ..Default::default() };
+        for ranks in [vec![0], vec![n - 1], vec![0, n - 1]] {
+            let got = run_f32(&st, &Op::SelectRanks(ranks.clone()), &o2, ranks.len(), DType::F32);
+            for p in 0..npix {
+                let mut c = column(&st, p);
+                sort_nan_last(&mut c);
+                for (j, &r) in ranks.iter().enumerate() {
+                    assert!(same(got[j][p], c[r] as f64), "{isa} r={r}");
+                }
+            }
+        }
+    }
+    // Staging::Skew on a deep stack uses a tile (the skew ring grows as n²)
+    let n = 2000;
+    let st = stack(n, 41, 0.0, false, 78);
+    for &isa in &isas() {
+        let o = |staging| Options { isa: Some(isa), staging, ..Default::default() };
+        let a = run_f32(&st, &Op::Median, &o(Staging::Never), 1, DType::F64);
+        let b = run_f32(&st, &Op::Median, &o(Staging::Skew), 1, DType::F64);
+        assert!(a[0].iter().zip(&b[0]).all(|(x, y)| same(*x, *y)), "{isa} skew");
     }
 }
