@@ -153,9 +153,11 @@ pub trait FVector: Vector {
     unsafe fn abs(self) -> Self;
 }
 
-/// The instruction sets rankwise can dispatch to.
+/// The instruction sets rankwise can dispatch to. More may be added in minor releases, so
+/// a `match` outside this crate needs a wildcard arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum Isa {
     /// Portable Rust: fixed-size arrays the compiler vectorizes for the baseline target.
     Scalar = 0,

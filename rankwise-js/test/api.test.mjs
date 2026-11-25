@@ -347,7 +347,7 @@ test("arrays in WebAssembly memory stay correct when the call itself grows memor
 
 test("alloc() past 4 GiB is refused, not wrapped around to a small allocation", async () => {
   const rw = await freshWasm();
-  for (const len of [2 ** 32 + 16, 2 ** 33, 2 ** 53]) assert.throws(() => rw.alloc("uint8", len), /cannot allocate .* \(4 GiB at most\)/);
+  for (const len of [2 ** 32 + 16, 2 ** 33, 2 ** 52]) assert.throws(() => rw.alloc("uint8", len), /cannot allocate .* \(4 GiB at most\)/);
   assert.throws(() => rw.alloc("float32", 2 ** 30 + 4), /4 GiB at most/);
 });
 
@@ -449,6 +449,42 @@ shared("setIsa, describe and networkSize", async (rw) => {
   assert.match(rw.describe(x), new RegExp(`^backend=${rw.backend} isa=${rw.isa} .*n=31 comparators\\(fast\\)=152 comparators\\(full\\)=186`));
   assert.equal(rw.networkSize(31, [15]), 152);
   assert.equal(rw.networkSize(31), 186);
+});
+
+shared("networkSize checks n and takes ranks as selectRanks does", async (rw) => {
+  assert.equal(rw.networkSize(31, [-16]), rw.networkSize(31, [15]));
+  assert.equal(rw.networkSize(9, [-1, 0]), rw.networkSize(9, [8, 0]));
+  assert.equal(rw.networkSize(9n), rw.networkSize(9));
+  for (const n of [0, -1, 1.5, NaN, 2 ** 32 + 9, rw.maxFrames + 1, "9"]) {
+    assert.throws(() => rw.networkSize(n), /n must be an integer from 1 to/, String(n));
+  }
+  assert.throws(() => rw.networkSize(9, [1.5]), /ranks must be integers/);
+  assert.throws(() => rw.networkSize(9, [9]), /rank 9 out of range for 9 frames/);
+  assert.throws(() => rw.networkSize(9, [-10]), /rank -10 out of range/);
+});
+
+shared("alloc() takes a non-negative integer length", async (rw) => {
+  for (const len of [-1, 1.5, NaN, Infinity, "4", 2 ** 53]) {
+    assert.throws(() => rw.alloc("float32", len), /length must be a non-negative integer/, String(len));
+  }
+  const h = rw.alloc("float32", 0);
+  assert.equal(h.array.length, 0);
+  h.free?.();
+});
+
+shared("clipCombine takes sigma as a number or a [low, high] Array or TypedArray", async (rw) => {
+  const x = frames(15, 400, (k, i) => ((k * 37 + i * 11) % 101) + (k === 3 ? 500 : 0));
+  const want = rw.clipCombine(x, { sigma: [2, 3], returnCounts: true });
+  for (const sigma of [Float64Array.of(2, 3), Float32Array.of(2, 3)]) {
+    const r = rw.clipCombine(x, { sigma, returnCounts: true });
+    assert.deepEqual(r.value, want.value);
+    assert.deepEqual(r.low, want.low);
+  }
+  assert.deepEqual(rw.clipCombine(x, { sigma: [2, 3] }), rw.clipCombine(x, { sigmaLower: 2, sigmaUpper: 3 }));
+  assert.throws(() => rw.clipCombine(x, { sigma: [2] }), /sigma needs a number or \[low, high\]; got 1 values/);
+  assert.throws(() => rw.clipCombine(x, { sigma: Float64Array.of(1, 2, 3) }), /got 3 values/);
+  for (const sigma of ["x", {}, [2, "x"]]) assert.throws(() => rw.clipCombine(x, { sigma }), TypeError);
+  assert.throws(() => rw.clipCombine(x, { sigmaLower: "x" }), TypeError);
 });
 
 shared("alloc() arrays are read and written in place", async (rw) => {
