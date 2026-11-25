@@ -64,7 +64,7 @@ export function platformManifest(key, version) {
     version,
     description: `rankwise's native addon for ${key} (installed automatically with @rankwise-js/rankwise)`,
     main: addonFile(key),
-    files: [addonFile(key)],
+    files: [addonFile(key), "LICENSE-MIT", "LICENSE-APACHE"],
     os: [p.os],
     cpu: [p.cpu],
     ...(p.libc ? { libc: [p.libc] } : {}),

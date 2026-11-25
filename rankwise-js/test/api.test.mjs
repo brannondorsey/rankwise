@@ -314,6 +314,15 @@ test("arrays in WebAssembly memory stay correct when the call itself grows memor
     sameArray(r.mask, want.mask);
   }
   {
+    // a strided uint8 layout in memory is widened into scratch, which grows memory
+    const rw = await freshWasm();
+    const shape = [4, n, npix / 4];
+    const data = fill(rw.alloc("uint8", n * npix));
+    const want = ref.max(Uint8Array.from(data.array), { shape, axis: 1 });
+    const r = growing(rw, () => rw.max(data.array, { shape, axis: 1 }));
+    sameArray(r, want);
+  }
+  {
     // uint8 frames in memory are streamed (widened); out in memory is copied into
     const rw = await freshWasm();
     rw.chunkBytes = 1 << 30; // one chunk: the whole stack in scratch
@@ -334,6 +343,12 @@ test("arrays in WebAssembly memory stay correct when the call itself grows memor
     growing(rw, () => rw.max(stack.array, { shape: [n, npix], out: out.array }));
     sameArray(out.array, want);
   }
+});
+
+test("alloc() past 4 GiB is refused, not wrapped around to a small allocation", async () => {
+  const rw = await freshWasm();
+  for (const len of [2 ** 32 + 16, 2 ** 33, 2 ** 53]) assert.throws(() => rw.alloc("uint8", len), /cannot allocate .* \(4 GiB at most\)/);
+  assert.throws(() => rw.alloc("float32", 2 ** 30 + 4), /4 GiB at most/);
 });
 
 test("a WebAssembly trap discards the instance, and init() then loads a new one", async () => {

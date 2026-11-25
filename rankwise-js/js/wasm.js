@@ -249,7 +249,8 @@ export class WasmEngine {
   }
 
   malloc(bytes) {
-    const p = this.#x.rw_alloc(bytes);
+    // rw_alloc takes a u32: a larger count would wrap around to a small allocation
+    const p = Number.isSafeInteger(bytes) && bytes >= 0 && bytes <= 0xffffffff ? this.#x.rw_alloc(bytes) : 0;
     if (!p) throw new RangeError(`rankwise: cannot allocate ${bytes} bytes of WebAssembly memory (4 GiB at most)`);
     return p;
   }
@@ -410,7 +411,8 @@ export class WasmEngine {
       if (!residentData) {
         dataAddr = p;
         p += inBytes;
-        new In(this.memory.buffer, dataAddr, s.data.length).set(data());
+        const src = data(); // `s.data` may be detached by now, if it lives in this memory
+        new In(this.memory.buffer, dataAddr, src.length).set(src);
       }
       const st = cStrides(s.shape, esz);
       frameAddrs = Array.from({ length: s.n }, (_, k) => dataAddr + k * st[s.axis]);

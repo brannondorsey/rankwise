@@ -10,7 +10,7 @@
 // In CI, each platform's job uploads npm/<platform>/ and the release job runs this with all
 // of them present. --only-built lists only the platforms present (local install tests).
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,11 +31,15 @@ export async function packAll({ out = join(pkg, "release"), onlyBuilt = false, q
     if (!(await exists(join(pkg, "dist", f)))) throw new Error(`dist/${f} is missing: run node scripts/build.mjs first`);
   }
   await mkdir(out, { recursive: true });
+  // the repository's licenses go into every tarball
+  const licenses = ["LICENSE-MIT", "LICENSE-APACHE"];
+  const addLicenses = (dir) => Promise.all(licenses.map((f) => copyFile(join(pkg, "..", f), join(dir, f))));
   const built = [];
   for (const key of Object.keys(PLATFORMS)) {
     const dir = join(pkg, "npm", key);
     if (!(await exists(join(dir, addonFile(key))))) continue;
     await writeFile(join(dir, "package.json"), JSON.stringify(platformManifest(key, manifest.version), null, 2) + "\n");
+    await addLicenses(dir);
     built.push({ key, tarball: join(out, pack(dir, out)) });
   }
   const listed = onlyBuilt ? built.map((b) => b.key) : Object.keys(PLATFORMS);
@@ -46,6 +50,7 @@ export async function packAll({ out = join(pkg, "release"), onlyBuilt = false, q
   const stage = await mkdtemp(join(tmpdir(), "rankwise-pack-"));
   try {
     for (const f of ["js", "dist", "README.md"]) await cp(join(pkg, f), join(stage, f), { recursive: true });
+    await addLicenses(stage);
     const staged = { ...manifest };
     // the checkout's package.json is private, so it can't be published without its addons
     delete staged.private;

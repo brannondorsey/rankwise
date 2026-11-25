@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,6 +45,7 @@ for (const key of Object.keys(PLATFORMS)) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, addonFile(key)), "a stand-in: this platform's addon is built in CI");
   writeFileSync(join(dir, "package.json"), JSON.stringify(platformManifest(key, version)));
+  for (const l of ["LICENSE-MIT", "LICENSE-APACHE"]) copyFileSync(new URL(`../../${l}`, import.meta.url), join(dir, l));
   execFileSync("npm", ["pack", "--pack-destination", release, "--silent"], { cwd: dir });
 }
 assert.ok(existsSync(join(release, tarball(host))), `build the ${host} addon first (scripts/build.mjs --native)`);
@@ -57,6 +58,8 @@ for (const f of readdirSync(release)) {
   // what release.yml publishes: public, and the platform packages public under their scope
   assert.ok(!pj.private, `${f} is private and can't be published`);
   if (pj.name.startsWith("@")) assert.equal(pj.publishConfig?.access, "public", `${f} would publish as a restricted package`);
+  const listing = execFileSync("tar", ["-tzf", file], { encoding: "utf8" }).split("\n");
+  for (const l of ["LICENSE-MIT", "LICENSE-APACHE"]) assert.ok(listing.includes(`package/${l}`), `${f} has no ${l}`);
   const data = readFileSync(file);
   packages.set(pj.name, { pj, file: f, data, integrity: `sha512-${createHash("sha512").update(data).digest("base64")}` });
 }

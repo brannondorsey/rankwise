@@ -23,7 +23,9 @@
   "files": [
     "js/",
     "dist/*.wasm",
-    "README.md"
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
   ],
   "sideEffects": false,
   "publishConfig": {
