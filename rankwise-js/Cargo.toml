@@ -1,0 +1,26 @@
+[package]
+name = "rankwise-js"
+description = "Kernels behind the rankwise npm package: WebAssembly exports and a Node-API addon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "rankwise_js"
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+rankwise = { path = "../rankwise" }
+napi = { version = "3.16", optional = true }
+napi-derive = { version = "3.7", optional = true }
+
+[build-dependencies]
+napi-build = { version = "2.6", optional = true }
+
+[features]
+default = []
+# The Node-API addon (Node, Bun, Deno): native ISAs and threads, zero-copy TypedArrays.
+node = ["dep:napi", "dep:napi-derive", "dep:napi-build", "rankwise/rayon"]

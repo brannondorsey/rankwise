@@ -1,0 +1,8 @@
+# taskset -c 1 cargo run --release --example quickbench -- 31 1024   (Rust library)
+avx512  median       n=31 1024x1024 pad=0: 0.015 s    14.1 ns/px
+avx512  q10/50/90    n=31 1024x1024 pad=0: 0.018 s    16.7 ns/px
+avx512  sigclip f64  n=31 1024x1024 pad=0: 0.045 s    42.8 ns/px
+
+# the same data through the Node-API addon (taskset -c 1, best of 7): frames as subarrays of one buffer, then as separate copies
+addon avx512: median 16.1 ms, sigclip 47.8 ms
+addon avx512: median 16.9 ms, sigclip 49.7 ms

@@ -38,3 +38,10 @@ bench/data/
 *.npy
 !docs/**/*.npy
 examples/c/stack
+
+# JavaScript package build outputs (dist/ above covers the .wasm files)
+rankwise-js/node_modules/
+rankwise-js/test/fixtures/
+examples/js/node_modules/
+rankwise-js/npm/
+rankwise-js/release/

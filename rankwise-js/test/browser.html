@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>rankwise conformance</title>
+<pre id="log">running…</pre>
+<script type="module">
+  const log = document.getElementById("log");
+  const lines = [];
+  for (const k of ["log", "error"]) {
+    const orig = console[k];
+    console[k] = (...a) => { lines.push(a.join(" ")); log.textContent = lines.join("\n"); orig(...a); };
+  }
+  await import("./conformance.test.mjs");
+</script>

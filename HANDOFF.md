@@ -54,9 +54,10 @@ original handoff (Brannon has it; its §4 facts are all folded into [docs/confor
 | `rankwise/tests/` | `networks.rs` (0-1 principle, n ≤ 20, exhaustive), `oracle.rs` (every ISA vs scalar oracle, bit for bit). |
 | `rankwise-capi/` | `rw_*` C ABI, `catch_unwind` everywhere, `include/rankwise.h` (cbindgen 0.29.4; CI diffs it). |
 | `rankwise-py/` | PyO3 0.30 abi3-py39 extension (`src/lib.rs`) + NumPy-style API (`python/rankwise/__init__.py`). |
+| `rankwise-js/` | The `@rankwise-js/rankwise` npm package, two backends behind one API. Rust: `src/request.rs` (the f64 request format both share), `src/wasm.rs` (raw `rw_*` exports, no wasm-bindgen), `src/node.rs` (napi-rs addon, `--features node`, bounds-checked segmented addresses). JS: `js/core.js` (NumPy-style API, engine-agnostic), `js/wasm.js` + `js/native.js` (engines), `js/node.js` (Node/Bun/Deno entry: addon first, WebAssembly fallback), `js/rankwise.js` (browser entry), `js/platforms.js` (addon platforms). `scripts/build.mjs` (`dist/*.wasm`, `--native` → `npm/<platform>/`), `scripts/pack.mjs` (release tarballs, injects `optionalDependencies`), `test/` (fixtures, API, conformance, install-from-registry, Chromium), `bench/bench.mjs`. Design and numbers: [docs/javascript.md](docs/javascript.md). |
 | `conformance/` | pytest suite vs pinned NumPy 2.5.3, SciPy 1.18.1, astropy 8.0.2; Siril preset checks; C ABI vs Python. |
 | `bench/` | One-core benchmarks → `bench/results/*.json` → `figures.py` (charts) and `report.py` (`docs/benchmarks.md`). |
-| `examples/` | `c/stack.c`, `python/astro_demo.py` (README hero, comparison and rejection images). |
+| `examples/` | `c/stack.c`, `python/astro_demo.py` (README hero, comparison and rejection images), `js/` (Node stacking, Bun server, worker threads, browser page). |
 | `docs/` | `design.md` (architecture + provenance), `conformance.md`, `presets.md`, generated `benchmarks.md`, `diagrams.py` → SVGs. |
 
 ## 3. How to build, test and benchmark
@@ -74,6 +75,19 @@ python -m pytest conformance -q                           # 1,175 tests, ~1.5 mi
 
 pip install -r bench/requirements.txt                     # read its header: two packages need --no-deps
 bash bench/run_all.sh                                     # pins taskset -c 1, then charts + report
+```
+
+JavaScript (`rustup target add wasm32-unknown-unknown wasm32-wasip1`; Node 18+, Bun, Deno):
+
+```bash
+node rankwise-js/scripts/build.mjs --all [--dev]        # dist/*.wasm + npm/<platform>/ addon (--dev skips LTO)
+node rankwise-js/test/package.test.mjs                  # pack, local registry, npm/bun install, run, bundle
+python rankwise-js/test/make_fixtures.py                # needs conformance/requirements.txt
+node rankwise-js/test/api.test.mjs && node rankwise-js/test/conformance.test.mjs   # also bun / deno run -A
+NODE_PATH=$(npm root -g) node rankwise-js/test/browser.mjs                          # headless Chromium
+RUSTFLAGS="-C target-feature=+simd128" CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/rankwise-js/scripts/wasi-run.mjs" \
+  cargo test --release -p rankwise --target wasm32-wasip1  # oracle tests on simd128
+cd rankwise-js && npm install && taskset -c 1 node bench/bench.mjs --json ../bench/results/js_node.json
 ```
 
 NEON on an x86 box: `apt-get install qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross`,
@@ -94,10 +108,20 @@ publishing (OIDC). The repo stores no registry tokens. One-time setup per regist
   workflow `release.yml`, environment `crates-io`.
 * **PyPI**: project (or pending publisher) Settings → Publishing → GitHub: repo
   `brannondorsey/rankwise`, workflow `release.yml`, environment `pypi`.
-* **npm**: `rankwise` is claimed by a manual placeholder; there is no JS package to
-  publish yet, so `release.yml` does not touch npm.
+* **npm**: everything lives in the `@rankwise-js` scope, because someone else holds the
+  unscoped `rankwise`. `npm.yml` builds `@rankwise-js/rankwise` and the five
+  `@rankwise-js/<platform>` addon packages; `release.yml` publishes the platform packages, then
+  the main one, skipping versions already on npm. One-time setup: create the `@rankwise-js` org
+  (free, public); publish a `0.0.1` placeholder of each of the six names by hand (trusted
+  publishing needs the packages to exist; `platformManifest(key, "0.0.1")` writes a platform
+  one); then each package's Settings → Trusted Publisher → GitHub Actions: repo
+  `brannondorsey/rankwise`, workflow `release.yml`, environment `npm`. Only `pack.mjs` output
+  is publishable: the checkout's `package.json` is `private` and lacks the
+  `optionalDependencies`, so `npm publish` from `rankwise-js/` fails instead of shipping a
+  package without addons. If npm ever transfers the unscoped `rankwise`, publish there and
+  deprecate the scoped name with a pointer.
 
-Optionally add required reviewers to the `pypi` and `crates-io` environments in the repo
+Optionally add required reviewers to the `pypi`, `crates-io` and `npm` environments in the repo
 settings so a pushed tag waits for approval before publishing.
 
 ## 4. Open items, in priority order
@@ -114,7 +138,8 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 | 6 | **Siril presets** | sigma, median-sigma, percentile identical on synthetic data; on real frames one exact tie per 16.8 Mpx stack goes the other way in f64 (Siril computes in float32; `precision="f32"` matches every pixel). Winsorized 99.8% at 10 frames, small-stack gap as documented. k-MAD (`rej a`) not reproduced; `preset="siril", method="mad"` raises. | Retest against Siril 1.4 before more black-box work. Do not read Siril source. |
 | 7 | **PixInsight winsorized preset** | Implemented from PCL's public docs (Sn·1.1926 start, cutoff 5); never run against PixInsight. | Check the PCL license, then validate on Brannon's PixInsight install or drop the preset from 0.1.0. |
 | 8 | **Legal** | Design log notes TI US9665542 (different method). | Brannon arranges review before 1.0. |
-| 9 | **Release** | `release.yml` publishes `v*` tags to PyPI (wheels + sdist from `wheels.yml`) and crates.io via trusted publishing; no secrets. Names not yet claimed. | Claim the names (§3, Releasing), add the trusted publishers, tag `v0.1.0`, move the CHANGELOG entry out of "unreleased". capi stays unpublished. |
+| 9 | **Release** | `release.yml` publishes `v*` tags to PyPI (wheels + sdist from `wheels.yml`), crates.io and npm (packages from `npm.yml`) via trusted publishing; no secrets. Names not yet claimed. | Claim the names (§3, Releasing), add the trusted publishers, tag `v0.1.0`, move the CHANGELOG entry out of "unreleased". capi stays unpublished. |
+| 11 | **JavaScript** | Done: simd128 backend; `rankwise-js` with a Node-API addon (preferred in Node/Bun/Deno) and WebAssembly (browsers, fallback); identical to NumPy on Node, Bun, Deno (native + wasm) and Chromium; install flow tested against a local registry; `npm.yml` builds all platform packages. Not done: Firefox, Safari; addon not run on macOS/Windows/arm64 except in CI; `@rankwise-js` scope not yet claimed. | Claim `@rankwise-js` and do the first npm release by hand (§3, Releasing). Do **not** add `optionalDependencies` to the repo's `package.json` (until the scope is owned that invites dependency confusion, and the checkout stays unpublishable); `pack.mjs` injects them. musl and other platforms fall back to WebAssembly; add them to `js/platforms.js` + `npm.yml` if users ask. |
 | 10 | Known differences | Signed-zero sign bit (x86 vs NEON min/max); `median(out=float64)` on f32 averages in f32; `trimmed_mean` more accurate than SciPy's f32; `nanarg*` all-NaN returns −1 (+ `strict=True`). All in [docs/conformance.md](docs/conformance.md#known-differences). | Leave unless a user needs it; −0 canonicalization would cost a blend per output. |
 
 ## 5. v0.2 backlog (from the scope doc; file as `v0.2` issues)
@@ -125,6 +150,8 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 * Linear-fit clipping and generalized ESD. These break v0.1's "kept is exactly
   `v_lo <= x <= v_hi`" rescan trick, so frame identity has to ride through the network.
 * R and Julia bindings (the C ABI is the base), xarray/dask helpers, and a Siril script.
+* A threaded WebAssembly build (`+atomics`, nightly `build-std`, cross-origin isolation in
+  browsers); today JS scales with one instance per worker (`examples/js/node-parallel.mjs`).
 
 ## 6. Things that cost time and aren't obvious
 
@@ -165,6 +192,16 @@ Each has a recommendation; go ahead with it unless Brannon says otherwise.
 * **Data sources that work from this VM:** Landsat via Planetary Computer (`pystac-client`,
   `planetary-computer`, `rasterio`); CCD frames from Zenodo 3245296; GEFS from dynamical.org.
   All cache under `bench/data/` (gitignored).
+* **Native addon debug builds** overflow Node's 8 MB main-thread stack (unoptimized kernels);
+  `scripts/build.mjs` always builds release (`--dev` only drops LTO).
+* **The registry test serves from its own event loop**: installs there must be async
+  (`execFileSync` deadlocks).
+* **WebAssembly tiering.** V8 runs wasm in its baseline compiler until a hot function is
+  optimized in the background, and a running call never switches over. One huge inlined
+  function per ISA kept calls 3–4× slow; on wasm the per-block helpers and networks are
+  `inline(never)` (`cfg_attr`, native unchanged). Check `node --no-liftoff` when a wasm
+  benchmark looks slow, and warm up before timing. Uint8 `out` arrays are boolean in the core;
+  the JS layer writes uint16 and narrows.
 * **Charts** use `bench/figures.py`'s `THEMES` (light/dark), Inter, and `headline()`; README
   images are `<picture>` pairs. Regenerate both themes when changing any chart.
 

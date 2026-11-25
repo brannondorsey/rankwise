@@ -21,8 +21,9 @@ when a slice is 30 values long. rankwise vectorizes *across* slices: register `k
 `k` of 16 neighbouring pixels (AVX-512), so every min/max instruction advances 16 sorts at
 once, and nothing ever branches on pixel values.
 
-It ships as a Rust crate, a C library with a header, and a Python package, and picks
-AVX-512, AVX2, NEON or a portable fallback at runtime.
+It ships as a Rust crate, a C library with a header, a Python package and an npm package
+(a native addon for Node, Bun and Deno, WebAssembly for browsers). Natively it picks AVX-512, AVX2,
+NEON or a portable fallback at runtime; in WebAssembly, the simd128 build or a portable one.
 
 ## Python
 
@@ -228,6 +229,46 @@ rw_status st = rw_clip_mean_f32(frames, 40, H * W, &clip, out, /*rejected*/ NULL
 [`examples/c`](examples/c) builds a complete stacker (`make -C examples/c`). Errors come back as
 `rw_status`; panics never cross the boundary.
 
+## JavaScript (Node, Bun, Deno and browsers)
+
+```js
+import { init } from "@rankwise-js/rankwise";    // rankwise-js/js/node.js until it is on npm
+
+const rw = await init();                         // native addon on servers, WebAssembly elsewhere
+rw.backend, rw.isa;                              // "native", "avx512"  ·  "wasm", "simd128"
+const master = rw.median(frames, { threads: 8 }); // Float32Array[] → Float32Array, as np.median
+const [p10, p90] = rw.quantile(cube, [0.1, 0.9], { shape: [31, 721, 1440] });
+const { value, mask } = rw.sigmaClipMean(subs, { sigma: 3, mask: true });   // astropy's decisions
+```
+
+It has the same functions as the Python package, in camelCase, on TypedArrays: frame lists, or
+one array with `shape` and `axis`.
+
+**Node, Bun and Deno** run a Node-API addon, the same kernels at the Rust library's speed (AVX-512,
+AVX2 or NEON, and threads) on your arrays in place. Each platform's addon is an optional
+dependency with `os`/`cpu`/`libc`, so npm, pnpm, yarn and bun install only the matching one.
+
+**Browsers, bundlers and other platforms** run WebAssembly: a simd128 build (four lanes), or a
+portable one where the engine has no SIMD.
+
+The Node entry falls back to WebAssembly by itself when the addon is missing or can't load, and
+`rw.fallbackReason` says why. `init({ backend: "native" | "wasm" })` or `RANKWISE_BACKEND` forces a
+backend ([how the choice works](rankwise-js/README.md#backends-native-or-webassembly)).
+
+On one thread in Node, rankwise is **18–37× faster than the fastest JavaScript natively and 5–10×
+in WebAssembly** ([numbers and design](docs/javascript.md)):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/bench_js_dark.png">
+  <img alt="rankwise in Node against JavaScript: native addon, WebAssembly and plain JavaScript on medians, sigma clipping, ensemble quantiles and nodata medians" src="docs/img/bench_js_light.png">
+</picture>
+
+Results are identical to NumPy, SciPy and astropy on every backend in Node, Bun, Deno and
+Chromium. Examples: [stacking in Node](examples/js/node-stack.mjs), [an ensemble-statistics
+server on Bun](examples/js/bun-server.ts), [every core](examples/js/node-parallel.mjs) and
+[stacking in the browser](examples/js/browser/). For the browser one, serve the repository root
+and open `/examples/js/browser/`. API: [rankwise-js/README.md](rankwise-js/README.md).
+
 ## Building
 
 ```bash
@@ -236,6 +277,7 @@ cargo build --release -p rankwise-capi                     # C library
 pip install maturin && maturin build --release -m rankwise-py/Cargo.toml -o dist
 pip install --find-links dist rankwise                     # Python (abi3 wheel, Python >= 3.9)
 python -m pytest conformance -q                            # conformance suite
+rustup target add wasm32-unknown-unknown && node rankwise-js/scripts/build.mjs --all  # npm package
 ```
 
 Rust 1.89 or later (AVX-512 intrinsics are stable from 1.89); no nightly features.
