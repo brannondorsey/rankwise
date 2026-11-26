@@ -306,7 +306,7 @@
     <div class="wrap foot-in">
       <div class="foot-brand">
         <a class="brand" href="#top"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><g stroke="url(#mg)" stroke-width="2.4" stroke-linecap="round" fill="none"><path d="M4 8h24M4 16h24M4 24h24"/><path d="M11 8v8M21 16v8"/></g><g fill="url(#mg)"><circle cx="11" cy="8" r="3"/><circle cx="11" cy="16" r="3"/><circle cx="21" cy="16" r="3"/><circle cx="21" cy="24" r="3"/></g></svg><span>rankwise</span></a>
-        <p class="mono">AVX-512 · AVX2 · NEON · portable<br>MIT OR Apache-2.0</p>
+        <p class="mono">AVX-512 · AVX2 · NEON · portable<br>MIT OR Apache-2.0 · <button id="cmt-switch" class="cmt-switch" type="button" aria-pressed="false" data-no-comment>comments off</button></p>
       </div>
       <nav class="foot-links mono">
         <a href="https://github.com/brannondorsey/rankwise">GitHub</a>
@@ -319,5 +319,867 @@
   </footer>
 
   <script type="module" src="/src/main.js"></script>
+  <!-- Commenting layer (skills: commentable-html). Off by default; the faint
+       "comments" switch in the footer turns it on and is remembered per browser. -->
+  <script>
+    (function () {
+      var K = 'rankwise:commenting', on = false;
+      try { on = localStorage.getItem(K) === '1'; } catch (e) {}
+      if (!on) window.__commentable = { disabled: true }; // commenter bails when this is set
+      document.addEventListener('DOMContentLoaded', function () {
+        var b = document.getElementById('cmt-switch');
+        if (!b) return;
+        function sync() { b.textContent = 'comments ' + (on ? 'on' : 'off'); b.setAttribute('aria-pressed', String(on)); }
+        sync();
+        b.addEventListener('click', function () {
+          on = !on;
+          try { if (on) localStorage.setItem(K, '1'); else localStorage.removeItem(K); } catch (e) {}
+          if (!on) { location.reload(); return; }
+          delete window.__commentable;
+          var src = document.querySelector('script[data-commentable]');
+          if (src) { var s = document.createElement('script'); s.textContent = src.textContent; document.body.appendChild(s); }
+          sync();
+        });
+      });
+    })();
+  </script>
+<script data-commentable>
+/*!
+ * commentable-html client (commenter.js)
+ * Adds text-anchored comments to any static HTML page, persists them in
+ * localStorage, and exports page + comments as Markdown for an AI agent.
+ * Plain ES2020, no dependencies, no network, injects its own CSS.
+ * Public surface: window.__commentable = { getComments(), exportMarkdown() }.
+ *
+ * Source hygiene: no template literals and no dollar-sign replacement tokens,
+ * so the file can be safely inlined into a script tag by a simple injector.
+ */
+(function () {
+  'use strict';
+  if (window.__commentable) return;
+  if (!document.body && document.readyState !== 'loading') return;
+
+  const BT = String.fromCharCode(96); // backtick, built at runtime on purpose
+  const MAX_QUOTE = 500;
+  const CTX = 40; // prefix/suffix length used for re-anchoring
+  const KEY = 'commentable:v1:' + location.origin + location.pathname;
+  const INSTRUCTION =
+    'The reader is working through this page and left comments (numbered [C1], [C2] ... ). ' +
+    'Answer each comment; quote the passage when helpful. ' +
+    'If a comment is a question the page does not answer, say so.';
+
+  // Elements whose text never takes part in anchoring or export.
+  const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TEXTAREA', 'SELECT',
+    'IFRAME', 'CANVAS', 'OBJECT', 'svg', 'SVG', 'HEAD']);
+  // Block-level tags: a change of nearest block between text nodes counts as a word break.
+  const BLOCK = new Set(['ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'BODY', 'CAPTION', 'DD', 'DETAILS',
+    'DIV', 'DL', 'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4', 'H5',
+    'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE', 'SECTION', 'SUMMARY', 'TABLE', 'TBODY',
+    'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'UL']);
+  // Parents that cannot legally hold a <mark> child.
+  const NOWRAP = new Set(['TABLE', 'TBODY', 'THEAD', 'TFOOT', 'TR', 'COLGROUP', 'UL', 'OL', 'DL',
+    'SELECT', 'OPTGROUP', 'DATALIST']);
+  // Tags treated as block containers by the Markdown exporter.
+  const MD_BLOCKY = new Set(['P', 'DIV', 'SECTION', 'ARTICLE', 'ASIDE', 'MAIN', 'HEADER', 'FOOTER', 'FIGURE',
+    'FIGCAPTION', 'FORM', 'FIELDSET', 'ADDRESS', 'DD', 'DT', 'DL', 'LI', 'TR', 'TD', 'TH', 'TBODY', 'THEAD',
+    'TFOOT', 'CAPTION', 'HGROUP', 'CENTER', 'SUMMARY']);
+  // Tags dropped by the Markdown exporter (noise / interactive chrome).
+  const MD_DROP = new Set(['NAV', 'BUTTON', 'INPUT', 'LINK', 'META', 'AUDIO', 'VIDEO']);
+
+  // ---------------------------------------------------------------- state
+  let comments = []; // {id,n,quote,prefix,suffix,section,sectionId,comment,createdAt,orphaned}
+  let nextN = 1;
+  let flatCache = null; // invalidated whenever we mutate the DOM
+  let editingId = null;
+  let pending = null; // capture awaiting a comment text (popover open)
+  let lastRange = null;
+  let lastRect = null;
+  let root, toggleBtn, badge, panel, listEl, fab, pop, popQuote, popText, toastEl;
+
+  // -------------------------------------------------------------- helpers
+  function h(tag, props, kids) {
+    const el = document.createElement(tag);
+    if (props) {
+      for (const k in props) {
+        const v = props[k];
+        if (v == null || v === false) continue;
+        if (k === 'class') el.className = v;
+        else if (k === 'text') el.textContent = v;
+        else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+        else el.setAttribute(k, v === true ? '' : v);
+      }
+    }
+    if (kids) for (const c of kids) if (c) el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    return el;
+  }
+  function collapse(s) { return String(s).replace(/\s+/g, ' ').trim(); }
+  function trunc(s, n) { return s.length > n ? s.slice(0, n - 1) + '\u2026' : s; }
+  function newId() { return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function q(id) { return '[data-cmt="' + id + '"]'; }
+  function isSkippedEl(el) {
+    return SKIP_TAGS.has(el.tagName) || el.hidden || el.classList.contains('cmt-skip') || el.hasAttribute('data-no-comment');
+  }
+  function elOf(node) { return node && node.nodeType === 1 ? node : node && node.parentElement; }
+
+  // ---------------------------------------------------------- persistence
+  function loadState() {
+    try {
+      const d = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!d || !Array.isArray(d.comments)) return;
+      comments = d.comments.filter(function (c) { return c && typeof c.id === 'string'; }).map(function (c, i) {
+        return {
+          id: c.id, n: (c.n | 0) || i + 1, quote: c.quote || '', prefix: c.prefix || '', suffix: c.suffix || '',
+          section: c.section || '', sectionId: c.sectionId || '', comment: c.comment || '',
+          createdAt: c.createdAt || new Date().toISOString(), orphaned: !!c.quote
+        };
+      });
+      nextN = Math.max(d.nextN | 0, comments.reduce(function (m, c) { return Math.max(m, c.n); }, 0) + 1, 1);
+    } catch (e) { /* corrupt or unavailable storage: start empty */ }
+  }
+  function saveState() {
+    try {
+      const slim = comments.map(function (c) {
+        return { id: c.id, n: c.n, quote: c.quote, prefix: c.prefix, suffix: c.suffix, section: c.section,
+          sectionId: c.sectionId, comment: c.comment, createdAt: c.createdAt };
+      });
+      localStorage.setItem(KEY, JSON.stringify({ v: 1, nextN: nextN, comments: slim }));
+    } catch (e) { /* quota / private mode: keep in memory only */ }
+  }
+
+  // ------------------------------------------------ flattened page text
+  // The page text is flattened once (cached) into a whitespace-collapsed
+  // string plus per-character raw offsets, so a match in the string can be
+  // mapped back to (text node, offset). Blocks and <br> become one space.
+  function blockOf(node) {
+    let p = node.parentNode;
+    while (p && p !== document.body && !BLOCK.has(p.tagName)) p = p.parentNode;
+    return p;
+  }
+  function buildFlat() {
+    const items = []; // text nodes, or null for a <br>
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+      acceptNode: function (n) {
+        if (n.nodeType === 3) return n.data.length ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        if (isSkippedEl(n)) return NodeFilter.FILTER_REJECT;
+        if (n.tagName === 'BR') items.push(null);
+        return NodeFilter.FILTER_SKIP;
+      }
+    });
+    while (walker.nextNode()) items.push(walker.currentNode);
+    let total = 0;
+    for (const it of items) if (it) total += it.data.length;
+    const rawOff = new Int32Array(total + items.length + 2);
+    const nodes = [], start = [], end = [];
+    let out = '', len = 0, lastSpace = true, prevBlock = null, brk = false;
+    for (const it of items) {
+      if (!it) { brk = true; continue; }
+      const blk = blockOf(it);
+      if ((brk || blk !== prevBlock) && !lastSpace) { out += ' '; rawOff[len++] = 0; lastSpace = true; }
+      brk = false; prevBlock = blk;
+      const d = it.data;
+      let seg = '';
+      start.push(len);
+      for (let j = 0; j < d.length; j++) {
+        const ch = d.charCodeAt(j);
+        if (ch === 32 || ch === 10 || ch === 9 || ch === 13 || ch === 12 || ch === 160) {
+          if (!lastSpace) { seg += ' '; rawOff[len++] = j; lastSpace = true; }
+        } else { seg += d[j]; rawOff[len++] = j; lastSpace = false; }
+      }
+      out += seg; nodes.push(it); end.push(len);
+    }
+    return { text: out, nodes: nodes, start: start, end: end, rawOff: rawOff };
+  }
+  function getFlat() { return flatCache || (flatCache = buildFlat()); }
+
+  // smallest node index k with end[k] > i (binary search)
+  function nodeEndingAfter(flat, i) {
+    let lo = 0, hi = flat.nodes.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (flat.end[mid] > i) hi = mid; else lo = mid + 1; }
+    return lo;
+  }
+
+  // Map a DOM Range to [s,e) in the flat string (trimmed, capped).
+  function rangeToFlat(flat, range) {
+    let s = -1, e = -1;
+    for (let k = 0; k < flat.nodes.length; k++) {
+      const node = flat.nodes[k];
+      if (!range.intersectsNode(node)) { if (s >= 0) break; continue; }
+      const a = node === range.startContainer ? range.startOffset : 0;
+      const b = node === range.endContainer ? range.endOffset : node.data.length;
+      if (a >= b) continue;
+      let i = flat.start[k]; while (i < flat.end[k] && flat.rawOff[i] < a) i++;
+      let j = flat.end[k]; while (j > flat.start[k] && flat.rawOff[j - 1] >= b) j--;
+      if (i >= j) continue;
+      if (s < 0) s = i;
+      e = j;
+    }
+    if (s < 0) return null;
+    const t = flat.text;
+    while (s < e && t[s] === ' ') s++;
+    while (e > s && t[e - 1] === ' ') e--;
+    let truncated = false;
+    if (e - s > MAX_QUOTE) { e = s + MAX_QUOTE; truncated = true; while (e > s && t[e - 1] === ' ') e--; }
+    return s < e ? { s: s, e: e, truncated: truncated } : null;
+  }
+
+  // Locate a stored quote; with several hits prefer the best prefix/suffix match.
+  function findQuote(flat, c) {
+    const qt = c.quote, t = flat.text;
+    if (!qt) return null;
+    const cands = [];
+    let i = t.indexOf(qt);
+    while (i !== -1 && cands.length < 500) { cands.push(i); i = t.indexOf(qt, i + 1); }
+    if (!cands.length) return null;
+    let best = cands[0], bestScore = -1;
+    const pre = c.prefix || '', suf = c.suffix || '';
+    for (const at of cands) {
+      let p = 0; while (p < pre.length && t[at - 1 - p] === pre[pre.length - 1 - p]) p++;
+      let s = 0; const from = at + qt.length; while (s < suf.length && t[from + s] === suf[s]) s++;
+      if (p + s > bestScore) { bestScore = p + s; best = at; }
+      if (cands.length === 1) break;
+    }
+    return [best, best + qt.length];
+  }
+
+  // Nearest heading (h1-h6) at or before the node, in document order.
+  function sectionFor(node) {
+    let best = null;
+    const hs = document.body.querySelectorAll('h1,h2,h3,h4,h5,h6');
+    for (const hd of hs) {
+      if (hd.closest('.cmt-skip,[data-no-comment]')) continue;
+      if (hd === node || (hd.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) best = hd;
+      else break;
+    }
+    if (!best) return { text: '', id: '' };
+    const clone = best.cloneNode(true);
+    clone.querySelectorAll('.cmt-skip').forEach(function (n) { n.remove(); });
+    return { text: collapse(clone.textContent), id: best.id || '' };
+  }
+
+  // Turn a live selection range into everything needed to store a comment.
+  function capture(range) {
+    const flat = getFlat();
+    const r = rangeToFlat(flat, range);
+    if (!r) return null;
+    const t = flat.text;
+    const k = nodeEndingAfter(flat, r.s);
+    const sec = sectionFor(flat.nodes[k] || document.body);
+    return { flat: flat, s: r.s, e: r.e, truncated: r.truncated, quote: t.slice(r.s, r.e),
+      prefix: t.slice(Math.max(0, r.s - CTX), r.s), suffix: t.slice(r.e, r.e + CTX),
+      section: sec.text, sectionId: sec.id };
+  }
+
+  // ------------------------------------------------------ highlighting
+  // Wrap flat range [s,e) in <mark class="cmt-hl">, one mark per text node.
+  function wrapRange(flat, s, e, c) {
+    const pieces = [];
+    for (let k = nodeEndingAfter(flat, s); k < flat.nodes.length && flat.start[k] < e; k++) {
+      const a = Math.max(s, flat.start[k]), b = Math.min(e, flat.end[k]);
+      if (a >= b) continue;
+      pieces.push({ node: flat.nodes[k], from: flat.rawOff[a], to: flat.rawOff[b - 1] + 1 });
+    }
+    const marks = [];
+    for (const p of pieces) {
+      let t = p.node;
+      const parent = t.parentNode;
+      if (!parent || NOWRAP.has(parent.tagName)) continue;
+      if (parent.closest && parent.closest('mark.cmt-hl' + q(c.id))) continue;
+      if (!t.data.slice(p.from, p.to).trim()) continue;
+      if (p.to < t.data.length) t.splitText(p.to);
+      if (p.from > 0) t = t.splitText(p.from);
+      const mark = h('mark', { class: 'cmt-hl', 'data-cmt': c.id, title: trunc(c.comment, 500) });
+      parent.insertBefore(mark, t);
+      mark.appendChild(t);
+      marks.push(mark);
+    }
+    flatCache = null; // text nodes were split
+    if (marks.length) {
+      const last = marks[marks.length - 1];
+      const sup = h('sup', { class: 'cmt-ref cmt-skip', 'data-cmt': c.id, title: trunc(c.comment, 500), text: '[' + c.n + ']' });
+      last.parentNode.insertBefore(sup, last.nextSibling);
+    }
+    return marks;
+  }
+  function unwrap(id) {
+    document.querySelectorAll('sup.cmt-ref' + q(id)).forEach(function (n) { n.remove(); });
+    document.querySelectorAll('mark.cmt-hl' + q(id)).forEach(function (m) {
+      const p = m.parentNode;
+      while (m.firstChild) p.insertBefore(m.firstChild, m);
+      p.removeChild(m);
+      p.normalize();
+    });
+    flatCache = null;
+  }
+  function anchor(c, hint) {
+    if (!c.quote) { c.orphaned = false; return true; }
+    const flat = getFlat();
+    const span = hint && hint.flat === flat ? [hint.s, hint.e] : findQuote(flat, c);
+    if (!span) { c.orphaned = true; return false; }
+    c.orphaned = wrapRange(flat, span[0], span[1], c).length === 0;
+    return !c.orphaned;
+  }
+  function reanchorOrphans() {
+    let changed = false;
+    for (const c of comments) if (c.quote && c.orphaned && anchor(c)) changed = true;
+    if (changed) { renderList(); saveState(); }
+  }
+  function setMarkTitles(c) {
+    document.querySelectorAll('.cmt-hl' + q(c.id) + ',.cmt-ref' + q(c.id)).forEach(function (n) {
+      n.setAttribute('title', trunc(c.comment, 500));
+    });
+  }
+
+  // Comments in document order; general then orphaned ones last.
+  function orderedComments() {
+    const rank = new Map();
+    let r = 0;
+    document.body.querySelectorAll('mark.cmt-hl').forEach(function (m) {
+      const id = m.getAttribute('data-cmt');
+      if (!rank.has(id)) rank.set(id, r++);
+    });
+    const grp = function (c) { return rank.has(c.id) ? 0 : c.quote ? 1 : 2; };
+    return comments.slice().sort(function (a, b) {
+      return grp(a) - grp(b) || (grp(a) === 0 ? rank.get(a.id) - rank.get(b.id) : a.n - b.n);
+    });
+  }
+
+  // ------------------------------------------------------- comment CRUD
+  function addComment(cap, text) {
+    const c = { id: newId(), n: nextN++, quote: cap ? cap.quote : '', prefix: cap ? cap.prefix : '',
+      suffix: cap ? cap.suffix : '', section: cap ? cap.section : '', sectionId: cap ? cap.sectionId : '',
+      comment: text, createdAt: new Date().toISOString(), orphaned: false };
+    comments.push(c);
+    if (cap) anchor(c, cap);
+    saveState(); renderList();
+    return c;
+  }
+  function deleteComment(id) {
+    unwrap(id);
+    comments = comments.filter(function (c) { return c.id !== id; });
+    saveState(); renderList();
+  }
+
+  // ------------------------------------------------------ Markdown export
+  // Walks the live DOM (marks are transparent, sups/UI skipped) so text is
+  // never doubled; adds [Cn] after the last mark of each comment.
+  function pageToMarkdown() {
+    const last = new Map();
+    document.body.querySelectorAll('mark.cmt-hl').forEach(function (m) { last.set(m.getAttribute('data-cmt'), m); });
+    const numOf = new Map(comments.map(function (c) { return [c.id, c.n]; }));
+
+    function marker(el) {
+      if (el.tagName !== 'MARK' || !el.classList.contains('cmt-hl')) return '';
+      const id = el.getAttribute('data-cmt');
+      return last.get(id) === el && numOf.has(id) ? '[C' + numOf.get(id) + ']' : '';
+    }
+    function skip(el) {
+      if (isSkippedEl(el) || MD_DROP.has(el.tagName)) return true;
+      return window.getComputedStyle(el).display === 'none';
+    }
+    function raw(node) { // verbatim text (for pre / code)
+      if (node.nodeType === 3) return node.data;
+      if (node.nodeType !== 1 || skip(node)) return '';
+      if (node.tagName === 'BR') return '\n';
+      let s = '';
+      for (const c of node.childNodes) s += raw(c);
+      return s + marker(node);
+    }
+    function flush(st) {
+      const t = st.cur.replace(/ +/g, ' ').replace(/ ?\n ?/g, '  \n').trim();
+      st.cur = '';
+      if (t) st.blocks.push({ s: t, list: false });
+    }
+    function blocksOf(parent) {
+      const st = { blocks: [], cur: '' };
+      for (const c of parent.childNodes) walk(c, st);
+      flush(st);
+      return st.blocks;
+    }
+    function inline(el) {
+      return blocksOf(el).map(function (b) { return b.s; }).join(' ').replace(/\s*\n\s*/g, ' ').trim();
+    }
+    function wrapInline(st, el, m) {
+      const t = inline(el);
+      if (!t) return;
+      const lead = /^\s/.test(el.textContent) ? ' ' : '', trail = /\s$/.test(el.textContent) ? ' ' : '';
+      st.cur += lead + m + t.trim() + m + trail;
+    }
+    function fence(pre) {
+      const code = raw(pre).replace(/\n+$/, '');
+      const holder = pre.querySelector('code') || pre;
+      const lm = /(?:language|lang)-([\w+#.-]+)/.exec(String(holder.className || ''));
+      let run = 0;
+      (code.match(new RegExp(BT + '+', 'g')) || []).forEach(function (m) { run = Math.max(run, m.length); });
+      const f = BT.repeat(Math.max(3, run + 1));
+      return f + (lm ? lm[1] : '') + '\n' + code + '\n' + f;
+    }
+    function listMd(el) {
+      const ordered = el.tagName === 'OL';
+      let idx = ordered ? parseInt(el.getAttribute('start'), 10) || 1 : 0;
+      const lines = [];
+      for (const li of el.children) {
+        if (skip(li)) continue;
+        if (li.tagName === 'UL' || li.tagName === 'OL') { // invalid-but-common direct nesting
+          lines.push(listMd(li).split('\n').map(function (l) { return '  ' + l; }).join('\n'));
+          continue;
+        }
+        if (li.tagName !== 'LI') continue;
+        const mk = ordered ? (idx++) + '. ' : '- ';
+        const pad = ' '.repeat(mk.length);
+        const bs = blocksOf(li);
+        if (!bs.length) continue;
+        let out = '';
+        bs.forEach(function (b, i) {
+          const body = b.s.split('\n').join('\n' + pad);
+          if (i === 0) out = mk + body;
+          else out += (b.list ? '\n' : '\n\n') + pad + body;
+        });
+        lines.push(out);
+      }
+      return lines.join('\n');
+    }
+    function tableMd(t) {
+      const rows = Array.from(t.querySelectorAll('tr')).filter(function (r) { return r.closest('table') === t && !skip(r); });
+      const data = rows.map(function (r) {
+        return Array.from(r.children).filter(function (c) { return /^T[DH]$/.test(c.tagName) && !skip(c); })
+          .map(function (c) { return inline(c).replace(/\|/g, '\\|'); });
+      });
+      const cols = data.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+      if (!cols) return '';
+      data.forEach(function (r) { while (r.length < cols) r.push(''); });
+      const line = function (r) { return '| ' + r.join(' | ') + ' |'; };
+      const sep = [];
+      for (let i = 0; i < cols; i++) sep.push('---');
+      const out = [line(data[0]), line(sep)].concat(data.slice(1).map(line));
+      const cap = t.querySelector('caption');
+      return (cap && !skip(cap) && inline(cap) ? '*' + inline(cap) + '*\n\n' : '') + out.join('\n');
+    }
+    function walk(n, st) {
+      if (n.nodeType === 3) { st.cur += n.data.replace(/\s+/g, ' '); return; }
+      if (n.nodeType !== 1 || skip(n)) return;
+      const tag = n.tagName;
+      if (/^H[1-6]$/.test(tag)) {
+        flush(st);
+        const t = inline(n);
+        if (t) st.blocks.push({ s: '#'.repeat(+tag[1]) + ' ' + t, list: false });
+      } else if (tag === 'UL' || tag === 'OL') {
+        flush(st);
+        const s = listMd(n);
+        if (s) st.blocks.push({ s: s, list: true });
+      } else if (tag === 'BLOCKQUOTE') {
+        flush(st);
+        const inner = blocksOf(n).map(function (b) { return b.s; }).join('\n\n');
+        if (inner) st.blocks.push({ s: inner.split('\n').map(function (l) { return l ? '> ' + l : '>'; }).join('\n'), list: false });
+      } else if (tag === 'PRE') {
+        flush(st); st.blocks.push({ s: fence(n), list: false });
+      } else if (tag === 'TABLE') {
+        flush(st);
+        const s = tableMd(n);
+        if (s) st.blocks.push({ s: s, list: false });
+      } else if (tag === 'HR') {
+        flush(st); st.blocks.push({ s: '---', list: false });
+      } else if (tag === 'BR') {
+        st.cur += '\n';
+      } else if (tag === 'IMG') {
+        st.cur += n.getAttribute('alt') || '';
+      } else if (tag === 'A') {
+        const t = inline(n), href = n.href;
+        if (t && href && !/^javascript:/i.test(href)) st.cur += '[' + t + '](' + href.replace(/\)/g, '%29').replace(/ /g, '%20') + ')';
+        else st.cur += t;
+      } else if (tag === 'CODE') {
+        const t = raw(n).replace(/\s+/g, ' ').trim();
+        if (t) {
+          let run = 0;
+          (t.match(new RegExp(BT + '+', 'g')) || []).forEach(function (m) { run = Math.max(run, m.length); });
+          const f = BT.repeat(run + 1);
+          st.cur += f + (run ? ' ' + t + ' ' : t) + f;
+        }
+      } else if (tag === 'STRONG' || tag === 'B') { wrapInline(st, n, '**');
+      } else if (tag === 'EM' || tag === 'I') { wrapInline(st, n, '*');
+      } else if (tag === 'DEL' || tag === 'S') { wrapInline(st, n, '~~');
+      } else if (tag === 'DETAILS') {
+        flush(st);
+        for (const c of n.children) {
+          if (c.tagName === 'SUMMARY') {
+            const t = inline(c);
+            if (t) st.blocks.push({ s: '**' + t + '**', list: false });
+          } else walk(c, st);
+        }
+        flush(st);
+      } else if (tag === 'MARK' && n.classList.contains('cmt-hl')) {
+        for (const c of n.childNodes) walk(c, st);
+        st.cur += marker(n);
+      } else if (MD_BLOCKY.has(tag)) {
+        flush(st);
+        for (const c of n.childNodes) walk(c, st);
+        flush(st);
+      } else {
+        for (const c of n.childNodes) walk(c, st); // transparent inline/unknown element
+      }
+    }
+    return blocksOf(document.body).map(function (b) { return b.s; }).join('\n\n');
+  }
+
+  function commentsMarkdown(ord) {
+    return ord.map(function (c) {
+      const label = '**[C' + c.n + ']** ';
+      if (!c.quote) return label + 'General:\n' + c.comment;
+      return label + (c.orphaned ? '(anchor text not found) ' : '') + (c.section ? '(section: ' + c.section + ') ' : '') +
+        'on "' + c.quote + '":\n' + c.comment;
+    }).join('\n\n');
+  }
+  function exportMarkdown(opts) {
+    const title = collapse(document.title || '') || location.hostname || 'Untitled page';
+    const ord = orderedComments();
+    let md = '# ' + title + '\n\nSource: ' + location.href + '\n\n' + INSTRUCTION + '\n\n';
+    if (!(opts && opts.commentsOnly)) md += '## Page content\n\n' + pageToMarkdown() + '\n\n';
+    md += '## Comments\n\n' + (ord.length ? commentsMarkdown(ord) : '(no comments)') + '\n';
+    return md;
+  }
+
+  // ------------------------------------------------------------ clipboard
+  function legacyCopy(text) {
+    const ta = h('textarea', { class: 'cmt-copybuf', 'aria-hidden': 'true', readonly: true });
+    ta.value = text;
+    root.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove();
+    return ok;
+  }
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
+    } catch (e) { /* fall through to legacy path */ }
+    return legacyCopy(text);
+  }
+  async function doCopy(commentsOnly) {
+    const n = comments.length;
+    const ok = await copyText(exportMarkdown({ commentsOnly: commentsOnly }));
+    toast(ok ? (commentsOnly ? 'Copied ' + n + ' comments' : 'Copied ' + n + ' comments + page') : 'Copy failed - clipboard unavailable');
+  }
+
+  // ----------------------------------------------------------------- UI
+  let toastTimer = 0;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('cmt-show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('cmt-show'); }, 2400);
+  }
+  function setPanel(open) {
+    root.classList.toggle('cmt-open', open);
+    toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  function flash(els, cls) {
+    els.forEach(function (e) { e.classList.add(cls); });
+    setTimeout(function () { els.forEach(function (e) { e.classList.remove(cls); }); }, 1600);
+  }
+  function focusComment(id) {
+    setPanel(true);
+    const item = listEl.querySelector('.cmt-item' + q(id));
+    if (!item) return;
+    item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    flash([item], 'cmt-flash');
+  }
+  function jumpTo(id) {
+    const marks = Array.from(document.querySelectorAll('mark.cmt-hl' + q(id)));
+    if (!marks.length) return;
+    marks[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    flash(marks, 'cmt-flash');
+  }
+
+  function renderItem(c) {
+    const general = !c.quote;
+    const item = h('div', { class: 'cmt-item' + (c.orphaned ? ' cmt-orphan' : ''), 'data-cmt': c.id });
+    item.appendChild(h('div', { class: 'cmt-item-head' }, [
+      h('span', { class: 'cmt-num', text: 'C' + c.n }),
+      general ? h('span', { class: 'cmt-tag', text: 'general' }) : h('span', { class: 'cmt-sec', text: c.section || 'Top of page', title: c.section })
+    ]));
+    if (c.orphaned) item.appendChild(h('div', { class: 'cmt-warn', text: 'orphaned (text changed)' }));
+    if (!general) item.appendChild(h('blockquote', { class: 'cmt-quote', text: trunc(c.quote, 220) }));
+    if (editingId === c.id) {
+      const ta = h('textarea', { class: 'cmt-input', rows: '3' });
+      ta.value = c.comment;
+      const save = function () {
+        const v = ta.value.trim();
+        if (!v) return;
+        c.comment = v; editingId = null; setMarkTitles(c); saveState(); renderList();
+      };
+      const cancel = function () { editingId = null; renderList(); };
+      ta.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+        else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      });
+      item.appendChild(ta);
+      item.appendChild(h('div', { class: 'cmt-row' }, [
+        h('button', { class: 'cmt-btn cmt-sm', type: 'button', text: 'Cancel', onclick: cancel }),
+        h('button', { class: 'cmt-btn cmt-sm cmt-primary', type: 'button', text: 'Save', onclick: save })
+      ]));
+      setTimeout(function () { ta.focus(); }, 0);
+    } else {
+      item.appendChild(h('div', { class: 'cmt-text', text: c.comment }));
+      item.appendChild(h('div', { class: 'cmt-row' }, [
+        h('button', { class: 'cmt-btn cmt-sm', type: 'button', text: 'Jump to', disabled: general || c.orphaned,
+          onclick: function () { jumpTo(c.id); } }),
+        h('button', { class: 'cmt-btn cmt-sm', type: 'button', text: 'Edit',
+          onclick: function () { editingId = c.id; renderList(); } }),
+        h('button', { class: 'cmt-btn cmt-sm cmt-danger', type: 'button', text: 'Delete',
+          onclick: function () { deleteComment(c.id); } })
+      ]));
+    }
+    return item;
+  }
+  function renderList() {
+    listEl.textContent = '';
+    const ord = orderedComments();
+    if (!ord.length) {
+      listEl.appendChild(h('p', { class: 'cmt-empty', text: 'Select text on the page and click Comment, or add a general comment.' }));
+    }
+    for (const c of ord) listEl.appendChild(renderItem(c));
+    badge.textContent = String(comments.length);
+    badge.hidden = comments.length === 0;
+  }
+
+  // ---- selection -> floating "Comment" button
+  let selTimer = 0;
+  function scheduleSel() { clearTimeout(selTimer); selTimer = setTimeout(updateFab, 160); }
+  function hideFab() { fab.classList.remove('cmt-show'); }
+  function updateFab() {
+    if (pending) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return hideFab();
+    const range = sel.getRangeAt(0);
+    const host = elOf(range.commonAncestorContainer);
+    if (!host || !document.body.contains(host) || host.closest('.cmt-skip,[data-no-comment]')) return hideFab();
+    const ae = document.activeElement;
+    if (ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName) && !root.contains(ae)) return hideFab();
+    if (!collapse(sel.toString())) return hideFab();
+    lastRange = range.cloneRange();
+    const rects = range.getClientRects();
+    lastRect = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+    fab.classList.add('cmt-show');
+    let top = lastRect.bottom + 8;
+    if (top + fab.offsetHeight > window.innerHeight - 8) top = Math.max(8, lastRect.top - fab.offsetHeight - 8);
+    const left = Math.min(Math.max(8, lastRect.right - fab.offsetWidth / 2), window.innerWidth - fab.offsetWidth - 8);
+    fab.style.top = top + 'px';
+    fab.style.left = left + 'px';
+  }
+  function startComment() {
+    if (!lastRange) return;
+    const cap = capture(lastRange);
+    hideFab();
+    if (!cap) { toast('Could not anchor that selection'); return; }
+    if (cap.truncated) toast('Selection trimmed to ' + MAX_QUOTE + ' characters');
+    openPopover(cap, lastRect);
+  }
+
+  // ---- popover (new comment)
+  function placePopover(rect) {
+    pop.style.top = pop.style.left = '0px';
+    const w = pop.offsetWidth, hgt = pop.offsetHeight;
+    let top, left;
+    if (rect) {
+      top = rect.bottom + 10;
+      if (top + hgt > window.innerHeight - 8) top = Math.max(8, rect.top - hgt - 10);
+      left = rect.left;
+    } else {
+      top = window.innerHeight - hgt - 64;
+      left = window.innerWidth - w - 16;
+    }
+    left = Math.min(Math.max(8, left), Math.max(8, window.innerWidth - w - 8));
+    pop.style.top = Math.max(8, top) + 'px';
+    pop.style.left = left + 'px';
+  }
+  function openPopover(cap, rect) {
+    pending = cap || { general: true };
+    popQuote.textContent = cap ? '\u201C' + trunc(cap.quote, 160) + '\u201D' : 'General comment (not tied to any text)';
+    popText.value = '';
+    pop.classList.add('cmt-show');
+    placePopover(rect);
+    popText.focus();
+  }
+  function closePopover() {
+    pending = null;
+    pop.classList.remove('cmt-show');
+  }
+  function savePopover() {
+    const text = popText.value.trim();
+    if (!text) { popText.focus(); return; }
+    const cap = pending && pending.general ? null : pending;
+    closePopover();
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+    addComment(cap, text);
+    toast('Comment saved');
+  }
+
+  // ------------------------------------------------------------ styles
+  const CSS = [
+    ':root{--cmt-bg:#fff;--cmt-fg:#1f2328;--cmt-muted:#656d76;--cmt-border:#d0d7de;--cmt-soft:#f6f8fa;',
+    '--cmt-accent:#0969da;--cmt-accent-fg:#fff;--cmt-danger:#cf222e;--cmt-hl:rgba(255,212,0,.38);',
+    '--cmt-hl-strong:rgba(255,170,0,.65);--cmt-shadow:0 8px 28px rgba(31,35,40,.25)}',
+    '@media (prefers-color-scheme:dark){:root{--cmt-bg:#161b22;--cmt-fg:#e6edf3;--cmt-muted:#9198a1;',
+    '--cmt-border:#3d444d;--cmt-soft:#21262d;--cmt-accent:#4493f8;--cmt-accent-fg:#0d1117;--cmt-danger:#ff7b72;',
+    '--cmt-hl:rgba(187,128,9,.42);--cmt-hl-strong:rgba(210,153,34,.75);--cmt-shadow:0 8px 28px rgba(0,0,0,.6)}}',
+    'mark.cmt-hl{background:var(--cmt-hl);color:inherit;padding:0;border-radius:2px;cursor:pointer}',
+    'mark.cmt-hl.cmt-flash{background:var(--cmt-hl-strong);outline:2px solid var(--cmt-accent);outline-offset:1px}',
+    'sup.cmt-ref{font:600 10px/1 system-ui,sans-serif;color:var(--cmt-accent);cursor:pointer;margin-left:1px;',
+    'vertical-align:super;user-select:none;-webkit-user-select:none;text-decoration:none}',
+    '#cmt-root{all:initial;display:block;font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--cmt-fg)}',
+    '#cmt-root *{box-sizing:border-box;font-family:inherit}',
+    '#cmt-root [hidden]{display:none!important}',
+    '#cmt-root .cmt-btn{appearance:none;-webkit-appearance:none;margin:0;padding:7px 12px;border:1px solid var(--cmt-border);',
+    'border-radius:7px;background:var(--cmt-soft);color:var(--cmt-fg);font-family:inherit;font-weight:600;font-size:13px;line-height:1.2;cursor:pointer;text-align:center}',
+    '#cmt-root .cmt-btn:hover:not(:disabled){border-color:var(--cmt-accent)}',
+    '#cmt-root .cmt-btn:disabled{opacity:.45;cursor:default}',
+    '#cmt-root .cmt-btn:focus-visible,#cmt-root .cmt-input:focus-visible{outline:2px solid var(--cmt-accent);outline-offset:1px}',
+    '#cmt-root .cmt-primary{background:var(--cmt-accent);border-color:var(--cmt-accent);color:var(--cmt-accent-fg)}',
+    '#cmt-root .cmt-danger{color:var(--cmt-danger)}',
+    '#cmt-root .cmt-sm{padding:4px 9px;font-size:12px}',
+    '#cmt-root .cmt-input{display:block;width:100%;margin:0;padding:8px;border:1px solid var(--cmt-border);border-radius:7px;',
+    'background:var(--cmt-bg);color:var(--cmt-fg);font-family:inherit;font-size:14px;line-height:1.4;resize:vertical;min-height:70px}',
+    '#cmt-toggle{position:fixed;right:12px;bottom:12px;z-index:2147483000;display:flex;gap:8px;align-items:center;',
+    'padding:9px 14px;border-radius:999px;box-shadow:var(--cmt-shadow)}',
+    '#cmt-root .cmt-badge{min-width:20px;padding:1px 6px;border-radius:999px;background:var(--cmt-accent);color:var(--cmt-accent-fg);',
+    'font-size:12px;text-align:center}',
+    '#cmt-panel{position:fixed;top:12px;right:12px;bottom:64px;width:320px;max-width:calc(100vw - 24px);display:none;',
+    'flex-direction:column;background:var(--cmt-bg);border:1px solid var(--cmt-border);border-radius:10px;',
+    'box-shadow:var(--cmt-shadow);z-index:2147483000;overflow:hidden}',
+    '#cmt-root.cmt-open #cmt-panel{display:flex}',
+    '#cmt-root .cmt-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;',
+    'border-bottom:1px solid var(--cmt-border);font-size:15px}',
+    '#cmt-root .cmt-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 12px;border-bottom:1px solid var(--cmt-border)}',
+    '#cmt-root .cmt-actions .cmt-primary{grid-column:1/3;padding:9px 12px}',
+    '#cmt-list{flex:1;overflow-y:auto;padding:8px 12px 12px}',
+    '#cmt-root .cmt-empty{margin:12px 0;color:var(--cmt-muted)}',
+    '#cmt-root .cmt-item{padding:10px;margin-top:8px;border:1px solid var(--cmt-border);border-radius:8px;background:var(--cmt-bg)}',
+    '#cmt-root .cmt-item.cmt-flash{border-color:var(--cmt-accent);box-shadow:0 0 0 2px var(--cmt-accent)}',
+    '#cmt-root .cmt-item.cmt-orphan{border-style:dashed}',
+    '#cmt-root .cmt-item-head{display:flex;gap:8px;align-items:baseline;margin-bottom:4px}',
+    '#cmt-root .cmt-num{font-weight:700;color:var(--cmt-accent)}',
+    '#cmt-root .cmt-sec,#cmt-root .cmt-tag{font-size:12px;color:var(--cmt-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '#cmt-root .cmt-warn{font-size:12px;color:var(--cmt-danger);margin-bottom:4px}',
+    '#cmt-root .cmt-quote{margin:0 0 6px;padding:2px 0 2px 8px;border-left:3px solid var(--cmt-hl-strong);color:var(--cmt-muted);',
+    'font-style:italic;font-size:13px;word-break:break-word}',
+    '#cmt-root .cmt-text{white-space:pre-wrap;word-break:break-word;margin-bottom:8px}',
+    '#cmt-root .cmt-row{display:flex;gap:6px;justify-content:flex-end;margin-top:6px}',
+    '#cmt-fab{position:fixed;display:none;z-index:2147483001;padding:7px 12px;box-shadow:var(--cmt-shadow)}',
+    '#cmt-root .cmt-show{display:block}',
+    '#cmt-pop{position:fixed;display:none;z-index:2147483002;width:300px;max-width:calc(100vw - 16px);padding:10px;',
+    'background:var(--cmt-bg);border:1px solid var(--cmt-border);border-radius:10px;box-shadow:var(--cmt-shadow)}',
+    '#cmt-pop .cmt-pop-quote{margin:0 0 8px;color:var(--cmt-muted);font-style:italic;font-size:13px;max-height:4.5em;overflow:hidden;word-break:break-word}',
+    '#cmt-pop .cmt-hint{flex:1;align-self:center;font-size:11px;color:var(--cmt-muted)}',
+    '#cmt-toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);display:none;z-index:2147483003;padding:8px 14px;',
+    'border-radius:8px;background:var(--cmt-fg);color:var(--cmt-bg);font-size:13px;box-shadow:var(--cmt-shadow);max-width:90vw}',
+    '#cmt-root .cmt-copybuf{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0}',
+    '@media (max-width:640px){#cmt-panel{top:auto;left:8px;right:8px;bottom:60px;width:auto;max-width:none;height:60vh}',
+    '#cmt-pop .cmt-input{font-size:16px}}',
+    '@media print{#cmt-root,sup.cmt-ref{display:none!important}mark.cmt-hl{background:none!important;outline:0!important}}'
+  ].join('\n');
+
+  function buildUI() {
+    if (!document.getElementById('cmt-style')) {
+      const st = h('style', { id: 'cmt-style' });
+      st.textContent = CSS;
+      document.head.appendChild(st);
+    }
+    badge = h('span', { class: 'cmt-badge', hidden: true, text: '0' });
+    toggleBtn = h('button', { id: 'cmt-toggle', class: 'cmt-btn cmt-primary', type: 'button', 'aria-expanded': 'false',
+      'aria-label': 'Toggle comments panel', onclick: function () { setPanel(!root.classList.contains('cmt-open')); } },
+      ['Comments', badge]);
+    listEl = h('div', { id: 'cmt-list' });
+    panel = h('aside', { id: 'cmt-panel', 'aria-label': 'Comments' }, [
+      h('div', { class: 'cmt-head' }, [
+        h('strong', { text: 'Comments' }),
+        h('button', { class: 'cmt-btn cmt-sm', type: 'button', text: 'Close', onclick: function () { setPanel(false); } })
+      ]),
+      h('div', { class: 'cmt-actions' }, [
+        h('button', { class: 'cmt-btn cmt-primary', type: 'button', text: 'Copy for agent', onclick: function () { doCopy(false); } }),
+        h('button', { class: 'cmt-btn', type: 'button', text: 'Copy comments only', onclick: function () { doCopy(true); } }),
+        h('button', { class: 'cmt-btn', type: 'button', text: 'Add general comment', onclick: function () {
+          hideFab(); openPopover(null, null);
+        } }),
+        h('button', { class: 'cmt-btn cmt-danger', type: 'button', text: 'Clear all', onclick: function () {
+          if (!comments.length) return;
+          if (!window.confirm('Delete all ' + comments.length + ' comments on this page?')) return;
+          comments.slice().forEach(function (c) { unwrap(c.id); });
+          comments = []; editingId = null; saveState(); renderList();
+        } })
+      ]),
+      listEl
+    ]);
+    fab = h('button', { id: 'cmt-fab', class: 'cmt-btn cmt-primary', type: 'button', text: 'Comment',
+      onmousedown: function (e) { e.preventDefault(); }, onclick: startComment });
+    popQuote = h('p', { class: 'cmt-pop-quote' });
+    popText = h('textarea', { class: 'cmt-input', rows: '3', placeholder: 'Your comment or question...' });
+    popText.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); savePopover(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closePopover(); }
+    });
+    pop = h('div', { id: 'cmt-pop', role: 'dialog', 'aria-label': 'Add comment' }, [
+      popQuote, popText,
+      h('div', { class: 'cmt-row' }, [
+        h('span', { class: 'cmt-hint', text: 'Cmd/Ctrl+Enter saves' }),
+        h('button', { class: 'cmt-btn cmt-sm', type: 'button', text: 'Cancel', onclick: closePopover }),
+        h('button', { class: 'cmt-btn cmt-sm cmt-primary', type: 'button', text: 'Save', onclick: savePopover })
+      ])
+    ]);
+    toastEl = h('div', { id: 'cmt-toast', role: 'status', 'aria-live': 'polite' });
+    root = h('div', { id: 'cmt-root', class: 'cmt-ui cmt-skip', 'data-no-comment': true }, [panel, toggleBtn, fab, pop, toastEl]);
+    // keep host-page keyboard shortcuts from reacting to typing in our UI
+    ['keydown', 'keyup', 'keypress'].forEach(function (t) { root.addEventListener(t, function (e) { e.stopPropagation(); }); });
+    document.body.appendChild(root);
+  }
+
+  function bindGlobal() {
+    document.addEventListener('selectionchange', scheduleSel);
+    document.addEventListener('mouseup', scheduleSel);
+    document.addEventListener('keyup', scheduleSel);
+    window.addEventListener('scroll', function () { if (fab.classList.contains('cmt-show')) scheduleSel(); }, { passive: true });
+    window.addEventListener('resize', scheduleSel);
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      if (pending) closePopover(); else hideFab();
+    });
+    // clicking a highlight or its [n] marker focuses the comment in the panel
+    document.addEventListener('click', function (e) {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      const el = t.closest('mark.cmt-hl,sup.cmt-ref');
+      if (!el) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return; // user is selecting, not clicking
+      focusComment(el.getAttribute('data-cmt'));
+    });
+  }
+
+  // ----------------------------------------------------------- bootstrap
+  function start() {
+    buildUI();
+    bindGlobal();
+    for (const c of comments) anchor(c); // re-anchor by quote + prefix/suffix
+    renderList();
+    // late-rendered content (charts, math, SPA islands): retry orphans
+    if (comments.some(function (c) { return c.orphaned; })) {
+      window.addEventListener('load', reanchorOrphans);
+      setTimeout(reanchorOrphans, 1500);
+    }
+  }
+
+  loadState();
+  window.__commentable = {
+    getComments: function () {
+      return orderedComments().map(function (c) { return Object.assign({}, c); });
+    },
+    exportMarkdown: exportMarkdown
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
+</script>
 </body>
 </html>

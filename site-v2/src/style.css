@@ -293,6 +293,8 @@ pre.code .t { color: #4f8dff; }
 .foot-brand p { margin: 12px 0 0; font-size: 12px; color: var(--ink3); line-height: 1.7; }
 .foot-links { display: flex; flex-wrap: wrap; gap: 10px 22px; font-size: 13px; color: var(--ink2); }
 .foot-links a:hover { color: var(--ink); }
+.cmt-switch { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; opacity: .35; }
+.cmt-switch:hover, .cmt-switch:focus-visible, .cmt-switch[aria-pressed="true"] { opacity: 1; }
 .credits { margin: 0; font-size: 12px; color: var(--ink3); max-width: 60em; }
 
 /* reveal */
