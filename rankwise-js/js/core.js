@@ -174,7 +174,10 @@ export class Rankwise {
 
   /** Comparators in the sorting network for `n` values, pruned to `ranks` if given. */
   networkSize(n, ranks) {
-    return this.#e.networkSize(n, ranks && ranks.length ? Array.from(ranks, Number) : []);
+    if (typeof n === "bigint") n = Number(n);
+    if (!Number.isInteger(n) || n < 1 || n > this.maxFrames) throw new RangeError(`n must be an integer from 1 to ${this.maxFrames}, got ${n}`);
+    // ranks as selectRanks takes them: integers, negative ones counted from the end
+    return this.#e.networkSize(n, ranks && ranks.length ? checkRanks(Array.from(ranks), n) : []);
   }
 
   /**
@@ -185,6 +188,7 @@ export class Rankwise {
   alloc(dtype, length) {
     const d = DTYPES[dtype];
     if (!d) throw new TypeError(`unknown dtype ${JSON.stringify(dtype)}`);
+    if (!Number.isSafeInteger(length) || length < 0) throw new RangeError(`length must be a non-negative integer, got ${length}`);
     return this.#e.alloc(d, length);
   }
 
@@ -600,9 +604,19 @@ export class Rankwise {
   clipCombine(x, opts = {}) {
     const method = opts.method ?? "sigma";
     if (!(method in CLIP_METHODS)) throw new RangeError(`unknown rejection method ${JSON.stringify(method)}`);
-    let [lo, hi] = Array.isArray(opts.sigma) ? opts.sigma.map(Number) : [opts.sigma ?? 3, opts.sigma ?? 3].map(Number);
+    // `sigma`: a number or a [low, high] pair (an Array or a TypedArray), as NumPy takes it
+    const pair = Array.isArray(opts.sigma) || (ArrayBuffer.isView(opts.sigma) && !(opts.sigma instanceof DataView));
+    if (pair && opts.sigma.length !== 2) throw new RangeError(`sigma needs a number or [low, high]; got ${opts.sigma.length} values`);
+    let [lo, hi] = pair ? Array.from(opts.sigma, Number) : [opts.sigma ?? 3, opts.sigma ?? 3].map(Number);
     if (opts.sigmaLower != null) lo = Number(opts.sigmaLower);
     if (opts.sigmaUpper != null) hi = Number(opts.sigmaUpper);
+    // a value that is not a number at all is a TypeError (Python's float() raises too); a NaN
+    // bound is a parameter error, except for "none", which ignores the bounds (as in Python)
+    const given = [...(pair ? Array.from(opts.sigma) : [opts.sigma]), opts.sigmaLower, opts.sigmaUpper];
+    if (given.some((v) => v != null && typeof v !== "number" && typeof v !== "bigint" && Number.isNaN(Number(v)))) {
+      throw new TypeError("sigma, sigmaLower and sigmaUpper must be numbers (sigma may be a [low, high] pair)");
+    }
+    if (method !== "none" && (Number.isNaN(lo) || Number.isNaN(hi))) throw new RankwiseError("param", "invalid parameter: sigma bounds must not be NaN");
     const preset = opts.preset ?? null;
     if (![null, "astropy", "siril", "pixinsight"].includes(preset)) throw new RangeError(`unknown preset ${JSON.stringify(preset)}`);
     let maxiters = opts.maxiters === undefined ? 5 : opts.maxiters;

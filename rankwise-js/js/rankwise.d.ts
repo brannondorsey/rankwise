@@ -53,8 +53,8 @@ export type NanPolicy = "propagate" | "omit" | "raise";
 export interface ClipOptions extends CommonOptions {
   /** "sigma" (astropy), "mad", "median_sigma", "winsorized", "percentile" (Siril) or "none". */
   method?: "sigma" | "mad" | "median_sigma" | "winsorized" | "percentile" | "none";
-  /** Sigma (or `[low, high]`); for "percentile", the fractional thresholds. Default 3. */
-  sigma?: number | readonly [number, number];
+  /** Sigma (or `[low, high]`, an Array or a TypedArray); for "percentile", the fractional thresholds. Default 3. */
+  sigma?: number | readonly [number, number] | ArrayLike<number> | BigInt64Array | BigUint64Array;
   sigmaLower?: number;
   sigmaUpper?: number;
   /** Rejection passes (default 5; `null`, or 0 for "sigma" and "mad" as in astropy, = until nothing changes). */
@@ -140,6 +140,7 @@ export class Rankwise {
 
   availableIsas(): Isa[];
   setIsa(name: Isa | "auto" | null): void;
+  /** Comparators in the sorting network for `n` (1 to `maxFrames`) values, pruned to `ranks` (negative ones count from the end). */
   networkSize(n: number, ranks?: ArrayLike<number>): number;
 
   alloc(dtype: "float32", length: number): ZeroCopyArray<Float32Array>;

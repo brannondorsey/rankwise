@@ -6,7 +6,8 @@ First release of the production library, rebuilt from the `lanestat-proto` proto
 
 * **Core.** One generic kernel compiled for AVX-512, AVX2, NEON and a portable fallback,
   chosen at runtime (`RANKWISE_ISA` overrides). Rank-pruned Batcher networks,
-  register-resident up to 32 frames, hybrid beyond; up to 512 frames.
+  register-resident up to 32 frames, hybrid beyond; up to 512 frames. `Isa` is
+  `#[non_exhaustive]`, so new instruction sets can arrive in minor releases.
 * **Statistics.** `select_ranks`; median and the 13 NumPy quantile methods, with NumPy's
   arithmetic for every form of `q` and for `out=`; min/max/ptp; argmin/argmax/argmedian and
   `argselect`; trimmed mean, IQR and MAD with SciPy's definitions (`nan_policy` and
