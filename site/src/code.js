@@ -99,12 +99,27 @@ function highlight(src, lang) {
   }
 }
 
-const API = ["median", "nanmedian", "quantile", "nanquantile", "percentile", "min", "max", "ptp", "argmin", "argmax", "argmedian", "select_ranks", "trimmed_mean", "iqr", "mad", "sigma_clip_mean", "clip_combine", "nodata=", "weights=", "rejected=", "threads="];
+// The operations, grouped, with the library each one matches result for result.
+const API = [
+  { h: "Medians & quantiles", f: ["median", "nanmedian", "quantile", "nanquantile", "percentile"], m: "NumPy, all 13 quantile methods" },
+  { h: "Extremes & positions", f: ["min", "max", "ptp", "argmin", "argmax", "argmedian"], m: "NumPy" },
+  { h: "Any ranks", f: ["select_ranks", "argselect"], m: "np.sort(x)[ranks], in one pass" },
+  { h: "Robust statistics", f: ["trimmed_mean", "iqr", "mad"], m: "scipy.stats" },
+  { h: "Outlier rejection", f: ["sigma_clip_mean", "clip_combine"], m: "astropy sigma_clip, plus MAD, winsorized, percentile" },
+  { h: "Options", f: ["nodata", "weights", "scale", "threads"], m: "missing values, per-frame weights, normalization, cores", opt: true },
+];
+const camel = (n) => n.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
 export function initCode() {
-  const body = $("#code-body");
-  let cur = "py";
-  const show = (k) => { cur = k; body.innerHTML = highlight(SNIPPETS[k].code, SNIPPETS[k].lang); };
+  const body = $("#code-body"), api = $("#api");
+  let cur = "rs";
+  const names = (k) => {
+    const js = k === "js";
+    $("#api-k").textContent = js ? "JavaScript names" : k === "py" ? "Python names" : "Python names · camelCase in JavaScript";
+    api.querySelectorAll("code").forEach((c) => { const n = c.dataset.n; c.textContent = js ? camel(n) : n; });
+  };
+  const show = (k) => { cur = k; body.innerHTML = highlight(SNIPPETS[k].code, SNIPPETS[k].lang); names(k); };
+  api.innerHTML = API.map((g) => `<div class="api-g${g.opt ? " opt" : ""}"><h3>${g.h}</h3><div class="api-f">${g.f.map((n) => `<code data-n="${n}">${n}</code>`).join("")}</div><p>${g.opt ? "" : "Same results as "}${g.m}</p></div>`).join("");
   segmented($("#code-tabs"), (d) => d.k && show(d.k));
   // the copy button lives in the tab bar; keep the selected tab highlighted
   const copy = $("#code-copy");
@@ -114,6 +129,5 @@ export function initCode() {
     try { await navigator.clipboard.writeText(SNIPPETS[cur].code); copy.textContent = "copied"; } catch { copy.textContent = "select + copy"; }
     setTimeout(() => (copy.textContent = "copy"), 1400);
   });
-  show("py");
-  $("#api").innerHTML = API.map((a) => `<span>${a.endsWith("=") ? a : "rw." + a}</span>`).join("");
+  show("rs");
 }

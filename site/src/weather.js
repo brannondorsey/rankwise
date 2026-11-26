@@ -32,7 +32,7 @@ void main() {
   ivec2 c = ivec2(int(round(uv.x * float(uCols - 1))), int(round((1.0 - uv.y) * float(uRows - 1))));
   l0 = int(floor(uLead)); l1 = min(l0 + 1, uLeads - 1); lf = uLead - float(l0);
   vec3 q = quant(c);
-  vS = max(q.b - q.r, 0.0) / uSpreadMax; vT = q.g;
+  vS = max(q.b - q.r, 0.0) / uSpreadMax; vT = q.g * 1.8 + 32.0;   // median in °F
   vec3 p = position;
   p.z = height(q);
   // smooth normal from neighbours two cells out, so the data's 8-bit steps don't show as terraces
@@ -48,10 +48,10 @@ precision highp float;
 uniform float uLine;
 in float vT; in float vS; in vec3 vN;
 out vec4 outColor;
-vec3 ramp(float t) {     // -10 … 30 °C
+vec3 ramp(float t) {     // 10 … 90 °F
   vec3 c0 = vec3(0.17, 0.24, 1.0), c1 = vec3(0.16, 0.55, 1.0), c2 = vec3(0.28, 0.88, 1.0),
        c3 = vec3(0.91, 0.98, 1.0), c4 = vec3(1.0, 0.83, 0.42), c5 = vec3(1.0, 0.54, 0.24), c6 = vec3(1.0, 0.24, 0.43);
-  float x = clamp((t + 10.0) / 40.0, 0.0, 1.0) * 6.0;
+  float x = clamp((t - 10.0) / 80.0, 0.0, 1.0) * 6.0;
   if (x < 1.0) return mix(c0, c1, x);
   if (x < 2.0) return mix(c1, c2, x - 1.0);
   if (x < 3.0) return mix(c2, c3, x - 2.0);
@@ -155,7 +155,10 @@ export async function initWeather() {
   canvas.addEventListener("pointermove", (e) => { if (drag) { yawT = clamp(yawT + (e.clientX - lastX) * 0.004, -0.6, 0.6); lastX = e.clientX; } });
   canvas.style.touchAction = "pan-y";
 
-  const fan = fanChart($("#fan"), meta.denver);
+  // the fan chart is shown in °F (spreads are differences, so they scale by 1.8 only)
+  const toF = (c) => c * 1.8 + 32;
+  const den = { ...meta.denver, members: meta.denver.members.map((m) => m.map(toF)), fan: meta.denver.fan.map((q) => q.map(toF)) };
+  const fan = fanChart($("#fan"), den);
   const v = new THREE.Vector3();
   let t0 = 0;
   loop(view, (dt) => {
@@ -238,7 +241,7 @@ function fanChart(svg, d) {
       lbl.setAttribute("cx", xs(d.lead_h[i])); lbl.setAttribute("cy", ys(d.fan[2][i]));
       if (i !== lastH) {
         lastH = i;
-        val.textContent = `p50 ${d.fan[2][i].toFixed(1)}° · p10–p90 ${(d.fan[4][i] - d.fan[0][i]).toFixed(1)}°`;
+        val.textContent = `p50 ${d.fan[2][i].toFixed(1)}°F · p10–p90 ${(d.fan[4][i] - d.fan[0][i]).toFixed(1)}°F`;
       }
     },
   };

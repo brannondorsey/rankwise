@@ -1,9 +1,9 @@
 // Hero: the 40 synthetic subs as a 3D deck. A probe raster-scans the deck band by band, skewering
 // one pixel through every frame and sigma-clipping its 40 values. Behind the scan head each pixel
 // stack has been reduced to one clean value: the noisy frames there fade to ghosts and rankwise's
-// stacked frame shows through. Scrolling collapses the whole deck into that frame.
+// stacked frame shows through.
 import * as THREE from "three";
-import { $, autosize, clamp, coarse, ease, getJSON, lerp, loadImage, loop, reduced, smoothstep } from "./util.js";
+import { $, autosize, coarse, ease, getJSON, loadImage, loop, reduced, smoothstep } from "./util.js";
 import { sigmaClip } from "./clip.js";
 
 const W = 4.2, H = 2.8, GAP = 0.15;
@@ -25,7 +25,6 @@ const SCAN = /* glsl */ `
 export async function initHero() {
   const root = $("#hero");
   const canvas = $(".hero-canvas", root);
-  const copy = $(".hero-copy", root), out = $(".hero-out", root);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.setClearColor(0x04060a, 1);
   const scene = new THREE.Scene();
@@ -70,7 +69,7 @@ export async function initHero() {
   const uniforms = {
     ...scanU,
     uAtlas: { value: tex }, uGrid: { value: new THREE.Vector2(cols, rows) }, uN: { value: N },
-    uGap: { value: GAP }, uOpacity: { value: 0.9 }, uTime: { value: 0 }, uWave: { value: 1 },
+    uGap: { value: GAP }, uOpacity: { value: 0.92 }, uTime: { value: 0 }, uWave: { value: 1 },
     uProbe: { value: new THREE.Vector2(0.5, 0.5) }, uHot: { value: new Float32Array(64) },
   };
   const frames = new THREE.Mesh(geo, new THREE.ShaderMaterial({
@@ -251,7 +250,7 @@ export async function initHero() {
     return { cover: b + f, x, y };
   };
 
-  // ---- layout & scroll
+  // ---- layout
   let portrait = false;
   autosize(renderer, canvas, (w, h) => {
     camera.aspect = w / h;
@@ -261,38 +260,22 @@ export async function initHero() {
     pts.material.uniforms.uScale.value = Math.min(2, renderer.getPixelRatio()) * (portrait ? 0.8 : 1);
   }, coarse ? 1.75 : 2);
 
-  let p = 0;
-  const onScroll = () => {
-    const span = root.offsetHeight - innerHeight;
-    p = clamp(scrollY / Math.max(1, span));
-  };
-  addEventListener("scroll", onScroll, { passive: true });
-  onScroll();
-
   let t0 = 0, head = 1, cover = 0;
-  const L = loop(root, (dt) => {
+  loop(root, (dt) => {
     const step = reduced ? 0 : dt;
     t0 += step;
-    const e = ease(clamp((p - 0.04) / 0.8));
-    // deck pose: 3/4 view → face-on, centered
+    // deck pose: a 3/4 view with a slow sway
     const pose = portrait
       ? { x: -0.35, y: 1.55, s: 0.7, ry: -0.72, rx: 0.2 }
       : { x: 2.5, y: 0.9, s: 0.84, ry: -0.7, rx: 0.16 };
-    const end = portrait ? { x: 0, y: 0.25, s: 1.05 } : { x: 0, y: 0, s: 1.35 };
-    deck.position.set(lerp(pose.x, end.x, e), lerp(pose.y, end.y, e), 0);
-    deck.scale.setScalar(lerp(pose.s, end.s, e));
+    deck.position.set(pose.x, pose.y, 0);
+    deck.scale.setScalar(pose.s);
     const sway = reduced ? 0 : Math.sin(t0 * 0.25) * 0.06;
-    deck.rotation.set(lerp(pose.rx + sway * 0.4, 0, e), lerp(pose.ry + sway, 0, e), 0);
-    uniforms.uGap.value = GAP * (1 - e);
-    uniforms.uWave.value = 1 - e;
+    deck.rotation.set(pose.rx + sway * 0.4, pose.ry + sway, 0);
     uniforms.uTime.value = t0;
-    uniforms.uOpacity.value = 0.92 * (1 - smoothstep(0.85, 1.0, e));
-    resultU.uOpacity.value = smoothstep(0.55, 0.95, e);
-    resultU.uFx.value = 1 - smoothstep(0.3, 0.8, e);
-    result.position.z = (N * 0.5 + 0.5) * GAP * (1 - e);
 
-    // scan clock: paused while the pointer drives the probe or the deck has collapsed
-    if (!hovering && e < 0.5) {
+    // scan clock: paused while the pointer drives the probe
+    if (!hovering) {
       phaseT += step;
       if (phase === "scan") {
         tau = Math.min(END, tau + step / BAND_S);
@@ -307,7 +290,6 @@ export async function initHero() {
     scanU.uReveal.value = phase === "reset" ? 1 - smoothstep(0, RESET_S, phaseT) : 1;
     head += ((!hovering && phase === "scan" ? 1 : 0) - head) * (reduced ? 1 : Math.min(1, dt * 8));
     scanU.uHead.value = head;
-    scanU.uBeam.value = 1 - smoothstep(0.2, 0.55, e);
 
     // probe: rides the scan head, or follows the pointer
     if (!hovering) targetUV.set(phase === "reset" ? 0.015 : s.x, phase === "reset" ? 0.5 / BANDS : s.y);
@@ -317,27 +299,19 @@ export async function initHero() {
     uniforms.uProbe.value.copy(probeUV);
     sample(probeUV.x, probeUV.y);
     const px = (probeUV.x - 0.5) * W, py = (0.5 - probeUV.y) * H;
-    const depth = (N + 4) * GAP * (1 - e) + 0.4;
+    const depth = (N + 4) * GAP + 0.4;
     rod.position.set(px, py, 0); rod.scale.y = depth;
     glow.position.set(px, py, 0); glow.scale.y = depth;
     for (let i = 0; i < N; i++) {
       ppos[i * 3] = px; ppos[i * 3 + 1] = py;
-      ppos[i * 3 + 2] = (i - (N - 1) / 2) * GAP * (1 - e) + (1 - e) * 0.025 * Math.sin(t0 * 1.3 + i * 0.45);
+      ppos[i * 3 + 2] = (i - (N - 1) / 2) * GAP + 0.025 * Math.sin(t0 * 1.3 + i * 0.45);
     }
     pgeo.attributes.position.needsUpdate = true;
-    probe.visible = e < 0.6;
     const pulse = reduced ? 1 : 0.85 + 0.15 * Math.sin(t0 * 9);
-    rod.material.opacity = (1 - smoothstep(0.3, 0.6, e)) * pulse;
-    glow.material.opacity = 0.25 * (1 - smoothstep(0.3, 0.6, e)) * pulse;
-
-    // copy
-    copy.style.opacity = String(1 - smoothstep(0.02, 0.3, p));
-    copy.style.transform = `translateY(${-p * 80}px)`;
-    out.style.opacity = String(smoothstep(0.7, 0.92, p));
-    out.style.transform = `translate(-50%, ${portrait ? "calc(-50% + 34vw)" : "calc(-50% + 30vh)"})`;
+    rod.material.opacity = pulse;
+    glow.material.opacity = 0.25 * pulse;
     renderer.render(scene, camera);
   });
-  addEventListener("scroll", L.kick, { passive: true });
   root.classList.add("ready");
 }
 
