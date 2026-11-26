@@ -610,7 +610,13 @@ export class Rankwise {
     let [lo, hi] = pair ? Array.from(opts.sigma, Number) : [opts.sigma ?? 3, opts.sigma ?? 3].map(Number);
     if (opts.sigmaLower != null) lo = Number(opts.sigmaLower);
     if (opts.sigmaUpper != null) hi = Number(opts.sigmaUpper);
-    if (Number.isNaN(lo) || Number.isNaN(hi)) throw new TypeError("sigma (and sigmaLower / sigmaUpper) must be numbers, or sigma a [low, high] pair");
+    // a value that is not a number at all is a TypeError (Python's float() raises too); a NaN
+    // bound is a parameter error, except for "none", which ignores the bounds (as in Python)
+    const given = [...(pair ? Array.from(opts.sigma) : [opts.sigma]), opts.sigmaLower, opts.sigmaUpper];
+    if (given.some((v) => v != null && typeof v !== "number" && typeof v !== "bigint" && Number.isNaN(Number(v)))) {
+      throw new TypeError("sigma, sigmaLower and sigmaUpper must be numbers (sigma may be a [low, high] pair)");
+    }
+    if (method !== "none" && (Number.isNaN(lo) || Number.isNaN(hi))) throw new RankwiseError("param", "invalid parameter: sigma bounds must not be NaN");
     const preset = opts.preset ?? null;
     if (![null, "astropy", "siril", "pixinsight"].includes(preset)) throw new RangeError(`unknown preset ${JSON.stringify(preset)}`);
     let maxiters = opts.maxiters === undefined ? 5 : opts.maxiters;

@@ -54,7 +54,7 @@ export interface ClipOptions extends CommonOptions {
   /** "sigma" (astropy), "mad", "median_sigma", "winsorized", "percentile" (Siril) or "none". */
   method?: "sigma" | "mad" | "median_sigma" | "winsorized" | "percentile" | "none";
   /** Sigma (or `[low, high]`, an Array or a TypedArray); for "percentile", the fractional thresholds. Default 3. */
-  sigma?: number | readonly [number, number] | Float32Array | Float64Array;
+  sigma?: number | readonly [number, number] | ArrayLike<number> | BigInt64Array | BigUint64Array;
   sigmaLower?: number;
   sigmaUpper?: number;
   /** Rejection passes (default 5; `null`, or 0 for "sigma" and "mad" as in astropy, = until nothing changes). */

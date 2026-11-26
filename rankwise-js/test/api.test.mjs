@@ -455,6 +455,7 @@ shared("networkSize checks n and takes ranks as selectRanks does", async (rw) =>
   assert.equal(rw.networkSize(31, [-16]), rw.networkSize(31, [15]));
   assert.equal(rw.networkSize(9, [-1, 0]), rw.networkSize(9, [8, 0]));
   assert.equal(rw.networkSize(9n), rw.networkSize(9));
+  assert.equal(rw.networkSize(9, [-1n]), rw.networkSize(9, [8]));
   for (const n of [0, -1, 1.5, NaN, 2 ** 32 + 9, rw.maxFrames + 1, "9"]) {
     assert.throws(() => rw.networkSize(n), /n must be an integer from 1 to/, String(n));
   }
@@ -483,8 +484,15 @@ shared("clipCombine takes sigma as a number or a [low, high] Array or TypedArray
   assert.deepEqual(rw.clipCombine(x, { sigma: [2, 3] }), rw.clipCombine(x, { sigmaLower: 2, sigmaUpper: 3 }));
   assert.throws(() => rw.clipCombine(x, { sigma: [2] }), /sigma needs a number or \[low, high\]; got 1 values/);
   assert.throws(() => rw.clipCombine(x, { sigma: Float64Array.of(1, 2, 3) }), /got 3 values/);
+  for (const sigma of [Int8Array.of(2, 3), BigInt64Array.of(2n, 3n)]) assert.deepEqual(rw.clipCombine(x, { sigma }), rw.clipCombine(x, { sigma: [2, 3] }));
   for (const sigma of ["x", {}, [2, "x"]]) assert.throws(() => rw.clipCombine(x, { sigma }), TypeError);
   assert.throws(() => rw.clipCombine(x, { sigmaLower: "x" }), TypeError);
+  // a NaN bound is a parameter error, as it was from the kernel; "none" ignores the bounds
+  const nanParam = (e) => e instanceof RankwiseError && e.kind === "param" && /sigma bounds must not be NaN/.test(e.message);
+  for (const o of [{ sigma: NaN }, { sigma: [2, NaN] }, { sigmaLower: NaN }, { sigmaUpper: NaN }, { method: "mad", sigma: NaN }]) {
+    assert.throws(() => rw.clipCombine(x, o), nanParam, JSON.stringify(o));
+  }
+  assert.deepEqual(rw.clipCombine(x, { method: "none", sigma: NaN }), rw.clipCombine(x, { method: "none" }));
 });
 
 shared("alloc() arrays are read and written in place", async (rw) => {
