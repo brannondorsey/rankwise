@@ -123,7 +123,7 @@ h1 {
 /* parallax cards: every section is a sheet that slides up over the one before it, which drifts
    back and dims (main.js drives the transform and --dim) */
 .hero, .sec { background: var(--bg); transform-origin: 50% 100%; }
-.sec { border-radius: 26px 26px 0 0; box-shadow: 0 -1px 0 var(--line2), 0 -48px 90px -40px rgba(0, 0, 0, 0.95); }
+.sec { border-radius: 26px 26px 0 0; box-shadow: 0 -1px 0 var(--line2), 0 -22px 44px -22px rgba(0, 0, 0, 0.9); }
 .hero::after, .sec::after {
   content: ""; position: absolute; inset: 0; z-index: 20; pointer-events: none; border-radius: inherit;
   background: #000; opacity: var(--dim, 0);

@@ -1,12 +1,12 @@
 // Hero: the 40 synthetic subs as a 3D deck. A probe, a cyan needle of light, raster-scans the deck
 // along a serpentine path (rows top first, joined by half-circle turns), skewering one pixel through
-// every frame and sigma-clipping its 40 values live: one glint per frame, cyan if kept, orange if
-// rejected. Behind the scan head each pixel stack counts as reduced to one clean value: a soft round
-// footprint along the swept path dissolves the noisy frames there to faint violet dust, rankwise's
-// stacked frame shows through, and a violet thread of light (one bead per reduced stack) cools off
-// behind the head. After the last row it holds, the deck re-forms back to front and the scan restarts.
-// Hovering (fine pointers) pauses the scan and hands the probe to the pointer; reduced motion freezes
-// it mid-scan.
+// every frame and sigma-clipping its 40 values live: one glint per frame, cyan if kept, orange and
+// ringed if rejected. Behind the scan head each pixel stack counts as reduced to one clean value: a
+// soft round footprint along the swept path clears the noisy frames there to faint violet glass,
+// rankwise's stacked frame shows through mid-deck, and a violet thread of light (one bead per reduced
+// stack) cools off behind the head. After the last row it holds, the deck re-forms in a wave from back
+// to front and the scan restarts. Hovering (fine pointers) pauses the scan and hands the probe to the
+// pointer; reduced motion freezes it mid-scan.
 import * as THREE from "three";
 import { $, autosize, coarse, getJSON, loadImage, loop, reduced, smoothstep } from "./util.js";
 import { sigmaClip } from "./clip.js";
@@ -31,7 +31,7 @@ function pathAt(s, out) {
 }
 
 // Soft footprint of the swept path: fully reduced within R0 of it, feathered out to R1 (plane units).
-const R0 = 0.13, R1 = 0.3;
+const R0 = 0.13, R1 = 0.24;
 const f = (x) => x.toFixed(5);
 const PATH = /* glsl */ `
   const float B = ${f(BANDS)}, PH = ${f(PH)}, PR = ${f(PR)}, XA = ${f(XA)}, XB = ${f(XB)}, RL = ${f(RL)}, SEG = ${f(SEG)};
@@ -60,8 +60,9 @@ const PATH = /* glsl */ `
     return d;
   }
   float swept(vec2 p, out float age) { return 1.0 - smoothstep(R0, R1, sweptDist(p, age)); }
-  // the deck re-forms back to front (depth 0 = back frame, 1 = front frame)
-  float reform(float depth) { float t = clamp((uReset - 0.6 * depth) / 0.4, 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
+  // the deck re-forms in a wave from back to front (depth 0 = back frame, 1 = front frame)
+  float reformT(float depth) { return clamp((uReset - 0.82 * depth) / 0.18, 0.0, 1.0); }
+  float reform(float depth) { float t = reformT(depth); return t * t * (3.0 - 2.0 * t); }
   vec3 toOut(vec3 c) { return linearToOutputTexel(vec4(c, 1.0)).rgb; }`;
 
 export async function initHero() {
@@ -107,7 +108,7 @@ export async function initHero() {
   // ---- frames: two instanced draws (behind and in front of the stacked frame), z from a uniform
   const uniforms = {
     ...scanU,
-    uAtlas: { value: tex }, uStack: { value: stackTex }, uGrid: { value: new THREE.Vector2(cols, rows) }, uN: { value: N },
+    uAtlas: { value: tex }, uGrid: { value: new THREE.Vector2(cols, rows) }, uN: { value: N },
     uGap: { value: GAP }, uOpacity: { value: 0.92 }, uTime: { value: 0 }, uHot: { value: new Float32Array(64) },
   };
   const frameMat = new THREE.ShaderMaterial({
@@ -125,7 +126,7 @@ export async function initHero() {
       }`,
     fragmentShader: /* glsl */ `
       ${PATH}
-      uniform sampler2D uAtlas, uStack; uniform vec2 uGrid, uProbe; uniform float uOpacity, uBeam; uniform float uHot[64];
+      uniform sampler2D uAtlas; uniform vec2 uGrid, uProbe; uniform float uOpacity, uBeam; uniform float uHot[64];
       varying vec2 vUv; varying float vIdx; varying float vDepth;
       void main() {
         vec2 tuv = vec2(vUv.x, 1.0 - vUv.y), p = tuv * WH;   // top-down, like the probe
@@ -140,10 +141,11 @@ export async function initHero() {
         float age;
         float done = swept(p, age) * (1.0 - reform(vDepth));
         float a = uOpacity * mix(0.55, 1.0, vDepth) * (1.0 - done);
-        // the cleared glass carries a soft glow of the clean frame, and a violet wake behind the head
-        vec3 glow = texture2D(uStack, vUv, 5.0).rgb * exp(-abs(vDepth - 0.5) * 5.0) * 0.06;
-        vec3 add = (glow + vec3(0.42, 0.36, 1.0) * (0.0025 + 0.022 * exp(-age * ${f(1 / (SPEED * 0.5))}))) * done;
+        // the cleared frames turn to violet glass, lit at their rims, with a wake just behind the head
+        float rim = exp(-min(e.x, e.y) * 12.0);
+        vec3 add = vec3(0.42, 0.36, 1.0) * (0.003 + 0.013 * rim + 0.017 * exp(-age * ${f(1 / (SPEED * 0.5))})) * done;
         add += edge * mix(vec3(0.3, 0.5, 0.9), vec3(0.45, 0.38, 1.0), done) * (0.4 - 0.2 * done) * shade;
+        add += (edge + rim * 0.15) * vec3(0.5, 0.45, 1.0) * sin(3.14159 * reformT(vDepth)) * 0.6;   // each frame flashes as it returns
 
         // the probe pierces every frame: a faint cyan halo; a rejected value rings orange
         float d = length(p - uProbe), d2 = d * d;
@@ -237,7 +239,7 @@ export async function initHero() {
       void main() {
         float s2 = vT.y * vT.y;
         float ends = smoothstep(0.0, 0.12, vT.x) * smoothstep(1.0, 0.88, vT.x);
-        vec3 c = vec3(0.8, 0.98, 1.0) * exp(-s2 * 160.0) + vec3(0.2, 0.7, 1.0) * exp(-s2 * 7.0) * 0.18 * uPulse;
+        vec3 c = vec3(0.8, 0.98, 1.0) * exp(-s2 * 160.0) + vec3(0.2, 0.7, 1.0) * exp(-s2 * 7.0) * 0.24 * uPulse;
         gl_FragColor = vec4(c * ends * uBeam, 1.0);
       }`,
   }));
@@ -367,7 +369,6 @@ export async function initHero() {
 
   // ---- the scan: intro (the probe ignites) → scan → hold on the clean frame → the deck re-forms → again
   let phase = reduced ? "scan" : "intro", phaseT = 0, S = reduced ? TOTAL * 0.45 : 0, t0 = 0, beam = reduced ? 1 : 0;
-  let flash = 0;
   const depth = (N + 4) * GAP + 0.4;
   glints(1);
   loop(root, (dt) => {
@@ -375,7 +376,7 @@ export async function initHero() {
     t0 += step;
     // deck pose: a 3/4 view with a slow sway
     const pose = portrait
-      ? { x: -0.35, y: 1.55, s: 0.7, ry: -0.72, rx: 0.2 }
+      ? { x: -0.35, y: 2.35, s: 0.7, ry: -0.72, rx: 0.2 }
       : { x: 2.5, y: 0.9, s: 0.84, ry: -0.7, rx: 0.16 };
     deck.position.set(pose.x, pose.y, 0);
     deck.scale.setScalar(pose.s);
@@ -406,8 +407,7 @@ export async function initHero() {
     scanU.uReset.value = phase === "reset" ? smoothstep(0, RESET_S, phaseT) : 0;
     scanU.uHead.value.copy(head);
     // a soft swell of light as the last row completes
-    flash = phase === "hold" ? Math.exp(-phaseT * 2.2) * smoothstep(0, 0.15, phaseT) : 0;
-    result.material.uniforms.uFlash.value = flash;
+    result.material.uniforms.uFlash.value = phase === "hold" ? Math.exp(-phaseT * 2.2) * smoothstep(0, 0.15, phaseT) : 0;
 
     // the probe: rides the scan head, or follows the pointer
     const beamT = hovering ? 1 : intro ? smoothstep(0, INTRO_S, phaseT) : phase === "scan" ? 1
@@ -416,7 +416,7 @@ export async function initHero() {
     scanU.uBeam.value = beam;
     if (!hovering) targetP.copy(head);
     const gap = probeP.distanceTo(targetP);
-    probeP.lerp(targetP, hovering ? 0.35 : gap < 0.08 ? 1 : 0.14);
+    probeP.lerp(targetP, reduced || gap < 0.08 ? 1 : hovering ? 0.35 : 0.14);
     scanU.uProbe.value.copy(probeP);
     sample(probeP.x / W, probeP.y / H);
     glints(reduced ? 1 : Math.min(1, dt * 14));
