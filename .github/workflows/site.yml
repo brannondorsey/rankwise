@@ -4,7 +4,7 @@ name: site
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/site.yml"]
+    paths: ["site/**", "site-v2/**", ".github/workflows/site.yml"]
   workflow_dispatch:
 
 permissions:
@@ -25,11 +25,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: site/package-lock.json
+          cache-dependency-path: |
+            site/package-lock.json
+            site-v2/package-lock.json
       - run: npm ci
         working-directory: site
       - run: npm run build
         working-directory: site
+      # v2 preview, served at /v2/
+      - run: npm ci && npx vite build --outDir ../site/dist/v2 --emptyOutDir
+        working-directory: site-v2
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
