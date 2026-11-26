@@ -202,7 +202,6 @@ async function start(root) {
   const dec = (c) => (c < C1 ? (c / C1) * X1 : X1 * Math.exp(((c - C1) / (255 - C1)) * Math.log(MAX / X1)));
   const chart = sliceChart($("#stack-slice"), { n: N, enc: (x) => x, max: 255 });
   let px = meta.probe[0], py = meta.probe[1];
-  const cross = $(".probe-cross", view);
   const vals = new Float64Array(N), codes = new Float64Array(N);
   function probe() {
     for (let i = 0; i < N; i++) {
@@ -220,9 +219,6 @@ async function start(root) {
     });
     $("#stack-px").textContent = `${px + meta.crop[1]}, ${py + meta.crop[0]}`;
     $("#stack-px-rej").textContent = m === 3 && r.rejected ? `${r.rejected} rejected` : "";
-    cross.hidden = false;
-    cross.style.left = ((px + 0.5) / T) * 100 + "%";
-    cross.style.top = ((py + 0.5) / T) * 100 + "%";
   }
   const pick = (e) => {
     const r = canvas.getBoundingClientRect();
