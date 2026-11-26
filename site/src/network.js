@@ -1,4 +1,4 @@
-// 03 · Batcher's odd-even merge network (ported from rankwise/src/netgen.rs), pruned to the ranks
+// 02 · Batcher's odd-even merge network (ported from rankwise/src/netgen.rs), pruned to the ranks
 // you ask for. A column of values sweeps through; only the live comparators fire.
 import { $, el, loop, rangeFill, reduced, segmented } from "./util.js";
 import { batcher, layout, medianRanks, pruneMask, quantileRanks } from "./netgen.js";
@@ -84,8 +84,17 @@ export function initNetwork() {
     outEls.forEach((o, i) => { o.t.textContent = needed.includes(i) ? `r${i}` : ""; });
     $("#net-kept").textContent = k;
     $("#net-total").textContent = net.length;
-    const lbl = needed.length === n ? "every rank" : needed.length === 0 ? "no ranks" : needed.length > 4 ? `${needed.length} ranks` : `rank${needed.length > 1 ? "s" : ""} ${needed.join(", ")}`;
+    const med = medianRanks(n);
+    const isMedian = needed.length === med.length && med.every((r, i) => needed[i] === r);
+    const lbl = needed.length === n ? "every rank"
+      : needed.length === 0 ? "no ranks"
+      : needed.length === 2 && needed[0] === 0 && needed[1] === n - 1 ? `the min and max (ranks 0, ${n - 1})`
+      : isMedian ? `the median (rank${med.length > 1 ? "s" : ""} ${med.join(", ")})`
+      : needed.length > 4 ? `${needed.length} ranks`
+      : `rank${needed.length > 1 ? "s" : ""} ${needed.join(", ")}`;
     $("#net-ranks").textContent = lbl;
+    const saved = Math.round((1 - k / net.length) * 100);
+    $("#net-save").textContent = saved > 0 ? `${saved}% skipped` : "none skipped";
     restart();
   }
 

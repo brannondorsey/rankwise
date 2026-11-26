@@ -1,4 +1,4 @@
-// 02 · 16 neighbouring pixels × 9 frames, one register per frame. Every compare-exchange of two
+// 01 · 16 neighbouring pixels × 9 frames, one register per frame. Every compare-exchange of two
 // registers (a min and a max) advances all 16 sorts at once; outliers sink, the median row lights up.
 // Values are real: 16 pixels of the synthetic subs where satellite trails cross.
 import * as THREE from "three";

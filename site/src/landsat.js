@@ -1,4 +1,4 @@
-// 05 · Every Landsat 8/9 pass over Seattle and Tacoma in 2023–2024 (90 scenes, real data via
+// 06 Examples · Every Landsat 8/9 pass over Seattle and Tacoma in 2023–2024 (90 scenes, real data via
 // Microsoft Planetary Computer). Medians run per pixel on the GPU: with clouds kept (np.median) or
 // with QA-flagged clouds and shadows as nodata (rw.median(..., nodata=0)).
 import * as THREE from "three";

@@ -1,4 +1,4 @@
-// 08 · Code, from the README.
+// 05 · Code, from the README.
 import { $, segmented } from "./util.js";
 
 const SNIPPETS = {
@@ -12,6 +12,19 @@ med   = rw.median(stack, axis=0)                    # identical to np.median
 lo, hi = rw.quantile(stack, [0.1, 0.9], axis=0)     # identical to np.quantile, every method
 comp  = rw.median(scenes, axis=0, nodata=0)         # uint16, clouds skipped
 k     = rw.select_ranks(stack, [0, 3, 36], axis=0)  # any ranks, one pass` },
+  js: { lang: "js", code: `import { init } from "@rankwise-js/rankwise";
+
+// init() picks the fastest backend the runtime has. Same API, identical results:
+//   native    Node, Bun, Deno: the Rust kernels (AVX-512, AVX2, NEON) via Node-API
+//   simd128   browsers, or Node with no native addon for the platform: WebAssembly SIMD
+//   portable  fallback for engines without WebAssembly SIMD: plain WebAssembly
+const rw = await init();
+console.log(rw.backend, rw.isa);   // "native" "avx512" · "wasm" "simd128" · "wasm" "scalar"
+
+const clean = rw.sigmaClipMean(subs, { sigma: 3, maxiters: 5 });  // subs: Float32Array[]
+const med   = rw.median(subs);                                     // identical to np.median
+const [lo, hi] = rw.quantile(cube, [0.1, 0.9], { shape: [31, 721, 1440] });  // along axis 0
+const comp  = rw.median(scenes, { nodata: 0 });                    // Uint16Array[], clouds skipped` },
   rs: { lang: "rs", code: `use ndarray::{Array2, ArrayView3, Axis};
 use rankwise::{Clip, Reduce};
 
@@ -37,14 +50,19 @@ cargo build --release -p rankwise-capi
 
 # Python: abi3 wheel, Python >= 3.9
 pip install maturin && maturin build --release -m rankwise-py/Cargo.toml -o dist
-pip install --find-links dist rankwise` },
+pip install --find-links dist rankwise
+
+# JavaScript: both WebAssembly builds (simd128, portable) + this machine's native addon
+rustup target add wasm32-unknown-unknown
+node rankwise-js/scripts/build.mjs --all` },
 };
 
 const KW = {
   py: new Set(["import", "as", "from", "def", "return", "for", "in", "if", "None", "True", "False"]),
+  js: new Set(["import", "from", "const", "let", "await", "new", "return"]),
   rs: new Set(["use", "fn", "let", "mut", "pub", "struct", "impl", "for", "in", "as"]),
   c: new Set(["const", "float", "NULL"]),
-  sh: new Set(["cargo", "pip", "maturin"]),
+  sh: new Set(["cargo", "pip", "maturin", "rustup", "node"]),
 };
 
 function highlight(src, lang) {
@@ -52,7 +70,7 @@ function highlight(src, lang) {
   const out = [];
   for (const line of src.split("\n")) {
     // split off the comment
-    const cm = lang === "c" ? line.indexOf("/*") : lang === "rs" ? line.indexOf("//") : line.indexOf("#");
+    const cm = lang === "c" ? line.indexOf("/*") : lang === "rs" || lang === "js" ? line.indexOf("//") : line.indexOf("#");
     const isInclude = lang === "c" && line.startsWith("#include");
     let code = cm >= 0 && !isInclude && !(lang === "sh" && cm > 0) ? line.slice(0, cm) : line;
     let com = cm >= 0 && !isInclude && !(lang === "sh" && cm > 0) ? line.slice(cm) : "";

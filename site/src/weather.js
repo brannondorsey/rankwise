@@ -1,4 +1,4 @@
-// 04 · Real NOAA GEFS 2 m temperature, 31 members, init 2026-11-01 00Z. p10/p50/p90 per cell come
+// 06 Examples · Real NOAA GEFS 2 m temperature, 31 members, init 2026-11-01 00Z. p10/p50/p90 per cell come
 // from rankwise.quantile (identical to np.quantile). The surface's height is the p90 − p10 spread,
 // its colour the median; ridgelines run along each latitude row.
 import * as THREE from "three";
@@ -15,26 +15,38 @@ precision highp float;
 precision highp int;
 uniform sampler2D uData;
 uniform float uLead, uSpreadMax, uTmin, uTmax, uH;
-uniform int uLeads, uRows, uCols;
+uniform vec2 uCell;
+uniform int uLeads, uRows, uCols, uTiles;
 uniform mat4 modelViewMatrix, projectionMatrix;
 in vec3 position; in vec2 uv;
-out float vT; out float vS; out vec2 vUv; out float vRow;
-vec3 at(int lead, ivec2 c) { return texelFetch(uData, ivec2(c.x, lead * uRows + c.y), 0).rgb; }
+out float vT; out float vS; out vec3 vN;
+int l0, l1; float lf;
+// leads are tiled uTiles per row so the atlas stays inside every GPU's 4096 px texture limit
+vec3 at(int lead, ivec2 c) { return texelFetch(uData, ivec2((lead % uTiles) * uCols + c.x, (lead / uTiles) * uRows + c.y), 0).rgb; }
+vec3 quant(ivec2 c) {    // p10, p50, p90 in °C, between two leads
+  c = clamp(c, ivec2(0), ivec2(uCols - 1, uRows - 1));
+  return mix(at(l0, c), at(l1, c), lf) * (uTmax - uTmin) + uTmin;
+}
+float height(vec3 q) { return pow(max(q.b - q.r, 0.0) / uSpreadMax, 0.85) * uH; }
 void main() {
   ivec2 c = ivec2(int(round(uv.x * float(uCols - 1))), int(round((1.0 - uv.y) * float(uRows - 1))));
-  int l0 = int(floor(uLead)); int l1 = min(l0 + 1, uLeads - 1); float f = uLead - float(l0);
-  vec3 q = mix(at(l0, c), at(l1, c), f) * (uTmax - uTmin) + uTmin;  // p10, p50, p90 in °C
-  float spread = max(q.b - q.r, 0.0);
-  vS = spread / uSpreadMax; vT = q.g; vUv = uv; vRow = float(c.y);
+  l0 = int(floor(uLead)); l1 = min(l0 + 1, uLeads - 1); lf = uLead - float(l0);
+  vec3 q = quant(c);
+  vS = max(q.b - q.r, 0.0) / uSpreadMax; vT = q.g;
   vec3 p = position;
-  p.z = pow(vS, 0.85) * uH;
+  p.z = height(q);
+  // smooth normal from neighbours two cells out, so the data's 8-bit steps don't show as terraces
+  // (rows run north to south, so +row is -y)
+  float hx = height(quant(c + ivec2(2, 0))) - height(quant(c - ivec2(2, 0)));
+  float hy = height(quant(c - ivec2(0, 2))) - height(quant(c + ivec2(0, 2)));
+  vN = normalize(vec3(-hx / (4.0 * uCell.x), -hy / (4.0 * uCell.y), 1.0));
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 
 const FRAG = /* glsl */ `
 precision highp float;
-uniform float uLine; uniform int uRows;
-in float vT; in float vS; in vec2 vUv; in float vRow;
+uniform float uLine;
+in float vT; in float vS; in vec3 vN;
 out vec4 outColor;
 vec3 ramp(float t) {     // -10 … 30 °C
   vec3 c0 = vec3(0.17, 0.24, 1.0), c1 = vec3(0.16, 0.55, 1.0), c2 = vec3(0.28, 0.88, 1.0),
@@ -50,10 +62,11 @@ vec3 ramp(float t) {     // -10 … 30 °C
 void main() {
   vec3 c = ramp(vT);
   if (uLine > 0.5) {
-    outColor = vec4(c * (0.55 + 1.3 * vS), 0.55 + 0.45 * vS);
+    outColor = vec4(c * (0.35 + 0.9 * vS), 0.18 + 0.5 * vS);
   } else {
-    // dark surface tinted by temperature, brighter where the members disagree
-    outColor = vec4(c * (0.06 + 0.5 * vS * vS), 1.0);
+    // temperature-coloured terrain, relief lit from the north-west so the spread reads as height
+    float lit = 0.45 + 0.55 * max(dot(normalize(vN), normalize(vec3(-0.5, 0.65, 0.75))), 0.0);
+    outColor = vec4(c * lit * (0.42 + 0.58 * vS), 1.0);
   }
 }`;
 
@@ -67,7 +80,16 @@ export async function initWeather() {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
 
-  const tex = new THREE.Texture(img);
+  // gefs.jpg stacks the leads vertically (257 × 4961); re-tile it so no side exceeds 4096 px,
+  // the texture limit of many phones and laptops (three.js would otherwise rescale it and the
+  // texelFetch lookups would read the wrong cells). drawImage at 1:1 copies the bytes exactly.
+  const TILES = 6;
+  const atlas = document.createElement("canvas");
+  atlas.width = TILES * cols;
+  atlas.height = Math.ceil(leads / TILES) * rows;
+  const ax = atlas.getContext("2d");
+  for (let l = 0; l < leads; l++) ax.drawImage(img, 0, l * rows, cols, rows, (l % TILES) * cols, Math.floor(l / TILES) * rows, cols, rows);
+  const tex = new THREE.Texture(atlas);
   Object.assign(tex, { flipY: false, generateMipmaps: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, colorSpace: THREE.NoColorSpace });
   tex.needsUpdate = true;
 
@@ -78,8 +100,9 @@ export async function initWeather() {
   const uniforms = {
     uData: { value: tex }, uLead: { value: 0 }, uSpreadMax: { value: Math.min(14, meta.spread_max) },
     uTmin: { value: meta.tmin }, uTmax: { value: meta.tmax }, uH: { value: 1.25 },
-    uLeads: { value: leads }, uRows: { value: rows }, uCols: { value: cols }, uLine: { value: 0 },
+    uLeads: { value: leads }, uRows: { value: rows }, uCols: { value: cols }, uTiles: { value: TILES }, uCell: { value: new THREE.Vector2() }, uLine: { value: 0 },
   };
+  uniforms.uCell.value.set(MW / (cols - 1), MH / (rows - 1));
   const surfGeo = new THREE.PlaneGeometry(MW, MH, cols - 1, rows - 1);
   const surf = new THREE.Mesh(surfGeo, new THREE.RawShaderMaterial({
     glslVersion: THREE.GLSL3, uniforms, vertexShader: VERT, fragmentShader: FRAG,

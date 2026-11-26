@@ -1,4 +1,4 @@
-// 06 · Benchmarks from bench/results/*.json, replayed in real time, plus the depth sweep.
+// 03 · Benchmarks from bench/results/*.json, replayed in real time, plus the depth sweep.
 import B from "./bench.json";
 import { $, el, loop, reduced, secs, segmented, whenNear } from "./util.js";
 

@@ -1,5 +1,4 @@
-// 07 · 1,057 conformance tests light up; real CCD frames match astropy's mask on every pixel.
-import B from "./bench.json";
+// 04 · 1,057 conformance tests light up.
 import { $, clamp, easeOut, fmt, loop, reduced, whenNear } from "./util.js";
 
 const TESTS = 1057, COLS = 41, ROWS = 26;
@@ -38,20 +37,5 @@ export function initCorrect() {
       ctx.roundRect ? ctx.roundRect(x, y, s, s, s * 0.25) : ctx.rect(x, y, s, s);
       ctx.fill();
     }
-  });
-
-  // CCD: three real stacks, masks identical to astropy on every pixel
-  const bars = $("#ccd-bars");
-  const kinds = Object.entries(B.ccd).map(([k, rows]) => ({ k, r: rows.find((r) => r.ref.startsWith("astropy")) }));
-  bars.innerHTML = kinds.map(({ k, r }) => `<div class="ccd-bar"><span>${k} ×10</span><div class="tr"><i></i></div><span class="v">${r.same === r.pixels ? "100%" : ((r.same / r.pixels) * 100).toFixed(4) + "%"}</span></div>`).join("");
-  const total = kinds[0].r.pixels;
-  const num = $("#ccd-n");
-  const ccdCard = num.closest(".ccd-card");
-  let c0 = reduced ? 10 : 0, go = false;
-  whenNear(ccdCard, () => { go = true; bars.querySelectorAll("i").forEach((i, k) => setTimeout(() => (i.style.width = (kinds[k].r.same / kinds[k].r.pixels) * 100 + "%"), 150 * k)); }, "-20%");
-  loop(ccdCard, (dt) => {
-    if (!go || c0 > 2.2) return;
-    c0 += dt;
-    num.textContent = fmt(Math.round(easeOut(clamp(c0 / 2)) * total));
   });
 }
