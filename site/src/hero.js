@@ -6,7 +6,7 @@
 // rankwise's stacked frame shows through mid-deck, and a violet thread of light (one bead per reduced
 // stack) cools off behind the head. After the last row it holds, the deck re-forms in a wave from back
 // to front and the scan restarts. Hovering (fine pointers) pauses the scan and hands the probe to the
-// pointer; reduced motion freezes it mid-scan.
+// pointer; dragging turns the deck. Reduced motion freezes the scan mid-way.
 import * as THREE from "three";
 import { $, autosize, coarse, getJSON, loadImage, loop, reduced, smoothstep } from "./util.js";
 import { sigmaClip } from "./clip.js";
@@ -340,6 +340,7 @@ export async function initHero() {
   const head = new THREE.Vector2(XA, PR), probeP = head.clone(), targetP = head.clone();
   let hovering = false;
   function onPointer(e) {
+    if (drag) return;
     const r = canvas.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
@@ -352,6 +353,54 @@ export async function initHero() {
   if (!coarse) {
     canvas.addEventListener("pointermove", onPointer);
     canvas.addEventListener("pointerleave", () => (hovering = false));
+  }
+
+  // drag to turn the deck (horizontal only on touch, so vertical swipes still scroll the page); it
+  // coasts on release, then drifts back to its pose
+  const turn = { x: 0, y: 0, vx: 0, vy: 0, idle: 9 };
+  let drag = null;
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    hovering = false;
+    turn.vx = turn.vy = 0;
+    canvas.setPointerCapture(e.pointerId);
+    canvas.classList.add("dragging");
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const k = 3.2 / Math.max(600, canvas.clientWidth); // radians per pixel
+    const dy = (e.clientX - drag.x) * k, dx = e.pointerType === "touch" ? 0 : (e.clientY - drag.y) * k;
+    drag.x = e.clientX; drag.y = e.clientY;
+    turn.y += dy; turn.x += dx;
+    turn.vy = dy * 60; turn.vx = dx * 60;
+    turn.idle = 0;
+  });
+  const release = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag = null;
+    canvas.classList.remove("dragging");
+  };
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", release);
+  const TURN_Y0 = -0.45, TURN_Y1 = 1.3, TURN_X = 0.4;  // from a steeper angle round to the far 3/4 view, never edge-on
+  function steer(dt) {
+    if (!drag) {
+      turn.idle += dt;
+      const fr = Math.exp(-dt * 3.5);
+      turn.vx *= fr; turn.vy *= fr;
+      turn.x += turn.vx * dt; turn.y += turn.vy * dt;
+      if (turn.idle > 2.2) {                           // ease home
+        const k = 1 - Math.exp(-dt * 1.8);
+        turn.x -= turn.x * k; turn.y -= turn.y * k;
+      }
+    } else {
+      turn.vx *= 0.8; turn.vy *= 0.8;                  // holding still spends the momentum
+    }
+    const y = Math.max(TURN_Y0, Math.min(TURN_Y1, turn.y)), x = Math.max(-TURN_X, Math.min(TURN_X, turn.x));
+    if (y !== turn.y) turn.vy = 0;
+    if (x !== turn.x) turn.vx = 0;
+    turn.y = y; turn.x = x;
   }
 
   // ---- layout
@@ -381,7 +430,8 @@ export async function initHero() {
     deck.position.set(pose.x, pose.y, 0);
     deck.scale.setScalar(pose.s);
     const sway = reduced ? 0 : Math.sin(t0 * 0.25) * 0.06;
-    deck.rotation.set(pose.rx + sway * 0.4, pose.ry + sway, 0);
+    steer(dt);
+    deck.rotation.set(pose.rx + sway * 0.4 + turn.x, pose.ry + sway + turn.y, 0);
     uniforms.uTime.value = t0;
     dustU.uTime.value = t0;
 

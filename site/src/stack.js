@@ -1,264 +1,172 @@
-// 06 Examples · Live stacking of the 40 synthetic subs on the GPU: mean, median and astropy-style sigma
-// clipping per pixel and channel, the same rank-bounds algorithm rankwise runs per SIMD lane.
-import * as THREE from "three";
-import { $, autosize, clamp, coarse, easeOut, getJSON, loadImage, loop, rangeFill, reduced, segmented, whenNear } from "./util.js";
+// 06 Examples · Sigma clipping. rankwise's sigma-clipped stack of the 40 synthetic subs, wiped against
+// one sub, the plain mean or the median (all four precomputed by site/scripts/build_assets.py, so the
+// page only moves a clip-path), and the 40 values of one pixel on a trail: the satellite drags the mean
+// up, sigma clipping rejects it.
+import { $, $$, asset, clamp, easeOut, el, fmt, getJSON, loop, reduced, segmented, whenNear } from "./util.js";
 import { sigmaClip } from "./clip.js";
-import { sliceChart } from "./slice.js";
+import { miniRace } from "./weather.js";
 
-const FRAG = /* glsl */ `
-precision highp float;
-precision highp int;
-uniform sampler2D uAtlas;
-uniform int uN, uMode, uFrame, uCols, uTile;
-uniform float uSigma, uSat, uRej;
-uniform vec3 uEnc;           // X1, C1, MAX
-uniform vec3 uLo, uHi, uM;   // display stretch per channel
-in vec2 vUv;
-out vec4 outColor;
-
-vec3 dec(vec3 c) {           // 8-bit code -> electrons
-  c *= 255.0;
-  vec3 lin = c / uEnc.y * uEnc.x;
-  vec3 lg = uEnc.x * exp((c - uEnc.y) / (255.0 - uEnc.y) * log(uEnc.z / uEnc.x));
-  return mix(lin, lg, step(uEnc.y, c));
-}
-vec3 frameAt(ivec2 p, int i) {
-  ivec2 o = ivec2(i % uCols, i / uCols) * uTile;
-  return texelFetch(uAtlas, o + p, 0).rgb;
-}
-vec3 mtf(vec3 m, vec3 x) { return ((m - 1.0) * x) / ((2.0 * m - 1.0) * x - m); }
-
-vec3 cd[40];   // this pixel's codes, 0..255
-
-// k-th smallest (0-based, per channel) among codes in [lo, hi], by bisection over the 256 codes
-vec3 kth(vec3 k, vec3 lo, vec3 hi) {
-  vec3 a = vec3(0.0), b = vec3(255.0);
-  for (int s = 0; s < 8; s++) {
-    vec3 mid = floor((a + b) * 0.5);
-    vec3 cnt = vec3(0.0);
-    for (int i = 0; i < 40; i++) {
-      if (i >= uN) break;
-      vec3 c = cd[i];
-      cnt += step(c, mid) * step(lo, c) * step(c, hi);
-    }
-    vec3 ge = step(k + 0.5, cnt);
-    b = mix(b, mid, ge);
-    a = mix(mid + 1.0, a, ge);
-  }
-  return a;
-}
-
-void main() {
-  ivec2 p = ivec2(floor(vUv * float(uTile)));
-  p.y = uTile - 1 - p.y;
-  vec3 v;
-  float removed = 0.0;
-  if (uMode == 0) {
-    v = dec(frameAt(p, uFrame));
-  } else {
-    for (int i = 0; i < 40; i++) { if (i >= uN) break; cd[i] = floor(frameAt(p, i) * 255.0 + 0.5); }
-    float n = float(uN);
-    if (uMode == 1) {
-      v = vec3(0.0);
-      for (int i = 0; i < 40; i++) { if (i >= uN) break; v += dec(cd[i] / 255.0); }
-      v /= n;
-    } else if (uMode == 2) {
-      vec3 lo = vec3(-1.0), hi = vec3(256.0);
-      vec3 a = dec(kth(vec3(floor((n - 1.0) * 0.5)), lo, hi) / 255.0);
-      vec3 b = dec(kth(vec3(floor(n * 0.5)), lo, hi) / 255.0);
-      v = 0.5 * (a + b);
-    } else {
-      // sigma clipping: kept values are always a contiguous code range [lo, hi]
-      vec3 lo = vec3(-1.0), hi = vec3(256.0), cnt = vec3(n);
-      for (int it = 0; it < 5; it++) {
-        vec3 a = dec(kth(floor((cnt - 1.0) * 0.5), lo, hi) / 255.0);
-        vec3 b = dec(kth(floor(cnt * 0.5), lo, hi) / 255.0);
-        vec3 center = 0.5 * (a + b);
-        vec3 s1 = vec3(0.0);
-        for (int i = 0; i < 40; i++) { if (i >= uN) break; vec3 w = step(lo, cd[i]) * step(cd[i], hi); s1 += w * dec(cd[i] / 255.0); }
-        vec3 mean = s1 / max(cnt, 1.0);
-        vec3 s2 = vec3(0.0);
-        for (int i = 0; i < 40; i++) { if (i >= uN) break; vec3 w = step(lo, cd[i]) * step(cd[i], hi); vec3 d = dec(cd[i] / 255.0) - mean; s2 += w * d * d; }
-        vec3 sd = sqrt(s2 / max(cnt, 1.0));
-        vec3 bl = center - uSigma * sd, bh = center + uSigma * sd;
-        vec3 nlo = vec3(256.0), nhi = vec3(-1.0), nc = vec3(0.0);
-        for (int i = 0; i < 40; i++) {
-          if (i >= uN) break;
-          vec3 x = dec(cd[i] / 255.0);
-          vec3 w = step(bl, x) * step(x, bh);
-          nc += w;
-          nlo = mix(nlo, min(nlo, cd[i]), w);
-          nhi = mix(nhi, max(nhi, cd[i]), w);
-        }
-        bool same = all(equal(nc, cnt));
-        lo = nlo; hi = nhi; cnt = nc;
-        if (same) break;
-      }
-      vec3 s = vec3(0.0);
-      for (int i = 0; i < 40; i++) { if (i >= uN) break; vec3 w = step(lo, cd[i]) * step(cd[i], hi); s += w * dec(cd[i] / 255.0); }
-      v = s / max(cnt, 1.0);
-      if (uRej > 0.5) {
-        for (int i = 0; i < 40; i++) {
-          if (i >= uN) break;
-          vec3 w = 1.0 - step(lo, cd[i]) * step(cd[i], hi);
-          vec3 d = max(dec(cd[i] / 255.0) - v, 0.0) * w;
-          removed = max(removed, max(d.r, max(d.g, d.b)));
-        }
-      }
-    }
-  }
-  vec3 x = clamp((v - uLo) / (uHi - uLo), 0.0, 1.0);
-  vec3 o = mtf(uM, x);
-  float lum = (o.r + o.g + o.b) / 3.0;
-  o = clamp(lum + (o - lum) * uSat, 0.0, 1.0);
-  if (uRej > 0.5 && uMode == 3) {
-    float l = removed < 400.0 ? 0.0 : clamp(log(removed) / log(40000.0), 0.0, 1.0);
-    o = vec3(lum * 0.3) + l * vec3(1.0, 0.63, 0.16);
-  }
-  outColor = vec4(o, 1.0);
-}`;
-
-const VERT = /* glsl */ `
-in vec3 position; in vec2 uv; out vec2 vUv;
-void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const MODES = {
+  single: { lbl: "1 sub · 30 s", cap: "<b>Left</b>, one 30 s sub: grainy, with a satellite across it. <b>Right</b>, rankwise's sigma-clipped stack of all 40." },
+  mean: { lbl: "Mean of 40", cap: "<b>Left</b>, the plain mean: smooth, but every satellite, the airplane and the meteor survive as streaks. <b>Right</b>, sigma clipping rejects just those outliers." },
+  median: { lbl: "Median of 40", cap: "<b>Left</b>, the median: no streaks, but 25% noisier than a mean. <b>Right</b>, sigma clipping: no streaks, and as smooth as the mean." },
+};
+const ROWS = [["single", "1 sub"], ["mean", "Mean"], ["median", "Median"], ["sig", "σ-clip"]];
 
 export function initStack() {
   const root = $("#stack");
-  whenNear(root, () => start(root));
+  whenNear(root, () => start(root), "600px");
 }
 
 async function start(root) {
-  const view = $("#stack-view", root), canvas = $("canvas", view);
-  const meta = await getJSON("data/astro.json");
-  const img = await loadImage("data/astro_subs.jpg");
-  $(".vp-loading", view).classList.add("done");
-  const N = meta.frames, T = meta.tile, cols = meta.cols, [X1, C1, MAX] = meta.enc;
+  const fig = $("#ab", root), a = $("#ab-a", root), b = $("#ab-b", root), tags = $("#ab-tags", root);
+  const ex = (await getJSON("data/astro.json")).ex;
+  const src = (m) => asset(`data/astro_${m}.webp`);
+  let mode = "mean";
+  b.src = src("sigclip");
+  a.src = src(mode);
+  await Promise.all([a, b].map((i) => i.decode().catch(() => {})));
+  $(".vp-loading", fig).classList.add("done");
+  for (const m of ["single", "median"]) new Image().src = src(m); // warm the cache for the other modes
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
-  renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // the shader already writes display values
-  const tex = new THREE.Texture(img);
-  Object.assign(tex, { flipY: false, generateMipmaps: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, colorSpace: THREE.NoColorSpace });
-  tex.needsUpdate = true;
-
-  const rt = new THREE.WebGLRenderTarget(T, T, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
-  const st = meta.stretch;
-  const uniforms = {
-    uAtlas: { value: tex }, uN: { value: N }, uMode: { value: 3 }, uFrame: { value: 19 % N }, uCols: { value: cols }, uTile: { value: T },
-    uSigma: { value: 3 }, uSat: { value: meta.sat }, uRej: { value: 0 }, uEnc: { value: new THREE.Vector3(X1, C1, MAX) },
-    uLo: { value: new THREE.Vector3(st[0][0], st[1][0], st[2][0]) }, uHi: { value: new THREE.Vector3(st[0][1], st[1][1], st[2][1]) },
-    uM: { value: new THREE.Vector3(st[0][2], st[1][2], st[2][2]) },
+  // ---- the wipe: σ-clip on the right of the divider, the chosen method on the left
+  let x = reduced ? 0.5 : 1;
+  const div = $("#ab-div", root), lblL = $("#ab-l", root), lblR = $(".ab-r", root);
+  const setX = (v) => {
+    x = clamp(v, 0, 1);
+    fig.style.setProperty("--x", (x * 100).toFixed(2) + "%");
+    div.setAttribute("aria-valuenow", Math.round(x * 100));
+    lblL.style.opacity = x > 0.22 ? 1 : 0;   // each label only while its side is wide enough to hold it
+    lblR.style.opacity = x < 0.78 ? 1 : 0;
   };
-  const quad = new THREE.PlaneGeometry(2, 2);
-  const compute = new THREE.Mesh(quad, new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, uniforms, vertexShader: VERT, fragmentShader: FRAG }));
-  const show = new THREE.Mesh(quad, new THREE.MeshBasicMaterial({ map: rt.texture }));
-  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const scA = new THREE.Scene(), scB = new THREE.Scene();
-  scA.add(compute);
-  scB.add(show);
-  let dirty = true;
-  autosize(renderer, canvas, () => (dirty = true), 2);
-
-  // ---- controls
-  const nIn = $("#stack-n"), sIn = $("#stack-sigma"), nOut = $("#stack-n-out"), sOut = $("#stack-sigma-out"), rejIn = $("#stack-rej");
-  const fillN = rangeFill(nIn), fillS = rangeFill(sIn);
-  const tag = $("#stack-tag"), nLabel = $("#stack-n-label"), sRow = $("#stack-sigma-row");
-  const names = ["1 sub", "mean", "median", "σ-clip"];
-  function sync() {
-    const m = uniforms.uMode.value;
-    const n = +nIn.value;
-    if (m === 0) uniforms.uFrame.value = n - 1;
-    else uniforms.uN.value = n;
-    uniforms.uSigma.value = +sIn.value;
-    uniforms.uRej.value = rejIn.checked ? 1 : 0;
-    nOut.textContent = n;
-    sOut.textContent = (+sIn.value).toFixed(1);
-    nLabel.textContent = m === 0 ? "Sub #" : "Frames";
-    sIn.disabled = m !== 3;
-    rejIn.disabled = m !== 3;
-    sRow.style.opacity = m === 3 ? 1 : 0.4;
-    tag.textContent = m === 0 ? `sub ${n} of ${N} · 30 s` : `${names[m]} · ${n} frame${n > 1 ? "s" : ""}${m === 3 ? ` · ${(+sIn.value).toFixed(1)}σ` : ""}`;
-    fillN();
-    fillS();
-    dirty = true;
-    probe();
-  }
-  segmented($("#stack-mode"), (d) => {
-    const m = +d.mode;
-    const prev = uniforms.uMode.value;
-    uniforms.uMode.value = m;
-    if (m === 0 && prev !== 0) nIn.value = uniforms.uFrame.value + 1;
-    if (m !== 0 && prev === 0) nIn.value = uniforms.uN.value;
-    sync();
+  setX(x);
+  let intro = reduced ? -1 : 0, held = false, goal = -1;   // goal: where the divider is gliding to
+  const fromEvent = (e) => { const r = fig.getBoundingClientRect(); setX((e.clientX - r.left) / r.width); };
+  fig.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    held = true; intro = goal = -1;
+    fig.setPointerCapture(e.pointerId);
+    fig.classList.add("dragging");
+    fromEvent(e);
   });
-  nIn.addEventListener("input", () => { stopIntro(); sync(); });
-  sIn.addEventListener("input", sync);
-  rejIn.addEventListener("change", sync);
-
-  // ---- probe: decode the pixel's codes from a CPU copy of the tile column we need
-  const cvs = document.createElement("canvas");
-  cvs.width = img.width; cvs.height = img.height;
-  const c2 = cvs.getContext("2d", { willReadFrequently: true });
-  c2.drawImage(img, 0, 0);
-  const dec = (c) => (c < C1 ? (c / C1) * X1 : X1 * Math.exp(((c - C1) / (255 - C1)) * Math.log(MAX / X1)));
-  const chart = sliceChart($("#stack-slice"), { n: N, enc: (x) => x, max: 255 });
-  let px = meta.probe[0], py = meta.probe[1];
-  const vals = new Float64Array(N), codes = new Float64Array(N);
-  function probe() {
-    for (let i = 0; i < N; i++) {
-      const d = c2.getImageData((i % cols) * T + px, Math.floor(i / cols) * T + py, 1, 1).data;
-      codes[i] = d[1];
-      vals[i] = dec(d[1]);
+  fig.addEventListener("pointermove", (e) => held && fromEvent(e));
+  const up = () => { held = false; fig.classList.remove("dragging"); };
+  fig.addEventListener("pointerup", up);
+  fig.addEventListener("pointercancel", up);
+  div.addEventListener("keydown", (e) => {
+    const step = { ArrowLeft: -0.04, ArrowRight: 0.04, Home: -1, End: 1 }[e.key];
+    if (step === undefined) return;
+    e.preventDefault();
+    intro = goal = -1;
+    setX(x + step);
+  });
+  // first view: the clean stack wipes in from the right
+  let started = false;
+  whenNear(fig, () => (started = true), "-25%");
+  const glide = loop(fig, (dt) => {
+    if (goal >= 0) {
+      setX(x + (goal - x) * (reduced ? 1 : 1 - Math.exp(-dt * 7)));
+      if (Math.abs(goal - x) < 0.002) setX(goal), (goal = -1);
     }
-    const m = uniforms.uMode.value, n = m === 0 ? N : uniforms.uN.value;
-    const r = sigmaClip(vals, n, uniforms.uSigma.value, 5);
-    const toCode = (x) => (x < X1 ? (x / X1) * C1 : C1 + (255 - C1) * Math.log(Math.max(x, X1) / X1) / Math.log(MAX / X1));
-    chart.draw({
-      codes, n, kept: m === 3 ? r.kept : null, cur: m === 0 ? uniforms.uFrame.value : -1,
-      band: m === 3 ? [toCode(Math.max(0, r.lo)), toCode(r.hi)] : null,
-      line: m === 0 ? null : toCode(m === 1 ? avg(vals, n) : m === 2 ? r.center : r.mean),
-    });
-    $("#stack-px").textContent = `${px + meta.crop[1]}, ${py + meta.crop[0]}`;
-    $("#stack-px-rej").textContent = m === 3 && r.rejected ? `${r.rejected} rejected` : "";
+    if (intro < 0 || !started) return;
+    intro = Math.min(1, intro + dt / 1.8);
+    setX(1 - 0.5 * easeOut(intro));
+    if (intro >= 1) intro = -1;
+  });
+
+  // ---- what is where: labels on the trails, on the left side only
+  tags.innerHTML = ex.trails.map((t) => `<span class="ab-tag mono" data-k="${t.kind}" data-sub="${t.sub}" style="left:${(t.x * 100).toFixed(2)}%;top:${(t.y * 100).toFixed(2)}%"><i></i>${t.kind}</span>`).join("");
+  const tagEls = $$(".ab-tag", tags);
+
+  // ---- the scorecard
+  const max = Math.max(...ROWS.map(([k]) => ex.noise[k]));
+  $("#ab-score", root).innerHTML = `<div class="sc-h mono"><span></span><span>noise, e⁻ · lower is better</span><span>streaks</span></div>` + ROWS.map(([k, name]) =>
+    `<div class="sc-row mono${k === "sig" ? " rw" : ""}" data-k="${k}"><span class="nm">${name}<em>${k === "sig" ? "right" : "left"}</em></span>` +
+    `<span class="nz"><span class="trk"><i style="width:${(ex.noise[k] / max * 100).toFixed(1)}%"></i></span><b>${ex.noise[k].toFixed(1)}</b></span>` +
+    `<span class="tr ${ex.streaks[k] ? "bad" : "ok"}">${ex.streaks[k] || "0 ✓"}</span></div>`).join("");
+
+  const cap = $("#ab-cap", root);
+  function show(m) {
+    mode = m;
+    a.src = src(m);
+    lblL.textContent = MODES[m].lbl;
+    cap.innerHTML = MODES[m].cap;
+    $$(".sc-row", root).forEach((r) => r.classList.toggle("on", r.dataset.k === m));
+    // the streaks the left image actually has
+    tagEls.forEach((t) => t.classList.toggle("on", m === "mean" || (m === "single" && +t.dataset.sub === ex.single)));
   }
-  const pick = (e) => {
-    const r = canvas.getBoundingClientRect();
-    px = clamp(Math.floor(((e.clientX - r.left) / r.width) * T), 0, T - 1);
-    py = clamp(Math.floor(((e.clientY - r.top) / r.height) * T), 0, T - 1);
-    probe();
-  };
-  let down = false;
-  canvas.addEventListener("pointerdown", (e) => { down = true; canvas.setPointerCapture(e.pointerId); pick(e); });
-  canvas.addEventListener("pointermove", (e) => { if (down || (!coarse && e.buttons === 0 && e.shiftKey)) pick(e); });
-  canvas.addEventListener("pointerup", () => (down = false));
-  canvas.style.touchAction = "none";
+  segmented($("#ab-mode", root), (d) => show(d.m));
+  show(mode);
 
-  // ---- intro: frames 1 → 40 the first time it is seen
-  let intro = reduced ? -1 : 0;
-  function stopIntro() { intro = -1; }
-  if (intro === 0) nIn.value = 1;
-  sync();
-
-  loop(view, (dt) => {
-    if (intro >= 0) {
-      const vis = view.getBoundingClientRect();
-      if (vis.top < innerHeight * 0.75) {
-        intro += dt / 3.2;
-        const n = Math.max(1, Math.round(1 + easeOut(clamp(intro)) * (N - 1)));
-        if (n !== +nIn.value) { nIn.value = n; sync(); }
-        if (intro >= 1) intro = -1;
+  // ---- one pixel on a trail: its 40 values, what sigma clipping keeps, and where each method lands
+  const svg = $("#px-chart", root);
+  const pick = $("#px-pick", root);
+  pick.innerHTML = ex.pixels.map((p, i) => `<button data-i="${i}"${i ? "" : ' class="on"'}>${p.kind}</button>`).join("");
+  let cur = 0;
+  segmented(pick, (d) => {
+    cur = +d.i;
+    draw();
+    // slide the divider so the picked pixel's trail is in view on the left
+    const t = ex.trails.find((s) => s.sub === ex.pixels[cur].sub);
+    if (t && mode === "mean" && x < t.x + 0.12) { intro = -1; goal = Math.min(0.94, t.x + 0.18); glide.kick(); }
+  });
+  function draw() {
+    const p = ex.pixels[cur], v = p.v, n = v.length;
+    // what rankwise kept and returned (from the build); the ±3σ bounds of its last iteration from clip.js
+    const r = sigmaClip(v, n, 3, 5), kept = p.kept, clipped = p.sigclip;
+    const mean = v.reduce((s, x) => s + x, 0) / n;
+    $("#px-t", root).textContent = `one pixel on the ${p.kind} · 40 subs`;
+    $("#px-r", root).textContent = `${n - kept.reduce((s, k) => s + k, 0)} rejected`;
+    tagEls.forEach((t) => t.classList.toggle("sel", +t.dataset.sub === p.sub));
+    const W = Math.max(240, svg.clientWidth || 320), H = 176, L = 6, R = 84, T = 12, B = 16;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.innerHTML = "";
+    // broken axis: the kept values, the ±3σ band and both results on a linear scale below the break,
+    // outliers far above it on a log scale
+    const keptV = v.filter((_, i) => kept[i]);
+    const a0 = Math.min(...keptV, r.lo), a1 = Math.max(...keptV, r.hi, mean), pad = (a1 - a0) * 0.12;
+    const lo0 = a0 - pad, hi0 = a1 + pad, top = Math.max(...v), broken = top > hi0;
+    const yb = broken ? T + 0.3 * (H - T - B) : T - 6;
+    const y = (u) => u <= hi0 ? yb + 6 + (1 - (u - lo0) / (hi0 - lo0)) * (H - B - yb - 6)
+      : T + (1 - Math.log(u / hi0) / Math.log((top * 1.02) / hi0)) * (yb - 6 - T);
+    if (broken) for (const bx of [L, W - R]) el("path", { d: `M${bx - 4} ${yb + 4}l8 -6M${bx - 4} ${yb + 8}l8 -6`, stroke: "rgba(255,255,255,0.35)", "stroke-width": 1.2 }, svg);
+    const xs = (i) => L + (i + 0.5) * ((W - L - R) / n);
+    el("rect", { x: L, width: W - L - R, y: y(r.hi), height: Math.max(2, y(r.lo) - y(r.hi)), rx: 3, fill: "rgba(79,141,255,0.16)", stroke: "rgba(79,141,255,0.4)", "stroke-dasharray": "3 3" }, svg);
+    const line = (u, color, dash, text) => {
+      el("line", { x1: L, x2: W - R + 4, y1: y(u), y2: y(u), stroke: color, "stroke-width": 1.5, "stroke-dasharray": dash }, svg);
+      const t = el("text", { x: W - R + 10, y: y(u) + 3.5, fill: color, "font-size": 10.5, "font-family": "JetBrains Mono Variable, monospace" }, svg);
+      t.textContent = text;
+    };
+    // labels must not collide: push the mean's label clear of the σ-clip one
+    line(mean, "#ff9f43", "5 4", "mean");
+    line(clipped, "#5ee6ff", "", "σ-clip");
+    const lbls = svg.querySelectorAll("text");
+    const dy = +lbls[1].getAttribute("y") - +lbls[0].getAttribute("y");
+    if (Math.abs(dy) < 13) lbls[0].setAttribute("y", +lbls[1].getAttribute("y") - 13);
+    const g = el("g", { filter: "url(#pxg)" }, svg);
+    const defs = el("defs", {}, svg);
+    defs.innerHTML = `<filter id="pxg" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+    for (let i = 0; i < n; i++) {
+      const rej = !kept[i];
+      if (rej) el("line", { x1: xs(i), x2: xs(i), y1: y(v[i]) + 5, y2: H - B + 4, stroke: "rgba(255,159,67,0.35)" }, svg);
+      el("circle", { cx: xs(i), cy: y(v[i]), r: rej ? 4.6 : 2.8, fill: rej ? "#ff9f43" : "#5ee6ff" }, g);
+      if (rej && i === p.sub) {
+        const t = el("text", { x: xs(i) + (i > n / 2 ? -9 : 9), y: y(v[i]) + 4, fill: "#ff9f43", "font-size": 10.5, "font-family": "JetBrains Mono Variable, monospace", "text-anchor": i > n / 2 ? "end" : "start" }, svg);
+        t.textContent = `${p.kind} · sub ${i + 1}`;
       }
     }
-    if (!dirty) return;
-    dirty = false;
-    renderer.setRenderTarget(rt);
-    renderer.render(scA, cam);
-    renderer.setRenderTarget(null);
-    renderer.render(scB, cam);
-  });
-}
+    const ax = el("text", { x: L, y: H - 2, fill: "rgba(255,255,255,0.4)", "font-size": 10, "font-family": "JetBrains Mono Variable, monospace" }, svg);
+    ax.textContent = "sub 1";
+    const ax2 = el("text", { x: W - R, y: H - 2, fill: "rgba(255,255,255,0.4)", "font-size": 10, "font-family": "JetBrains Mono Variable, monospace", "text-anchor": "end" }, svg);
+    ax2.textContent = "40";
+    $("#px-vals", root).innerHTML = `the ${p.kind} adds <b class="o">${fmt(mean - clipped)} e⁻</b> to the mean · σ-clip rejects it`;
+  }
+  new ResizeObserver(draw).observe(svg);
+  draw();
 
-function avg(a, n) {
-  let s = 0;
-  for (let i = 0; i < n; i++) s += a[i];
-  return s / n;
+  miniRace($("#ab-race", root), [
+    { tool: "rankwise · AVX-512", s: 0.23, rw: true },
+    { tool: "astropy sigma_clip", s: 4.82 },
+    { tool: "ccdproc Combiner · 1 pass", s: 9.54 },
+  ], "σ-clip of 31 × 2048² · 3σ, ≤ 5 iterations");
 }

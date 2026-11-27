@@ -1,5 +1,5 @@
 // astropy-style sigma clipping of one slice (median center, population std, inclusive bounds),
-// the same decisions rankwise makes per lane. Used for the probes; the images run on the GPU.
+// the same decisions rankwise makes per lane. Used by the hero probe and the sigma clipping chart.
 
 export function median(a, n) {
   const s = Array.from(a.slice(0, n)).sort((x, y) => x - y);

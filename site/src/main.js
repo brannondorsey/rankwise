@@ -49,7 +49,7 @@ if (!reduced) {
 
 // reveal on scroll
 const rv = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), rv.unobserve(e.target))), { rootMargin: "0px 0px -8% 0px" });
-$$(".sec-head, .ex-head, .demo, .explain3, .race-card, .sweep-card, .tests-card, .code-card, .api").forEach((x) => { x.classList.add("rv"); rv.observe(x); });
+$$(".sec-head, .ex-head, .demo, .race-card, .sweep-card, .tests-card, .code-card, .api").forEach((x) => { x.classList.add("rv"); rv.observe(x); });
 
 const safe = (f) => Promise.resolve().then(f).catch((e) => console.error(e));
 safe(initHero);

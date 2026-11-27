@@ -37,7 +37,7 @@
         <canvas class="hero-canvas" aria-label="Forty noisy astronomical sub-exposures stacked in 3D, scanned pixel by pixel into one clean frame"></canvas>
         <div class="hero-vignette"></div>
         <div class="hero-copy wrap">
-          <p class="chip"><span class="dot"></span>Rust · C · Python · JavaScript</p>
+          <p class="chip"><span class="dot"></span><a href="#code" data-code="rs">Rust</a> · <a href="#code" data-code="c">C</a> · <a href="#code" data-code="py">Python</a> · <a href="#code" data-code="js">JavaScript</a></p>
           <h1>Order statistics<br><span class="grad">with SIMD hardware acceleration</span></h1>
           <p class="lede">Medians, quantiles and sigma clipping along any axis.<br class="br-wide"> SIMD across slices. Identical to NumPy.</p>
           <div class="hero-stats">
@@ -45,10 +45,10 @@
             <div><b>15×</b><span>faster σ-clip</span></div>
             <div><b>72×</b><span>faster quantiles</span></div>
           </div>
-          <p class="hero-note mono">Runtime vs. the fastest alternative · one CPU core</p>
           <div class="cta">
             <a class="btn btn-primary" href="#lanes">How it works <span aria-hidden="true">↓</span></a>
-            <a class="btn btn-ghost" href="#code">Get started</a>
+            <a class="btn btn-ghost" href="#code">Code</a>
+            <a class="btn btn-ghost" href="#examples">Uses</a>
           </div>
         </div>
         <div class="scroll-cue" aria-hidden="true"><span></span></div>
@@ -78,11 +78,6 @@
             <button class="btn btn-ghost btn-sm" id="lanes-play" aria-label="Replay">↻ Replay</button>
           </div>
         </div>
-        <div class="explain3">
-          <div><b>1 register = 1 frame</b><span>of 16 pixels</span></div>
-          <div><b>vminps + vmaxps</b><span>16 compare-exchanges</span></div>
-          <div><b>0 branches</b><span>on pixel values</span></div>
-        </div>
       </div>
     </section>
 
@@ -91,7 +86,7 @@
       <div class="wrap">
         <header class="sec-head">
           <p class="eyebrow"><span>02</span>Pruned networks</p>
-          <h2>A median doesn't need<br><span class="dim">a full sort.</span></h2>
+          <h2 id="net-h"><span class="net-word" id="net-word">A median</span> <span id="net-verb">doesn't need</span><br><span class="dim">a full sort.</span></h2>
           <p class="sec-lede">Each slice is sorted by a fixed sequence of compare-and-swap steps, called comparators. Ask for a few ranks, like the median, and rankwise skips every comparator that can't change them.</p>
         </header>
         <div class="demo net-demo">
@@ -121,7 +116,7 @@
       <div class="wrap">
         <header class="sec-head">
           <p class="eyebrow"><span>03</span>Benchmarks</p>
-          <h2>Real time.<br><span class="dim">One core each.</span></h2>
+          <h2>The fastest<br><span class="dim">CPU implementation.</span></h2>
         </header>
         <div class="race-card">
           <div class="race-top">
@@ -178,9 +173,9 @@
         </header>
         <div class="code-card">
           <div class="code-tabs" role="tablist" id="code-tabs">
-            <button data-k="rs" class="on">Rust</button>
+            <button data-k="rs">Rust</button>
             <button data-k="c">C</button>
-            <button data-k="py">Python</button>
+            <button data-k="py" class="on">Python</button>
             <button data-k="js">JavaScript</button>
             <button data-k="build">Build</button>
             <button class="copy mono" id="code-copy" aria-label="Copy code">copy</button>
@@ -261,34 +256,37 @@
           </div>
         </div>
 
-        <!-- sigma clipping: live GPU sigma clipping on the synthetic subs -->
+        <!-- sigma clipping: rankwise's stack of 40 synthetic subs, wiped against one sub, the mean or the median -->
         <div class="ex" id="stack">
           <header class="ex-head">
             <p class="ex-k mono">Sigma clipping · astrophotography</p>
             <h3>40 noisy subs in.<br><span class="dim">One clean frame out.</span></h3>
           </header>
           <div class="demo stack-demo">
-            <figure class="viewport square" id="stack-view">
-              <canvas aria-label="Stacked image"></canvas>
-              <div class="vp-tag mono" id="stack-tag">σ-clip · 40 frames</div>
-              <div class="vp-loading">loading 40 subs…</div>
+            <figure class="viewport square ab" id="ab">
+              <img class="ab-img" id="ab-a" alt="The same 40 subs combined by the method chosen beside the image" decoding="async">
+              <img class="ab-img ab-b" id="ab-b" alt="rankwise's sigma-clipped stack of the 40 subs" decoding="async">
+              <div class="ab-tags" id="ab-tags"></div>
+              <span class="ab-lbl ab-l mono" id="ab-l">Mean of 40</span>
+              <span class="ab-lbl ab-r mono">σ-clip of 40</span>
+              <div class="ab-div" id="ab-div" role="slider" tabindex="0" aria-label="Divider between the two stacks" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><span class="ab-knob" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.5 7 4.5 12l5 5M14.5 7l5 5-5 5"/></svg></span></div>
+              <div class="vp-loading">loading…</div>
             </figure>
             <div class="panel">
-              <div class="seg" role="tablist" id="stack-mode">
-                <button data-mode="0">1 sub</button>
-                <button data-mode="1">Mean</button>
-                <button data-mode="2">Median</button>
-                <button data-mode="3" class="on">σ-clip</button>
+              <div class="seg" id="ab-mode" aria-label="Compare sigma clipping with">
+                <button data-m="single">1 sub</button>
+                <button data-m="mean" class="on">Mean</button>
+                <button data-m="median">Median</button>
               </div>
-              <label class="slider"><span class="sl-k" id="stack-n-label">Frames</span><input type="range" id="stack-n" min="1" max="40" value="40"><output class="mono" id="stack-n-out">40</output></label>
-              <label class="slider" id="stack-sigma-row"><span class="sl-k">σ</span><input type="range" id="stack-sigma" min="1.5" max="6" step="0.1" value="3"><output class="mono" id="stack-sigma-out">3.0</output></label>
-              <label class="toggle"><input type="checkbox" id="stack-rej"><span class="sw"></span><span>Show what was rejected</span></label>
+              <p class="ab-cap" id="ab-cap"></p>
+              <div class="score" id="ab-score"></div>
               <div class="slice-card">
-                <div class="slice-head mono"><span>one pixel · <b id="stack-px">—</b></span><span class="o" id="stack-px-rej"></span></div>
-                <svg class="slice" id="stack-slice" viewBox="0 0 320 150" preserveAspectRatio="none" aria-label="The 40 values of the probed pixel"></svg>
-                <div class="legend mono"><span><i class="k"></i>kept</span><span><i class="r"></i>rejected</span><span><i class="b"></i>±σ</span></div>
+                <div class="slice-head mono"><span id="px-t">one pixel · 40 subs</span><span class="o" id="px-r"></span></div>
+                <svg class="px-chart" id="px-chart" aria-label="The 40 values of one pixel on a trail, with the mean and the sigma-clipped mean"></svg>
+                <p class="px-vals mono" id="px-vals"></p>
+                <div class="seg seg-sm px-pick" id="px-pick"></div>
               </div>
-              <p class="hint">Tap or drag on the image to probe a pixel.</p>
+              <div class="mini-race" id="ab-race"></div>
             </div>
           </div>
         </div>

@@ -2,7 +2,9 @@
 import { $, segmented } from "./util.js";
 
 const SNIPPETS = {
-  py: { lang: "py", code: `import numpy as np
+  py: { lang: "py", code: `# pip install rankwise
+
+import numpy as np
 import rankwise as rw
 
 stack = np.load("lights.npy", mmap_mode="r")   # (40, 1200, 1800, 3) float32, never copied
@@ -12,7 +14,9 @@ med   = rw.median(stack, axis=0)                    # identical to np.median
 lo, hi = rw.quantile(stack, [0.1, 0.9], axis=0)     # identical to np.quantile, every method
 comp  = rw.median(scenes, axis=0, nodata=0)         # uint16, clouds skipped
 k     = rw.select_ranks(stack, [0, 3, 36], axis=0)  # any ranks, one pass` },
-  js: { lang: "js", code: `import { init } from "@rankwise-js/rankwise";
+  js: { lang: "js", code: `// npm install @rankwise-js/rankwise
+
+import { init } from "@rankwise-js/rankwise";
 
 // init() picks the fastest backend the runtime has. Same API, identical results:
 //   native    Node, Bun, Deno: the Rust kernels (AVX-512, AVX2, NEON) via Node-API
@@ -25,7 +29,9 @@ const clean = rw.sigmaClipMean(subs, { sigma: 3, maxiters: 5 });  // subs: Float
 const med   = rw.median(subs);                                     // identical to np.median
 const [lo, hi] = rw.quantile(cube, [0.1, 0.9], { shape: [31, 721, 1440] });  // along axis 0
 const comp  = rw.median(scenes, { nodata: 0 });                    // Uint16Array[], clouds skipped` },
-  rs: { lang: "rs", code: `use ndarray::{Array2, ArrayView3, Axis};
+  rs: { lang: "rs", code: `// cargo add rankwise --features ndarray
+
+use ndarray::{Array2, ArrayView3, Axis};
 use rankwise::{Clip, Reduce};
 
 fn integrate(stack: ArrayView3<f32>) -> rankwise::Result<Array2<f32>> {
@@ -37,7 +43,10 @@ fn integrate(stack: ArrayView3<f32>) -> rankwise::Result<Array2<f32>> {
 // plain slices, one per frame: no ndarray needed
 let frames: Vec<&[f32]> = subs.iter().map(|s| s.as_slice()).collect();
 rankwise::median_frames(&frames, &mut master_dark)?;` },
-  c: { lang: "c", code: `#include <rankwise.h>
+  c: { lang: "c", code: `/* build: cargo build --release -p rankwise-capi */
+/* link:  cc stack.c -Irankwise-capi/include -Ltarget/release -lrankwise */
+
+#include <rankwise.h>
 
 const float *frames[40];                  /* one pointer per frame, H*W floats each */
 rw_clip clip = rw_clip_sigma(3.0f, 3.0f, /*maxiters*/ 5);
@@ -106,21 +115,30 @@ const API = [
   { h: "Any ranks", f: ["select_ranks", "argselect"], m: "np.sort(x)[ranks], in one pass" },
   { h: "Robust statistics", f: ["trimmed_mean", "iqr", "mad"], m: "scipy.stats" },
   { h: "Outlier rejection", f: ["sigma_clip_mean", "clip_combine"], m: "astropy sigma_clip, plus MAD, winsorized, percentile" },
-  { h: "Options", f: ["nodata", "weights", "scale", "threads"], m: "missing values, per-frame weights, normalization, cores", opt: true },
+  { h: "Options, on every operation", opt: [
+    ["nodata", "A value that means missing, skipped like NaN. Landsat marks cloud pixels 0, so nodata=0 takes the median of the clear passes only."],
+    ["weights", "One weight per frame, e.g. by exposure time or seeing."],
+    ["scale", "Per-frame normalization (with offset=), fused into the same pass."],
+    ["threads", "Split a large call across up to this many cores."],
+  ] },
 ];
 const camel = (n) => n.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
 export function initCode() {
   const body = $("#code-body"), api = $("#api");
-  let cur = "rs";
+  let cur = "py";
   const names = (k) => {
     const js = k === "js";
     $("#api-k").textContent = js ? "JavaScript names" : k === "py" ? "Python names" : "Python names · camelCase in JavaScript";
     api.querySelectorAll("code").forEach((c) => { const n = c.dataset.n; c.textContent = js ? camel(n) : n; });
   };
   const show = (k) => { cur = k; body.innerHTML = highlight(SNIPPETS[k].code, SNIPPETS[k].lang); names(k); };
-  api.innerHTML = API.map((g) => `<div class="api-g${g.opt ? " opt" : ""}"><h3>${g.h}</h3><div class="api-f">${g.f.map((n) => `<code data-n="${n}">${n}</code>`).join("")}</div><p>${g.opt ? "" : "Same results as "}${g.m}</p></div>`).join("");
-  segmented($("#code-tabs"), (d) => d.k && show(d.k));
+  api.innerHTML = API.map((g) => g.opt
+    ? `<div class="api-g opt"><h3>${g.h}</h3><dl class="api-o">${g.opt.map(([n, d]) => `<div><dt><code data-n="${n}">${n}</code></dt><dd>${d}</dd></div>`).join("")}</dl></div>`
+    : `<div class="api-g"><h3>${g.h}</h3><div class="api-f">${g.f.map((n) => `<code data-n="${n}">${n}</code>`).join("")}</div><p>Same results as ${g.m}</p></div>`).join("");
+  const setTab = segmented($("#code-tabs"), (d) => d.k && show(d.k));
+  // the language names in the hero chip open their snippet (the link itself scrolls to #code)
+  document.querySelectorAll("[data-code]").forEach((a) => a.addEventListener("click", () => { setTab((d) => d.k === a.dataset.code); show(a.dataset.code); }));
   // the copy button lives in the tab bar; keep the selected tab highlighted
   const copy = $("#code-copy");
   copy.addEventListener("click", async (e) => {
@@ -129,5 +147,5 @@ export function initCode() {
     try { await navigator.clipboard.writeText(SNIPPETS[cur].code); copy.textContent = "copied"; } catch { copy.textContent = "select + copy"; }
     setTimeout(() => (copy.textContent = "copy"), 1400);
   });
-  show("rs");
+  show("py");
 }

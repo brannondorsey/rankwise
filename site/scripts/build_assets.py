@@ -55,7 +55,8 @@ if "astro" in WHAT:
 
     # Crop at native resolution where five trails, the airplane and the meteor cross the nebula.
     # Linear electrons are stored as 8-bit codes: linear up to X1 (7 e- per code around the sky),
-    # logarithmic above it up to MAX. The page inverts this before stacking.
+    # logarithmic above it up to MAX. site-v2 and examples/js/browser invert this before stacking;
+    # the lanes demo reads its codes.
     X1, C1, MAX = 1200.0, 170.0, 60000.0
     Y0, X0, S = 140, 820, 384
     crop = st[:, Y0:Y0 + S, X0:X0 + S]
@@ -65,6 +66,50 @@ if "astro" in WHAT:
     p = OUT / "astro_subs.jpg"
     Image.fromarray(atlas(codes, 8)).save(p, quality=92, subsampling=0, optimize=True)
     print(kb(p))
+    # Sigma clipping example: a square crop at native resolution, combined four ways (one sub, the
+    # mean, rankwise's median and sigma-clipped mean) and stretched alike.
+    EX, ES, SINGLE = 300, 1200, 19
+    box = (slice(0, ES), slice(EX, EX + ES))
+    for name, a, q in [("single", st[SINGLE], 80), ("mean", g["mean"], 84), ("median", g["med"], 86), ("sigclip", sig, 86)]:
+        p = OUT / f"astro_{name}.webp"
+        Image.fromarray(stretch(a[box])).save(p, quality=q, method=6)
+        print(kb(p))
+
+    # Where each trail crosses the crop: a point on its centre line, clear of the other trails and
+    # of the labels already placed, with room for a label to its right. On the airplane, the meteor
+    # and the single sub's satellite it is also the pixel whose 40 values the page charts.
+    from scipy.ndimage import distance_transform_edt, label
+    rej = g["rejmap"][:, box[0], box[1], 1]                     # green channel, (N, ES, ES)
+    nrej = rej.sum(0)
+    excess = st[:, box[0], box[1], 1] - sig[box][..., 1][None]
+    kinds = [(SINGLE, "satellite"), (23, "airplane"), (31, "meteor"), (3, "satellite"), (11, "satellite"),
+             (27, "satellite"), (33, "satellite")]
+
+    def trail(i):  # the sub's rejected pixels in long connected runs: its trail, not its cosmic rays
+        lab, n = label(rej[i] & (excess[i] > 1000), structure=np.ones((3, 3)))
+        size = np.bincount(lab.ravel(), minlength=n + 1)
+        return (size[lab] >= 40) & (lab > 0)
+
+    hits = {i: trail(i) for i, _ in kinds}
+    yy, xx = np.mgrid[0:ES, 0:ES]
+    room = (xx > 0.08 * ES) & (xx < 0.8 * ES) & (yy > 0.1 * ES) & (yy < 0.94 * ES)
+    trails, pixels, placed = [], [], []
+    for i, kind in kinds:
+        others = np.any([hits[j] for j, _ in kinds if j != i], axis=0)
+        clear = distance_transform_edt(~others)
+        ok = hits[i] & room & (nrej == 1) & (excess[i] > 0.6 * np.percentile(excess[i][hits[i]], 90))
+        ys, xs = np.nonzero(ok)
+        score = np.minimum(clear[ys, xs], 0.6 * np.minimum.reduce([xs, ES - xs, ys, ES - ys])).astype(float)   # and inside the frame
+        for px_, py_ in placed:
+            score = np.minimum(score, 0.5 * np.hypot(xs - px_, ys - py_))
+        k = int(np.argmax(score))
+        x_, y_ = int(xs[k]), int(ys[k])
+        placed.append((x_, y_))
+        trails.append(dict(kind=kind, sub=i, x=round(x_ / ES, 4), y=round(y_ / ES, 4)))
+        if kind != "satellite" or i == SINGLE:
+            pixels.append(dict(kind=kind, sub=i, v=[round(float(f), 1) for f in st[:, y_, EX + x_, 1]],
+                               kept=(~rej[:, y_, x_]).astype(int).tolist(), sigclip=round(float(sig[y_, EX + x_, 1]), 2)))
+
 
     # Hero: every sub at 1/4 size (450x300), display-stretched, plus the rankwise stack.
     def down(a, f=4):
@@ -104,7 +149,9 @@ if "astro" in WHAT:
                 lanes=dict(frames=fr, y=int(ly), x=int(lx), codes=lanes),
                 stretch=[[float(lo), float(hi), float(m)] for lo, hi, m in P], sat=1.6,
                 hero=dict(w=W // 4, h=H // 4, cols=8),
-                noise=g["nz"], seconds=g["t_sig"])
+                noise=g["nz"], seconds=g["t_sig"],
+                ex=dict(size=ES, single=SINGLE, noise={k: round(v, 2) for k, v in g["nz"].items()},
+                        streaks=dict(single=1, mean=len(trails), median=0, sig=0), trails=trails, pixels=pixels))
     (OUT / "astro.json").write_text(json.dumps(meta, indent=1))
 
 # ---------------------------------------------------------------------------------- landsat
