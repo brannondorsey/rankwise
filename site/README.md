@@ -4,14 +4,16 @@ Static site (Vite + three.js, no framework). Every demo runs on the repository's
 
 | Demo | Data |
 |---|---|
-| Hero deck, lanes (01), live stacking (06) | the 40 synthetic subs of `examples/python/astro_demo.py` |
+| Hero deck, lanes (01), sigma clipping (06) | the 40 synthetic subs of `examples/python/astro_demo.py` |
 | Pruned networks (02) | `src/netgen.js`, a port of `rankwise/src/netgen.rs` |
 | Benchmarks, conformance (03–04) | `bench/results/*.json` |
 | Weather (06) | real NOAA GEFS run of `bench/gefs.py`; p10/p50/p90 from `rw.quantile` |
 | Composites (06) | the 90 Landsat scenes of `bench/landsat.py`, at 120 m |
 
-The stacking and composite demos compute mean / median / sigma clipping per pixel in a
-fragment shader (rank bounds over sorted codes, as rankwise does per SIMD lane).
+The composite demo computes its medians per pixel in a fragment shader (rank bounds over
+sorted codes, as rankwise does per SIMD lane). The sigma clipping example shows stacks
+made when the assets were built (NumPy's mean; rankwise's median and sigma-clipped mean), so
+the page only moves a divider.
 
 ```bash
 npm install

@@ -93,6 +93,23 @@ export function initNetwork() {
       : needed.length > 4 ? `${needed.length} ranks`
       : `rank${needed.length > 1 ? "s" : ""} ${needed.join(", ")}`;
     $("#net-ranks").textContent = lbl;
+    // the heading names the selected operation
+    const ends = needed.every((r) => r === 0 || r === n - 1);
+    const [w, verb] = needed.length === n ? ["A sort", "needs"]
+      : isMedian ? ["A median", "doesn't need"]
+      : preset === "q" ? ["A quantile", "doesn't need"]
+      : needed.length && ends ? ["A min or max", "doesn't need"]
+      : needed.length === 0 ? ["No rank", "needs"]
+      : needed.length === 1 ? ["One rank", "doesn't need"]
+      : ["A few ranks", "don't need"];
+    const word = $("#net-word");
+    if (word.textContent !== w) {
+      word.textContent = w;
+      word.classList.remove("swap");
+      void word.offsetWidth; // restart the animation
+      word.classList.add("swap");
+    }
+    $("#net-verb").textContent = verb;
     const saved = Math.round((1 - k / net.length) * 100);
     $("#net-save").textContent = saved > 0 ? `${saved}% skipped` : "none skipped";
     restart();
