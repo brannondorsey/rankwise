@@ -425,8 +425,8 @@ export async function initHero() {
     t0 += step;
     // deck pose: a 3/4 view with a slow sway
     const pose = portrait
-      ? { x: -0.35, y: 2.35, s: 0.7, ry: -0.72, rx: 0.2 }
-      : { x: 2.5, y: 0.9, s: 0.84, ry: -0.7, rx: 0.16 };
+      ? { x: -0.35, y: 2.6, s: 0.7, ry: -0.72, rx: 0.2 }
+      : { x: 2.5, y: 1.12, s: 0.84, ry: -0.7, rx: 0.16 };
     deck.position.set(pose.x, pose.y, 0);
     deck.scale.setScalar(pose.s);
     const sway = reduced ? 0 : Math.sin(t0 * 0.25) * 0.06;
