@@ -132,6 +132,13 @@ h1 {
 }
 .sec-head { margin-bottom: 32px; }
 .sec-lede { margin: 18px 0 0; max-width: 40em; color: var(--ink2); font-size: clamp(15px, 3.9vw, 18px); line-height: 1.5; letter-spacing: -0.01em; }
+/* 07 why: the pitch, and the honest caveat beside it */
+.why { display: grid; gap: 20px; align-items: start; }
+.why-body { margin: 0; max-width: 34em; font-size: clamp(17px, 4.4vw, 22px); line-height: 1.55; letter-spacing: -0.012em; color: var(--ink2); text-wrap: pretty; }
+.why-body b { color: var(--ink); font-weight: 600; }
+.why-gpu { padding: 20px 22px; border-radius: var(--r); background: var(--panel); border: 1px solid var(--line); }
+.why-gpu p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink2); }
+.why-gpu .why-k { margin-bottom: 8px; font-size: 12px; color: var(--orange); letter-spacing: 0.02em; }
 .ex + .ex { margin-top: 96px; }
 .ex-head { margin-bottom: 24px; }
 .ex-k { margin: 0 0 10px; font-size: 12px; color: var(--cyan); letter-spacing: 0.02em; }
@@ -454,6 +461,8 @@ pre.code .t { color: #4f8dff; }
   .race-card, .sweep-card { padding: 24px; }
   .race-row { grid-template-columns: 260px 1fr 140px; }
   .tests-card { padding: 26px; }
+  .why { grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 48px; }
+  .why-gpu { margin-top: 6px; }
   .api { grid-template-columns: repeat(3, 1fr); }
   .api-o { grid-template-columns: repeat(4, 1fr); }
   .api-g { padding: 22px 24px; }

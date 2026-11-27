@@ -292,6 +292,23 @@
         </div>
       </div>
     </section>
+
+    <!-- 07 WHY -->
+    <section class="sec" id="why">
+      <div class="wrap">
+        <header class="sec-head">
+          <p class="eyebrow"><span>07</span>Motivation</p>
+          <h2>Why?</h2>
+        </header>
+        <div class="why">
+          <p class="why-body">Order statistics operations using numerical libraries without GPU acceleration tend to be rather slow, but most CPUs today have excellent support for SIMD. <b>rankwise puts these opcodes to use!</b> If you're computing these types of operations without access to GPU hardware, this library should significantly speed up these maths, especially for batched data. rankwise uses a single core Rust implementation to expose the same accelerated functionality to up to four languages, so you can drop it in place wherever you need.</p>
+          <aside class="why-gpu">
+            <p class="why-k mono">On a GPU?</p>
+            <p>If you're running these types of algorithms on a GPU, you can probably do a lot better than rankwise, provided the RAM to VRAM transfer doesn't create a bottleneck.</p>
+          </aside>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="foot">

@@ -19,7 +19,7 @@ const links = $$(".links a");
 const io = new IntersectionObserver((es) => {
   for (const e of es) if (e.isIntersecting) links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + e.target.id));
 }, { rootMargin: "-45% 0px -50% 0px" });
-["lanes", "bench", "code", "examples"].forEach((id) => io.observe(document.getElementById(id)));
+["lanes", "bench", "code", "examples", "why"].forEach((id) => io.observe(document.getElementById(id)));
 
 // parallax cards: as each section's successor slides up over it, the section drifts down at a
 // fraction of the scroll speed, shrinks a touch and dims
@@ -49,7 +49,7 @@ if (!reduced) {
 
 // reveal on scroll
 const rv = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), rv.unobserve(e.target))), { rootMargin: "0px 0px -8% 0px" });
-$$(".sec-head, .ex-head, .demo, .race-card, .sweep-card, .tests-card, .code-card, .api").forEach((x) => { x.classList.add("rv"); rv.observe(x); });
+$$(".sec-head, .ex-head, .demo, .race-card, .sweep-card, .tests-card, .code-card, .api, .why").forEach((x) => { x.classList.add("rv"); rv.observe(x); });
 
 const safe = (f) => Promise.resolve().then(f).catch((e) => console.error(e));
 // demos start when they come near; a jump past them starts them first (see below)
