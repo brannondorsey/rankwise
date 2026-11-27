@@ -18,6 +18,7 @@ export function initNetwork() {
   const nIn = $("#net-n"), nOut = $("#net-n-out");
   const fill = rangeFill(nIn);
   let preset = "median", n = +nIn.value, net, lay, needed, keep, W, H;
+  nOut.textContent = n; // the readout always shows the slider's value, even one the browser restored
   let cmpEls = [], wireEls = [], outEls = [], dots = [], vals = [], order = [], scan = -1, hold = 0, ci = 0;
 
   function presetRanks() {

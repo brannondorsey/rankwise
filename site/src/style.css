@@ -120,7 +120,7 @@ h1 {
 @keyframes cue { to { top: 100%; } }
 
 /* ---------------------------------------------------------------- sections */
-.sec { position: relative; padding: 88px 0 88px; }
+.sec { position: relative; padding: 56px 0 88px; }
 
 /* parallax cards: every section is a sheet that slides up over the one before it, which drifts
    back and dims (main.js drives the transform and --dim) */
@@ -441,7 +441,7 @@ pre.code .t { color: #4f8dff; }
 @media (min-width: 980px) {
   :root { --gut: 48px; --nav-h: 68px; }
   .links { display: flex; }
-  .sec { padding: 132px 0 132px; border-radius: 36px 36px 0 0; }
+  .sec { padding: 84px 0 132px; border-radius: 36px 36px 0 0; }
   .sec-head { margin-bottom: 44px; }
   .ex + .ex { margin-top: 150px; }
   .stack-demo { grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr); gap: 20px; align-items: start; }

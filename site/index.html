@@ -97,15 +97,15 @@
               <button data-p="q">p10 · p50 · p90</button>
               <button data-p="minmax">Min · max</button>
             </div>
-            <label class="slider slider-inline"><span class="sl-k">n</span><input type="range" id="net-n" min="4" max="32" value="31"><output class="mono" id="net-n-out">31</output></label>
+            <label class="slider slider-inline"><span class="sl-k">n</span><input type="range" id="net-n" min="4" max="32" value="31" autocomplete="off"><output class="mono" id="net-n-out">31</output></label>
           </div>
           <div class="net-wrap">
-            <svg id="net-svg" aria-label="Sorting network"></svg>
+            <svg id="net-svg" viewBox="0 0 812 444" aria-label="Sorting network"></svg>
           </div>
           <div class="net-count">
             <div class="big mono"><b id="net-kept">152</b><span>comparators run</span></div>
             <div class="net-sub mono">for <span id="net-ranks">the median (rank 15)</span> · a full sort runs <span id="net-total">186</span> · <b id="net-save">18% skipped</b></div>
-            <p class="hint">Bright comparators run, faded ones are skipped. Tap an output on the right to add or remove a rank.</p>
+            <p class="hint">Bright comparators run, faded ones are skipped. n is the number of values per slice. Tap an output on the right to add or remove a rank.</p>
           </div>
         </div>
       </div>
@@ -260,7 +260,7 @@
         <div class="ex" id="stack">
           <header class="ex-head">
             <p class="ex-k mono">Sigma clipping · astrophotography</p>
-            <h3>40 noisy subs in.<br><span class="dim">One clean frame out.</span></h3>
+            <h3>40 noisy shots<br><span class="dim">become one clean image.</span></h3>
           </header>
           <div class="demo stack-demo">
             <figure class="viewport square ab" id="ab">
