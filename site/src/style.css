@@ -135,7 +135,6 @@ h1 {
 /* 07 why: the pitch, and the honest caveat beside it */
 .why { display: grid; gap: 20px; align-items: start; }
 .why-body { margin: 0; max-width: 34em; font-size: clamp(17px, 4.4vw, 22px); line-height: 1.55; letter-spacing: -0.012em; color: var(--ink2); text-wrap: pretty; }
-.why-body b { color: var(--ink); font-weight: 600; }
 .why-gpu { padding: 20px 22px; border-radius: var(--r); background: var(--panel); border: 1px solid var(--line); }
 .why-gpu p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink2); }
 .why-gpu .why-k { margin-bottom: 8px; font-size: 12px; color: var(--orange); letter-spacing: 0.02em; }
